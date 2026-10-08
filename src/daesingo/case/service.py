@@ -396,6 +396,7 @@ def derive_notices(
       유무와 무관하다. 「다시 판독」(`RETRY_PLATE_READ`)은 발주 근거(같은 kind의 이전 `PLATE_READ`
       JobRecord, `plate_read_retry_basis`)가 있을 때만 싣는다 — 없으면 command가 늘 거부한다
       (case-command 계약 §10). 실행 경로가 없는 action은 싣지 않는다(CaseView 계약 B절).
+      `plate_display.info_state`가 `INFO_USER_CONFIRMED`(사용자가 직접 입력)면 붙이지 않는다(#235 ①).
     - `evidence.location_search_keyword_missing` — 계약 발동 조건이
       `evidence.location_display.search_keyword == null`이다(`location` 존재 여부가 아니다,
       이슈 #48).
@@ -433,8 +434,12 @@ def derive_notices(
     if view.get("stage") == "CANDIDATE_REVIEW" and not view.get("candidates"):
         derived.append(NO_CANDIDATES_NOTICE)
     # 번호판 판독 실행 실패는 evidence 유무와 무관하게 알린다(#172 [D]) — 「읽지 못함」은 값
-    # 상태(INFO_UNKNOWN)로만 보이고, 실행 실패만 이 notice를 갖는다.
-    if any(s["step"] == "plate_read" and s["state"] == "FAILED" for s in view.get("progress", [])):
+    # 상태(INFO_UNKNOWN)로만 보이고, 실행 실패만 이 notice를 갖는다. 사용자가 번호판을 직접 입력했으면
+    # 그 값으로 Package까지 가므로 거둔다(#235 ①). 진행 상태 `FAILED`는 실행 사실이라 그대로 둔다.
+    plate_user_confirmed = (view.get("evidence") or {}).get("plate_display", {}).get("info_state") == "INFO_USER_CONFIRMED"
+    if not plate_user_confirmed and any(
+        s["step"] == "plate_read" and s["state"] == "FAILED" for s in view.get("progress", [])
+    ):
         derived.append(PLATE_READ_FAILED_NOTICE if plate_read_retry_basis else dict(PLATE_READ_FAILED_NOTICE, actions=[]))
     overlay_notice = _overlay_notice(view, overlay_time_readouts or [])
     if overlay_notice is not None:
