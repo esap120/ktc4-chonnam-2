@@ -21,6 +21,9 @@ function locationClue(view: CaseView, evidence: EvidenceView): string | null {
 export function EvidenceScreen(props: { view: CaseView; hideOthers?: boolean }): JSX.Element {
   const evidence = props.view.evidence
   if (!evidence) return <Panel title="증거 정리 전">아직 표시할 값이 없습니다.</Panel>
+  // record_id=null은 상황 응답 대기 중의 부분 투영이다(v1.8, #239). 상황 종속 셋은 INFO_UNKNOWN으로 오지만
+  // 모르는 게 아니라 응답 뒤에 정해진다.
+  const partial = evidence.record_id === null
 
   // 결과 화면이므로 「다른 후보 보기」 출구를 함께 둔다(core-user-flow.md §8-1).
   return (
@@ -52,18 +55,21 @@ export function EvidenceScreen(props: { view: CaseView; hideOthers?: boolean }):
             value={evidence.case_type_display.label}
             infoState={evidence.case_type_display.info_state}
             sourceLabelKey={evidence.case_type_display.source_label_key}
+            pending={partial}
           />
           <DisplayRow
             label="위반 내용"
             value={evidence.violation_display.label}
             infoState={evidence.violation_display.info_state}
             sourceLabelKey={evidence.violation_display.source_label_key}
+            pending={partial}
           />
           <DisplayRow
             label="신고 유형"
             value={evidence.report_type_display.label}
             infoState={evidence.report_type_display.info_state}
             sourceLabelKey={evidence.report_type_display.source_label_key}
+            pending={partial}
           />
         </div>
         {evidence.review_needed && (
