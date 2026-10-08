@@ -4,7 +4,9 @@
 
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { SNAPSHOTS } from '../contracts/fixtures'
 import { DemoFlow } from '../screens/DemoFlow'
+import { ResultScreen } from '../screens/ResultScreen'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => {
@@ -253,4 +255,24 @@ it('신고 상황 「잘 모르겠어요」도 진행을 막지 않고, 다른 �
   expect(text()).toContain('다른 장면이었나요? 다른 후보 2 →')
   answer('잘 모르겠어요')
   expect(text()).toContain('신고자료가 준비됐어요')
+})
+
+it('응답 대기 중 evidence가 부분 투영돼도 신고용 영상 칸은 그리지 않고 확보한 번호판은 보여 준다 (v1.8)', () => {
+  const full = SNAPSHOTS.map((x) => x.view).find((v) => v.evidence && v.package)!
+  const view = {
+    ...full,
+    stage: 'EVIDENCE_REVIEW' as const,
+    package: null,
+    candidates: full.candidates.map((c) => (c.selected ? { ...c, situation_confirmation: 'NOT_ASKED' as const } : c)),
+    notices: [
+      { code: 'case.situation_response_pending', severity: 'INFO' as const, blocking: false, message_key: 'notice.situation_response_pending', actions: [] },
+    ],
+  }
+  const noop = () => {}
+  const { container } = render(
+    <ResultScreen view={view} onCandidates={noop} onPlate={noop} onDetails={noop} onAction={noop} onRespond={noop} />,
+  )
+  expect(container.textContent).toContain('신고 상황을 확인해 주세요')
+  expect(container.textContent).toContain(full.evidence!.plate_display.value!)
+  expect(container.textContent).not.toContain('신고용 영상 · 원본에서')
 })

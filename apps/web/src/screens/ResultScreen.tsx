@@ -113,25 +113,29 @@ export function ResultScreen(props: {
 
       {evidence && (
         <section className="panel panel-p stack">
-          <div className="video-box">
-            <div className="video-main">
-              {noVideo ? (
-                <span>신고용 영상이 아직 없어요</span>
-              ) : (
-                <>
-                  <span className="video-play" aria-hidden>
-                    ▶
-                  </span>
-                  <span className="video-cap">신고용 영상 · 원본에서 사건 구간만 잘라 만든 영상이에요</span>
-                </>
+          {/* 신고용 영상은 응답 뒤 조립에서 만들어진다. 응답 전(v1.8 부분 투영 포함)에는 영상 칸을 그리지 않는다.
+              다른 후보 입구는 위 「신고 상황」 패널에 이미 있다 */}
+          {!awaiting && (
+            <div className="video-box">
+              <div className="video-main">
+                {noVideo ? (
+                  <span>신고용 영상이 아직 없어요</span>
+                ) : (
+                  <>
+                    <span className="video-play" aria-hidden>
+                      ▶
+                    </span>
+                    <span className="video-cap">신고용 영상 · 원본에서 사건 구간만 잘라 만든 영상이에요</span>
+                  </>
+                )}
+              </div>
+              {others > 0 && (
+                <button type="button" className="video-side" onClick={props.onCandidates}>
+                  다른 후보 영상 {others} →
+                </button>
               )}
             </div>
-            {others > 0 && (
-              <button type="button" className="video-side" onClick={props.onCandidates}>
-                다른 후보 영상 {others} →
-              </button>
-            )}
-          </div>
+          )}
           <div className="plate-row">
             <span className="plate-img">{evidence.plate_display.value ?? '번호판 없음'}</span>
             <span className="plate-meta">
