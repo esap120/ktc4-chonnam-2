@@ -40,6 +40,8 @@ IncidentClip·readout·TimeResolution·evidence를 **시작하지 않고** 정�
 `UNCERTAIN`은 사용자가 「잘 모르겠어요」(`USER_UNSURE`)로 답하기 전까지
 `AWAIT_SITUATION_RESPONSE`다(#165). 관찰 단계는 그대로 진행하고, `assemble_evidence_bundle()`이
 응답까지 넣어 다시 분류해 응답 전에는 조립하지 않는다. 응답이 오면 조립만 다시 한다.
+응답 전에도 상황 독립 값(번호판 · 시각 · 위치)은 evidence `resolve_independent_facts()`로 계산해
+`EvidenceBundle.independent_facts`에 둔다 — CaseView `evidence` 부분 투영(`record_id=null`)의 원천이다(#239).
 
 `NOT_OBSERVED`를 `UNCERTAIN` fallback으로 합치지 않는다. `UNCERTAIN + USER_UNSURE`는
 사용자가 "잘 모르겠지만 진행"을 택한 generic 신고 경로이고, `NOT_OBSERVED`는 Fine이 후보를
@@ -124,6 +126,7 @@ from daesingo.case.scope import build_analysis_scope
 from daesingo.common.env import load_env_file
 from daesingo.evidence import (
     ASSEMBLE,
+    AWAIT_SITUATION_RESPONSE,
     NOT_ASSEMBLED,
     VisualEvidenceDisposition,
     assemble_evidence,
@@ -131,6 +134,7 @@ from daesingo.evidence import (
     calculate_evidence_needs,
     classify_visual_evidence,
     evaluate_requirements,
+    resolve_independent_facts,
     resolve_time,
 )
 from daesingo.evidence.errors import PackageNotReady
@@ -300,6 +304,10 @@ class EvidenceBundle:
     # 관찰 단계의 `OverlayTimeReadout`(판독하지 않았으면 `None`). 시각을 얻지 못한 갈래의 notice
     # (`readout.overlay_*`)가 `observation.reason.code`를 여기서 읽는다 — evidence 조립 전에도 필요하다.
     overlay_readout: dict[str, Any] | None = None
+    # 상황 응답 대기(`AWAIT_SITUATION_RESPONSE`)에서만 채운다 — evidence `resolve_independent_facts()`가
+    # 만든 상황 독립 값(`occurred_at` · `vehicle_number` · `location`, EvidenceRecord 같은 필드 모양). CaseView
+    # `evidence`의 부분 투영(`record_id=null`, #239) 원천이다. EvidenceRecord가 아니다.
+    independent_facts: dict[str, Any] | None = None
 
     @property
     def assembled(self) -> bool:
@@ -353,6 +361,43 @@ def assemble_evidence_bundle(
     """
     obs = observations
     disposition = classify_visual_evidence(obs.visual_evidence, situation_response)
+    candidate_event = obs.candidate.model_dump(mode="json")
+    if disposition.decision == AWAIT_SITUATION_RESPONSE:
+        # 응답 전에는 EvidenceRecord를 만들지 않고(#171 B-2), 이미 확보한 상황 독립 값만 evidence 규칙
+        # 그대로 계산해 둔다(#239). 번호판 · 시각 · 위치 규칙은 evidence 한 곳에 있다 — 여기서 다시 만들지 않는다.
+        time_resolution = resolve_time(
+            time_source_candidates=obs.time_source_candidates,
+            overlay_time_readout=obs.overlay_readout,
+            candidate_event=candidate_event,
+            correction_records=correction_records or [],
+            case_id=case_id,
+            selection_rev=selection_rev,
+            resolution_id=f"tr_{case_id}_001",
+        )
+        return EvidenceBundle(
+            evidence_record=None,
+            evidence_needs=None,
+            requirement_report_evidence=None,
+            requirement_report_package=None,
+            report_package=None,
+            package_error=None,
+            visual_evidence=obs.visual_evidence,
+            fine_run=obs.fine_run,
+            disposition=disposition,
+            plate_read_outcome=obs.plate_read_outcome,
+            plate_readout=obs.plate_readout,
+            overlay_readout=obs.overlay_readout,
+            independent_facts=resolve_independent_facts(
+                case_id=case_id,
+                selection_rev=selection_rev,
+                time_resolution=time_resolution,
+                plate_readout=obs.plate_readout,
+                location_hint=location_hint,
+                # GPS 단순화 (모듈 docstring 참고).
+                gps_observation=None,
+                correction_records=correction_records or [],
+            ),
+        )
     if disposition.decision != ASSEMBLE:
         return EvidenceBundle(
             evidence_record=None,
@@ -368,7 +413,6 @@ def assemble_evidence_bundle(
             overlay_readout=obs.overlay_readout,
         )
 
-    candidate_event = obs.candidate.model_dump(mode="json")
     time_resolution = resolve_time(
         time_source_candidates=obs.time_source_candidates,
         overlay_time_readout=obs.overlay_readout,

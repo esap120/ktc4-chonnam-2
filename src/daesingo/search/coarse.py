@@ -151,9 +151,9 @@ def search_coarse(
     candidate_search_result = CandidateSearchResult(
         analysis_run=analysis_run, candidates=candidates
     )
-    assert source.source_ref.kind == "analysis_source", (
-        f"source_ref.kind must be 'analysis_source', got {source.source_ref.kind!r}"
-    )
+    assert (
+        source.source_ref.kind == "analysis_source"
+    ), f"source_ref.kind must be 'analysis_source', got {source.source_ref.kind!r}"
     return LinkedCoarseResult(
         result=candidate_search_result, source_ref=source.source_ref
     )
@@ -259,10 +259,14 @@ def _candidate(
     start = max(0.0, min(candidate.span.start_sec, source.duration_sec))
     end = max(start + 0.001, min(candidate.span.end_sec, source.duration_sec))
     representative = min(max(candidate.at_sec, start), end)
+    # "점선" 단독은 정상 관찰("점선 차로로 변경")까지 잡으므로 쓰지 않는다(#169).
+    # 선 종류 애매함("점선처럼 보이나")은 "처럼 보"로 잡는다.
     uncertainties = tuple(
         fact
         for fact in candidate.observed
-        if any(word in fact for word in ("불확실", "판별", "가림", "저해상도", "점선"))
+        if any(
+            word in fact for word in ("불확실", "판별", "가림", "저해상도", "처럼 보")
+        )
     )
     return CandidateEvent(
         candidate_id=CandidateId(f"candidate_{uuid4().hex}"),
@@ -270,9 +274,12 @@ def _candidate(
         span=CandidateSpan(
             timeline_id=source.timeline_id,
             timeline_revision=source.timeline_revision,
-            start_ms=round(start * 1000),
-            end_ms=round(end * 1000),
-            representative_ms=round(representative * 1000),
+            # 입력 좌표 → Timeline 좌표(#252)
+            start_ms=round((source.timeline_start_sec + start) * 1000),
+            end_ms=round((source.timeline_start_sec + end) * 1000),
+            representative_ms=round(
+                (source.timeline_start_sec + representative) * 1000
+            ),
         ),
         rank=rank,
         ranking_score=candidate.score,

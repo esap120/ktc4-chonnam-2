@@ -40,6 +40,7 @@ const JOB_LABELS: Record<string, string> = {
   'job.generic_processing': '처리 중',
   'job.plate_read': '번호판 판독 중',
   'job.overlay_time_read': '화면 시각 판독 중',
+  'job.hint_extract': '상황 설명을 읽는 중',
   'job.fine_verify': '정밀 확인 중',
   'job.report_video_export': '신고용 영상 만드는 중',
 }

@@ -119,13 +119,15 @@ def verify_fine(
 ) -> VisualVerificationResult:
     source = resolver.resolve_reference(input_ref)
     CandidateSourceLink(source_ref=input_ref, candidate=candidate).validate(source)
+    # 후보는 Timeline 좌표다. 입력 좌표로 되돌려 자른다(#252).
+    offset_sec = source.timeline_start_sec
     start_sec = max(
         0.0,
-        candidate.span.start_ms / 1000 - config.fine_padding_sec,
+        candidate.span.start_ms / 1000 - offset_sec - config.fine_padding_sec,
     )
     end_sec = min(
         source.duration_sec,
-        candidate.span.end_ms / 1000 + config.fine_padding_sec,
+        candidate.span.end_ms / 1000 - offset_sec + config.fine_padding_sec,
     )
     if start_sec >= end_sec:
         raise InvalidFineSpanError(

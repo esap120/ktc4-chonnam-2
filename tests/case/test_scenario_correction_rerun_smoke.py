@@ -75,9 +75,14 @@ def test_correction_rerun_before_and_after_match_fixture():
     case.receive_candidates(candidates)
     case.select_candidate("candidate_r001")
 
-    jobs.issue_plate_read(case, input_fingerprint="sha1:r001-plate-read-clip_r001")
-    jobs.issue_overlay_time_read(case, input_fingerprint="sha1:r001-overlay-read-clip_r001")
-    jobs.issue_fine_verify(case, input_fingerprint="sha1:r001-fine-verify-as_r001_fine")
+    issued = [
+        jobs.issue_plate_read(case, input_fingerprint="sha1:r001-plate-read-clip_r001"),
+        jobs.issue_overlay_time_read(case, input_fingerprint="sha1:r001-overlay-read-clip_r001"),
+        jobs.issue_fine_verify(case, input_fingerprint="sha1:r001-fine-verify-as_r001_fine"),
+    ]
+    # 이 시나리오의 v1은 세 job의 결과가 이미 evidence에 반영된 시점이다(8-8이 할 정산을 테스트가 대신한다).
+    for job in issued:
+        case.settle_job(job["job_id"], "REFLECTED")
 
     evidence_records = adapter.get_evidence_records()
     evidence_reports = adapter.get_requirement_reports("EVIDENCE")

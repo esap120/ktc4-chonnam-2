@@ -12,6 +12,9 @@ license = { file = "LICENSE" }
 dependencies = [
   "pydantic>=2.0,<3.0",
   "tzdata>=2023.3; sys_platform == 'win32'",
+  "sqlalchemy>=2.0,<3.0",
+  "pymysql[rsa]>=1.1,<2.0",  # MySQL 8.4 기본 인증(caching_sha2_password)에 rsa(cryptography) 필요
+  "alembic>=1.13,<2.0",
 ]
 
 [project.optional-dependencies]
@@ -47,3 +50,8 @@ where = ["src"]
 addopts = "-ra"
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+  "mysql: requires a real MySQL 8.4 server (CI: no skips or xfails)",
+  "mysql_scenario(name): required RT-02(a) MySQL acceptance evidence",
+  "mysql_check(role, scenario, parameter=None): required role/scenario and optional stable parameter execution evidence",
+]

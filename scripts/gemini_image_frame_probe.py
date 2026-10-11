@@ -4,7 +4,7 @@
 gemini-proxy-video-sampling-2026-09-28 실험의 이미지판. 방법은 같다: 고정 프롬프트
 "Reply with the single word OK." 를 이미지 0장으로 보낸 입력 토큰(텍스트 baseline)을
 빼서 이미지 토큰으로 본다. 클라이언트·base_url·model 은 운영 경로와 같게
-GeminiSearchConfig.from_dotenv / .env GEMINI_API_KEY 를 쓴다.
+GeminiSearchConfig.from_dotenv / .env ELICE_ML_API_KEY(기존 GEMINI_API_KEY도 읽음)를 쓴다.
 
 측정:
   ⓐ 프록시가 image_url 을 수용하는가          -> 200 이면 수용
@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from daesingo.common import load_env_file
-from daesingo.search.config import GeminiSearchConfig
+from daesingo.search.config import GeminiSearchConfig, api_key_from_env
 
 PROMPT = "Reply with the single word OK."
 # fps 실험과 같은 기준 영상·구간(0-7s). 이 파일은 신규 video/ 폴더엔 없고
@@ -37,7 +37,7 @@ DEFAULT_VIDEO = (
     "C:/Users/User/orca/ktc4-chonnam-2/src/daesingo/search/video/"
     "20260620_141628_EVT_1.avi"
 )
-# .env(GEMINI_API_KEY)는 main 작업트리에만 있다. worktree엔 없으므로 기본값으로 가리킨다.
+# .env(ELICE_ML_API_KEY)는 main 작업트리에만 있다. worktree엔 없으므로 기본값으로 가리킨다.
 DEFAULT_ENV = "C:/Users/User/orca/ktc4-chonnam-2/.env"
 
 
@@ -125,14 +125,14 @@ def main() -> None:
     ap.add_argument("--start", type=float, default=0.0)
     ap.add_argument("--end", type=float, default=7.0)
     ap.add_argument("--out", type=Path, default=None, help="결과 JSON 경로")
-    ap.add_argument("--env", default=DEFAULT_ENV, help=".env 경로(GEMINI_API_KEY)")
+    ap.add_argument("--env", default=DEFAULT_ENV, help=".env 경로(ELICE_ML_API_KEY)")
     args = ap.parse_args()
 
     env = load_env_file(args.env)
     cfg = GeminiSearchConfig.from_dotenv(env)
-    api_key = env.get("GEMINI_API_KEY", "").strip()
+    api_key = api_key_from_env(env)
     if not api_key:
-        raise SystemExit(f"no GEMINI_API_KEY in {args.env}")
+        raise SystemExit(f"no ELICE_ML_API_KEY in {args.env}")
 
     import importlib
     client = importlib.import_module("openai").OpenAI(

@@ -9,4 +9,8 @@
 
 ## 상태
 
-**아직 코드가 없다.** 데이터 계약(`docs/architecture/contracts/`)이 확정된 뒤 Owner가 채운다. 이 README는 자리를 잡아두기 위한 것이며, 폴더의 범위는 위 문서가 정한다 — 여기에 규칙을 복제하지 않는다.
+RT-01의 `bootstrap.py`를 구현했다. `bootstrap(revision=...)`은 `DAESINGO_ENV_FILE`(미지정 시 cwd `.env`)을 명시적으로 읽고, 불변 API RuntimeConfig와 등록된 모듈 factory/validator를 검증한 뒤 JSON line `process.started`를 기록한다. 실패 시 설정 key 이름만 기록하고 `SystemExit(1)`로 종료한다. `revision`은 호출자가 전달하는 commit SHA 등 안전한 식별자다.
+
+필수 파일 key는 `DAESINGO_RUNTIME_DB_URL` · `DAESINGO_RUNTIME_MEDIA_ROOT` · `DAESINGO_RUNTIME_API_TEMP_ROOT`다. shell에서는 파일 경로만 읽는다. 세부 선택과 검증 결과는 [RT-01 Implementation Log](../../../docs/runtime/runtime-implementation-log.md#rt-01--runtime-config--composition-bootstrap--structured-log-기반)에 기록한다.
+
+HTTP app/route · DB engine · health endpoint는 아직 없다(RT-02 · RT-08 이후). 이후 composition 시 실제 사용하는 모듈의 config factory를 `module_factories`에 등록하고 반환된 설정을 사용한다.

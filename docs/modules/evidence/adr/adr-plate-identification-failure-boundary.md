@@ -118,6 +118,8 @@ v4는 1·2·3·4를 모두 「값 없음 → `UNKNOWN`」으로 합쳤고, 최�
 - **Readout 실행 실패를 이 rule의 `observed_false`로 변환하지 않는다.** 실행이 실패했으면 관찰 fact가 없으므로 `not_observed → UNKNOWN`이다. `observed_false`는 I4가 최종 영상을 실제로 관찰한 결과만 가리킨다.
 - `IncidentClip` 판독 결과를 이 fact로 승계하지 않는다(§4.1). I4 Producer는 아직 없다(ADR-005 §5.7).
 
+> **#280에 따른 제거 (2026-10-07).** 이 rule은 [`ADR-EVIDENCE-010`](adr-i4-report-video-visibility-rules-removal.md)으로 MVP `FINAL_PACKAGE`에서 빠졌다(`policy/requirement-rules-v6`). 위 표는 v5의 매핑으로 보존한다. 「관찰 실패를 `observed_false`로 바꾸지 않는다」와 §4.1의 승계 금지는 I4를 다시 도입할 때도 지킨다(ADR-010 §8).
+
 ### 5.3 활성 catalog 전환
 
 활성 catalog 선택점은 `policy_catalog.py`의 `_ACTIVE_REQUIREMENT_CATALOG_FILE` 한 곳이며 `requirement_rules_v5.json`으로 바꾼다. 출력 `policy_ref`는 로드한 파일의 값(`policy/requirement-rules-v5`)이다. v5는 신고문 policy로 `safety-report-policy/v1.2`를 참조한다(§6).
@@ -166,7 +168,7 @@ builder는 FINAL이 어떤 이유로 `PASS`/`WARN`이어도 `PlateReadout` 없�
 - `evidence.plate_abstained`(1·2) notice 계약 등재·발행 — case(#172 `[D-3]` Case 의견). 1·3은 notice 없이 `INFO_UNKNOWN`으로 보인다(#193)
 - 결과 화면의 「차량번호 정보가 부족할 수 있다」 안내 문구 — web(#146 답변). CaseView에는 `plate_display.info_state=INFO_UNKNOWN`과 `report_field_states.vehicle_number`가 이미 있다
 - 재판독 Need의 필수성·횟수 — `contract-evidence-record-needs.md`
-- 최종 `REPORT_VIDEO` 관찰 Producer(I4) — readout 입력 계약 확장 후 case 배선(ADR-005 §5.7). **I4가 없는 동안 실제 runtime의 FINAL은 `plate_visible_in_report_video`가 `not_observed → UNKNOWN`이라 번호판 유무와 관계없이 Package가 나오지 않는다.** 이 제약은 v4부터 있던 것이며 이 ADR이 바꾸지 않는다
+- 최종 `REPORT_VIDEO` 관찰 Producer(I4) — readout 입력 계약 확장 후 case 배선(ADR-005 §5.7). **I4가 없는 동안 실제 runtime의 FINAL은 `plate_visible_in_report_video`가 `not_observed → UNKNOWN`이라 번호판 유무와 관계없이 Package가 나오지 않는다.** 이 제약은 v4부터 있던 것이며 이 ADR이 바꾸지 않는다 — **#280으로 해소(2026-10-07):** [`ADR-EVIDENCE-010`](adr-i4-report-video-visibility-rules-removal.md)이 MVP에서 I4를 만들지 않기로 하고 이 rule을 `policy/requirement-rules-v6`에서 뺐다. I4 미관찰은 더 이상 Package를 막지 않는다
 - 1과 3의 구분 — readout이 번호판 영역 검출을 갖기 전까지 「읽지 못함」 하나(D-2)
 
 ## 7. 영향을 받는 기존 결정
@@ -193,5 +195,7 @@ builder는 FINAL이 어떤 이유로 `PASS`/`WARN`이어도 `PlateReadout` 없�
 | 실행 실패(`PlateReadout = None`) | `UNKNOWN` | `UNKNOWN`(렌더 입력 불완전) | 없음 · builder도 거절 | 불가 — notice는 `tests/case/test_plate_read_failure_projection.py` |
 | 번호판 없는 신고문 | — | — | 4 template 렌더, `UNKNOWN`·차량번호 슬롯 없음, 식별 못 함 문장 포함 | — |
 | v4·v1.1 보존 | `requirement_rules_v4.json`의 `observed_false → BLOCK`, 번호판 있는 신고문 문구 v1.1 동일 | | | |
+
+> **#280에 따른 대체 (2026-10-07).** 위 표의 I4 두 행은 v5 기준이다. `policy/requirement-rules-v6`([`ADR-EVIDENCE-010`](adr-i4-report-video-visibility-rules-removal.md))에는 그 rule이 없어 I4 미관찰은 FINAL을 막지 않고(Package 생성 · `READY` 가능), 관찰값이 들어와도 판정하지 않는다. `test_plate_boundary_d3.py`의 두 행은 그에 맞춰 바뀌었고, 나머지 행은 그대로다.
 
 계약 검증은 `tests/evidence/test_contract_validation.py`가 `report-package/v1.2`의 `vehicle_number=null` 허용과 빈 문자열·키 누락 거절을 확인한다.

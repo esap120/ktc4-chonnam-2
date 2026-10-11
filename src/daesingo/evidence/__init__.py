@@ -1,6 +1,6 @@
 """Public pure-function boundary for the evidence module."""
 
-from .assembly import assemble_evidence, calculate_evidence_needs
+from .assembly import assemble_evidence, calculate_evidence_needs, resolve_independent_facts
 from .corrections import correction_heads
 from .disposition import (
     ASSEMBLE,
@@ -45,6 +45,7 @@ __all__ = [
     "correction_heads",
     "evaluate_requirements",
     "render_report",
+    "resolve_independent_facts",
     "resolve_time",
     "validate_contract",
 ]

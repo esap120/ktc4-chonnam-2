@@ -1,5 +1,5 @@
 {
-  "note": "Evidence 전용 통합 하니스 설정이다. scenario_id, 파일 경로, 출력 ID, 평가 시각은 Runtime Data Contract가 아니다. evidence_rules/final_rules는 Runtime 입력이 아니라 활성 catalog가 선택한 목록의 기대값이다. H/U situation_response는 공용 CaseView에 없는 전체 응답 context를 명시한 test-derived 입력이며, requirement_observation_facts는 남은 번호판·시각 표시 rule을 위한 명시적 upstream Mock이지 실제 영상 검사 결과가 아니다.",
+  "note": "Evidence 전용 통합 하니스 설정이다. scenario_id, 파일 경로, 출력 ID, 평가 시각은 Runtime Data Contract가 아니다. evidence_rules/final_rules는 Runtime 입력이 아니라 활성 catalog가 선택한 목록의 기대값이다. H/U situation_response는 공용 CaseView에 없는 전체 응답 context를 명시한 test-derived 입력이며, requirement_observation_facts는 남은 사후 각인 rule(post_stamp_applied)을 위한 명시적 upstream Mock이지 실제 영상 검사 결과가 아니다. 최종 영상 번호판·시각 표시 관찰(I4)은 requirement-rules-v6에서 MVP FINAL rule이 아니므로 주입하지 않는다(ADR-EVIDENCE-010).",
   "scenarios": {
     "scenario_happy_001": {
       "selection_rev": 1,
@@ -28,7 +28,6 @@
       ],
       "final_rules": [
         "package.asset.report_video.exists",
-        "package.vehicle.plate_visible_in_report_video",
         "package.location.present",
         "package.report.content_length",
         "package.evidence.situation_response",
@@ -38,26 +37,9 @@
         "package.asset.image.count",
         "package.asset.video.count",
         "package.asset.total_count",
-        "package.deadline.within_policy",
-        "package.time.overlay_visible"
+        "package.deadline.within_policy"
       ],
-      "requirement_observation_facts": {
-        "plate_visible_in_report_video": {
-          "value": true,
-          "subject_refs": [
-            {"kind": "readout_run", "ref": "rr_h001_plate"},
-            {"kind": "derived_asset", "ref": "da_h001_plate_image"}
-          ],
-          "mock_only": true
-        },
-        "time_overlay_visible": {
-          "value": true,
-          "subject_refs": [
-            {"kind": "derived_asset", "ref": "da_h001_report_video"}
-          ],
-          "mock_only": true
-        }
-      },
+      "requirement_observation_facts": {},
       "emit_empty_needs": true
     },
     "scenario_unknown_abstain_partial_001": {
@@ -87,7 +69,6 @@
       ],
       "final_rules": [
         "package.asset.report_video.exists",
-        "package.vehicle.plate_visible_in_report_video",
         "package.location.present",
         "package.report.content_length",
         "package.evidence.situation_response",
@@ -101,14 +82,6 @@
         "package.time.post_stamp_applied"
       ],
       "requirement_observation_facts": {
-        "plate_visible_in_report_video": {
-          "value": true,
-          "subject_refs": [
-            {"kind": "readout_run", "ref": "rr_u001_plate"},
-            {"kind": "derived_asset", "ref": "da_u001_plate_image"}
-          ],
-          "mock_only": true
-        },
         "post_stamp_applied": {
           "value": true,
           "subject_refs": [

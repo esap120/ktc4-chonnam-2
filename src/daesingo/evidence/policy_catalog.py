@@ -12,7 +12,7 @@ from .errors import PolicyConfigurationError
 
 Contract = dict[str, Any]
 _POLICY_DIR = Path(__file__).parent
-_ACTIVE_REQUIREMENT_CATALOG_FILE = "requirement_rules_v5.json"
+_ACTIVE_REQUIREMENT_CATALOG_FILE = "requirement_rules_v6.json"
 _CATEGORIES = {"EVIDENCE", "TIME", "VEHICLE", "LOCATION", "ASSET", "DEADLINE", "REPORT_CONTENT"}
 _OUTCOMES = {"PASS", "WARN", "BLOCK", "UNKNOWN"}
 
@@ -159,7 +159,7 @@ def validate_requirement_catalog(value: Contract) -> Contract:
     if not isinstance(scopes, dict) or set(scopes) != {"EVIDENCE", "FINAL_PACKAGE"}:
         _fail("requirement catalog scopes are invalid")
     all_codes: list[str] = []
-    for scope, expected_count in (("EVIDENCE", 4), ("FINAL_PACKAGE", 12)):
+    for scope, expected_count in (("EVIDENCE", 4), ("FINAL_PACKAGE", 11)):
         entry = scopes[scope]
         rules = entry.get("always") if isinstance(entry, dict) else None
         if not isinstance(rules, list) or len(rules) != expected_count:
@@ -190,10 +190,16 @@ def validate_requirement_catalog(value: Contract) -> Contract:
     cases = branch.get("cases") if isinstance(branch, dict) else None
     if not isinstance(cases, list) or len(cases) != 4:
         _fail("time display catalog cases are invalid")
-    case_codes = [case.get("code") for case in cases if isinstance(case, dict)]
-    if len(case_codes) != len(cases) or any(not isinstance(code, str) for code in case_codes):
+    if any(not isinstance(case, dict) for case in cases):
         _fail("time display rule code is invalid")
     for case in cases:
+        # A no_rule branch is still selected by the time selector but adds no check (ADR-EVIDENCE-010).
+        if case.get("no_rule") is True:
+            if any(key in case for key in ("code", "category", "outcomes")):
+                _fail("time display no_rule branch must not carry a rule")
+            continue
+        if not isinstance(case.get("code"), str):
+            _fail("time display rule code is invalid")
         if case.get("category") != "TIME":
             _fail("time display rule category is invalid")
         outcomes = case.get("outcomes")

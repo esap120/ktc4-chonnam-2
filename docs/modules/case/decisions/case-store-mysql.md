@@ -1,6 +1,6 @@
 # CaseStore MySQL 영속화 — 1단계 설계
 
-> **상태: 설계 승인 (구현 전)** · 2026-10-05 · 담당 유소연(`case`) · 근거 W7 고도화 8순위 8-6(`design-refinement-w7-baseline.md`), #245 D-1 · D-2 · D-5, #246 S-4, #250 RD-01
+> **상태: 1단계 구현(2026-10-06, `case-store-mysql-plan.md`). §6 진입점은 `store=` 인자를 유지하고 `CaseStore`가 repository · conn · adapters를 묶는다 — 동작은 이 문서 그대로** · 2026-10-05 · 담당 유소연(`case`) · 근거 W7 고도화 8순위 8-6(`design-refinement-w7-baseline.md`), #245 D-1 · D-2 · D-5, #246 S-4, #250 RD-01
 > case schema · 저장소 인터페이스는 case 결정 범위다(#245 D-1 「Case table/schema는 case가 소유」). 다른 Owner와 맞춰야 하는 것은 §9에 따로 둔다.
 
 ## 1. 배경
@@ -33,7 +33,7 @@ api · worker가 별도 process가 되면서(Ops §2) case의 in-memory 전제�
 | D2 | **하이브리드 schema** — `cases`(조회 칼럼 + aggregate JSON) + append-only 레코드 테이블(§4) | 전부 정규화 — 후보 목록은 탐색마다 통째로 바뀌어 매핑 비용만 늘어난다 / JSON 하나 — append-only를 앱 코드로만 지켜야 한다 |
 | D3 | **비관적 잠금** — 쓰기 경로는 `cases` 행을 `SELECT … FOR UPDATE`로 잡고 읽는다. 읽기 경로는 `FOR SHARE` | 낙관적 `row_version` — worker T2에 재시도 루프가 필요하고, 같은 case 동시 쓰기가 드물어 얻는 게 적다 |
 | D4 | **opt-in MySQL 통합 테스트 + in-memory 구현** — 두 구현이 같은 계약 테스트를 통과한다 | CI에 MySQL 추가 — 공용 CI라 Runtime과 협의가 먼저다(§9) / sqlite — `FOR UPDATE` · JSON · 잠금 동작이 달라 통과해도 믿을 수 없다 |
-| D5 | 처리한 `execution_id` · 중단된 `job_id` 테이블은 **8-8 · 8-9에서** 만든다 | 지금 만들기 — 쓰는 코드가 없는 schema가 된다. forward-only라 나중에 더해도 된다 |
+| D5 | 처리한 `execution_id` · 중단된 `job_id` 테이블은 **8-8 · 8-9에서** 만든다. **2026-10-06 갱신:** 중단된 `job_id`는 테이블 대신 aggregate 정산 기록으로 둔다(`running-jobs-derivation.md` §결정 5) | 지금 만들기 — 쓰는 코드가 없는 schema가 된다. forward-only라 나중에 더해도 된다 |
 
 D3을 고른 근거 하나 더: 잠금 안에서 `expected_case_rev`를 검사하므로 `case.command.stale_revision` 판정이 정확해진다(검사와 저장 사이 틈이 없다).
 
@@ -203,5 +203,5 @@ adapter는 저장소에서 빼서 process 메모리의 `AdapterRegistry`(case_id
 - §8 계약 테스트가 두 구현 모두 통과(MySQL은 로컬 실행 결과를 PR에 남긴다)
 - 기존 테스트 회귀 없음 · `scripts/check_boundaries.py` PASS
 - §9 항목 확인 결과를 PR에 남긴다
-- `erd-draft.md`의 case 부분(L380~392 · L421 `correction_records` 값 저장 「미정」)을 이 schema로 갱신
+- ✅ (2026-10-06) `erd-draft.md`의 case 부분(L380~392 · L421 `correction_records` 값 저장 「미정」)을 이 schema로 갱신
 - `design-refinement-w7-baseline.md` 8-6에 1단계 완료 · 2단계 남음을 적는다

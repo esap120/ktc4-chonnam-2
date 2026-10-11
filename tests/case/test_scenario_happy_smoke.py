@@ -44,14 +44,7 @@ def test_happy_path_rev1_searching_matches_fixture():
 
     view = build_case_view(
         case,
-        running_jobs=[
-            {
-                "job_id": case.job_records[0]["job_id"],
-                "kind": "COARSE_SEARCH",
-                "label_key": "job.generic_processing",
-                "status": "RUNNING",
-            }
-        ],
+        job_executions=[{"job_id": case.job_records[0]["job_id"], "attempt": 1, "status": "RUNNING"}],
     )
 
     assert view["stage"] == rev1["stage"]

@@ -23,6 +23,7 @@
       "case_rev": 2,
       "stage": "CANDIDATE_REVIEW",
       "user_reviewed": false,
+      "description": null,
       "manifest_summary": {
         "file_count": 1,
         "ok_file_count": 1,

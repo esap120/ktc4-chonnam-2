@@ -4,6 +4,8 @@
     python scripts/consistency_eval.py rule-score                                           # 규칙 채점(호출 없음)
     python scripts/consistency_eval.py judge --run-id <id>                                   # 규칙으로 못 정한 것만 judge(JUDGE_MODEL)
     python scripts/consistency_eval.py summarize --judge-run-id <id>                         # 표 출력
+    python scripts/consistency_eval.py run --models gpt-6-luna@none gemini-3.8-flash@low --sample 10 --repeats 1 --out predictions-luna/smoke
+        # `model@effort`는 reasoning_effort 지정(#281), `--sample n`은 카테고리별로 고르게 n케이스만(smoke)
 
 비용을 줄이려고 채점을 둘로 나눈다(`results/consistency-robustness-v3.md` §비용).
 
@@ -134,27 +136,46 @@ def _predictions(out: Path):
             yield path, json.loads(path.read_text(encoding="utf-8"))
 
 
+def _stratified_sample(cases: dict[str, dict], n: int) -> dict[str, dict]:
+    """smoke(#281)용 — `scenario_tag`마다 돌아가며 앞에서부터 하나씩 n개. 매번 같은 케이스가 뽑힌다."""
+    by_tag: dict[str, list[str]] = collections.defaultdict(list)
+    for case_id, case in cases.items():
+        by_tag[case["scenario_tag"]].append(case_id)
+    picked: list[str] = []
+    queues = [list(ids) for _, ids in sorted(by_tag.items())]
+    while len(picked) < n and any(queues):
+        for q in queues:
+            if q and len(picked) < n:
+                picked.append(q.pop(0))
+    return {case_id: cases[case_id] for case_id in picked}
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     from candidates import CandidateAdapter
 
     cases = load_cases(Path(args.dataset))
+    if args.sample:
+        cases = _stratified_sample(cases, args.sample)
     out = Path(args.out)
 
-    def run_model(model_name: str) -> int:
-        adapter = CandidateAdapter(model_name, system_prompt=CANDIDATE_SYSTEM_PROMPT_V3)
+    def run_model(spec: str) -> int:
+        # `model@effort`(#281) — effort를 붙이지 않으면 모델 기본값이다. 결과 폴더 · `model_name`은 spec 그대로다.
+        model_name, _, effort = spec.partition("@")
+        adapter = CandidateAdapter(model_name, system_prompt=CANDIDATE_SYSTEM_PROMPT_V3, reasoning_effort=effort or None)
         written = 0
         for case_id, case in cases.items():
             for k in range(1, args.repeats + 1):
-                path = out / model_name / f"{case_id}.r{k}.json"
+                path = out / spec / f"{case_id}.r{k}.json"
                 if path.exists():
                     continue
                 r = adapter.extract(case["input_sentence"], case["prior_hints"])
                 _write(path, {"case_id": case_id, "scenario_tag": case["scenario_tag"], "prompt": "v3", "repeat": k,
-                              "model_name": model_name, "raw_text": r.raw_text, "parsed": r.parsed,
-                              "latency_ms": r.latency_ms, "prompt_tokens": r.prompt_tokens,
-                              "completion_tokens": r.completion_tokens, "cost_krw": r.cost_krw, "error": r.error})
+                              "model_name": spec, "reasoning_effort": effort or None, "raw_text": r.raw_text,
+                              "parsed": r.parsed, "latency_ms": r.latency_ms, "prompt_tokens": r.prompt_tokens,
+                              "completion_tokens": r.completion_tokens, "reasoning_tokens": r.reasoning_tokens,
+                              "finish_reason": r.finish_reason, "cost_krw": r.cost_krw, "error": r.error})
                 written += 1
-                print(f"[{model_name}] {case_id} r{k} error={r.error is not None}", flush=True)
+                print(f"[{spec}] {case_id} r{k} error={r.error is not None}", flush=True)
         return written
 
     with ThreadPoolExecutor(max_workers=len(args.models)) as pool:
@@ -249,7 +270,8 @@ def cmd_summarize(args: argparse.Namespace) -> None:
         tin = sum(p["prompt_tokens"] or 0 for p in preds)
         tout = sum(p["completion_tokens"] or 0 for p in preds)
         # 실행 중에 단가가 등록된 모델도 있어(gemini-3.8-flash, 2026-10-05) 기록된 값 대신 토큰으로 다시 계산한다.
-        costs = [estimate_cost_krw(model, p["prompt_tokens"], p["completion_tokens"]) for p in preds]
+        # `model@effort`(#281)는 단가표에서 모델 이름만 본다.
+        costs = [estimate_cost_krw(model.partition("@")[0], p["prompt_tokens"], p["completion_tokens"]) for p in preds]
         cost = f"{sum(costs):.2f}" if all(c is not None for c in costs) else "- (단가 미등록)"
         score = acc * cons
         gate = "통과" if hal <= HALLUCINATION_GATE else "탈락"
@@ -285,6 +307,7 @@ def main() -> None:
         if name == "run":
             s.add_argument("--models", nargs="+", required=True)
             s.add_argument("--repeats", type=int, default=5)
+            s.add_argument("--sample", type=int, help="smoke — scenario_tag별로 고르게 n케이스만(#281)")
         if name == "judge":
             s.add_argument("--run-id", required=True)
         if name == "summarize":

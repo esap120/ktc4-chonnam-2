@@ -51,8 +51,12 @@ _STAGES = (
 
 class Recorder:
     def __init__(self) -> None:
-        self.case: CaseAggregate | None = None
+        self.provider: Callable[[], CaseAggregate | None] = lambda: None  # Ctx.current — 지금 case 상태
         self.calls: list[tuple[str, tuple]] = []
+
+    @property
+    def case(self) -> CaseAggregate | None:
+        return self.provider()
 
     def key(self, stage: str) -> tuple:
         case = self.case
@@ -238,13 +242,39 @@ _REPORT_TYPES = ("TRAFFIC_VIOLATION", "MOTORCYCLE_VIOLATION")
 
 class Ctx:
     def __init__(self, case: CaseAggregate, real: RealAdapter) -> None:
-        self.case, self.real, self.n = case, real, Counter()
+        self.real, self.n = real, Counter()
         self.store = CaseStore()
         self.store.register(case, real)
+        self.case_id = case.case_id
         self.view: dict[str, Any] = {}  # 직전 행동 뒤 web이 보는 CaseView — notice 버튼은 여기 있는 것만 누른다
 
+    @property
+    def case(self) -> CaseAggregate:
+        """읽기 전용 스냅샷 — 고치려면 `mutate()`를 쓴다."""
+        return self.store.get_case(self.case_id)
+
+    def current(self) -> CaseAggregate:
+        """단계 기록용 — adapter에 지금 붙어 있는(command · mutate가 고치는 중인) aggregate.
+        stage 호출은 고치는 도중에 일어나므로 저장된 상태가 아니라 이것을 본다."""
+        return self.real._case
+
+    def mutate(self, fn):
+        case = self.store.load_for_update(self.case_id)
+        self.store.get_adapter(self.case_id, case)  # RealAdapter에 방금 로드한 aggregate를 붙인다
+        result = fn(case)
+        self.store.save(case)
+        return result
+
+    def build_view(self) -> dict[str, Any]:
+        case = self.case
+        self.store.get_adapter(self.case_id, case)
+        return service.build_view_from_adapter(case, self.real)
+
     def record(self) -> dict[str, Any] | None:
-        return self.real.get_evidence_record() if any(c.selected for c in self.case.candidates) else None
+        """정정의 이전 값 원천 — EvidenceRecord, 상황 응답 대기면 화면이 부분 투영으로 보는 상황 독립 값(#239)."""
+        if not any(c.selected for c in self.case.candidates):
+            return None
+        return self.real.get_evidence_record() or self.real.get_independent_facts()
 
     def next(self, key: str) -> int:
         self.n[key] += 1
@@ -264,34 +294,36 @@ def _cur_report_type(ctx: Ctx):
 
 
 def _plate_edit(ctx: Ctx) -> None:
-    correction.apply_correction(ctx.case, kind="PLATE_MANUAL_EDIT", target_field="vehicle_number",
-                                previous_value=_cur_plate(ctx), new_value=f"12가{9000 + ctx.next('plate')}")
+    previous, new = _cur_plate(ctx), f"12가{9000 + ctx.next('plate')}"
+    ctx.mutate(lambda case: correction.apply_correction(
+        case, kind="PLATE_MANUAL_EDIT", target_field="vehicle_number", previous_value=previous, new_value=new))
 
 
 def _report_type(ctx: Ctx) -> None:
     prev = _cur_report_type(ctx) or _REPORT_TYPES[0]
     new = _REPORT_TYPES[1] if prev == _REPORT_TYPES[0] else _REPORT_TYPES[0]
-    correction.apply_correction(ctx.case, kind="REPORT_TYPE_CHANGE", target_field="event.safety_report_type",
-                                previous_value=prev, new_value=new)
+    ctx.mutate(lambda case: correction.apply_correction(
+        case, kind="REPORT_TYPE_CHANGE", target_field="event.safety_report_type", previous_value=prev, new_value=new))
 
 
 def _event_time(ctx: Ctx) -> None:
-    correction.apply_correction(ctx.case, kind="EVENT_TIME_MANUAL", target_field="occurred_at",
-                                previous_value=_cur_time(ctx),
-                                new_value=f"2026-08-24T18:{10 + ctx.next('time'):02d}:00+09:00")
+    previous, new = _cur_time(ctx), f"2026-08-24T18:{10 + ctx.next('time'):02d}:00+09:00"
+    ctx.mutate(lambda case: correction.apply_correction(
+        case, kind="EVENT_TIME_MANUAL", target_field="occurred_at", previous_value=previous, new_value=new))
 
 
 def _noop(ctx: Ctx) -> None:
     value = _cur_time(ctx)
-    correction.apply_correction(ctx.case, kind="EVENT_TIME_MANUAL", target_field="occurred_at",
-                                previous_value=value, new_value=value)
+    ctx.mutate(lambda case: correction.apply_correction(
+        case, kind="EVENT_TIME_MANUAL", target_field="occurred_at", previous_value=value, new_value=value))
 
 
 def _time_hint(ctx: Ctx) -> None:
-    correction.edit_time_hint(ctx.case, {"time": f"{ctx.next('hint')}0분쯤 전이었어요"})
+    hint = {"time": f"{ctx.next('hint')}0분쯤 전이었어요"}
+    ctx.mutate(lambda case: correction.edit_time_hint(case, hint))
     # 시스템 단계(사용자 행동으로 세지 않음): 재탐색 → rank1 자동 선택
-    service.receive_search_candidates(ctx.case, ctx.real)
-    _auto_select(ctx.case)
+    ctx.mutate(lambda case: service.receive_search_candidates(case, ctx.real))
+    ctx.mutate(_auto_select)
 
 
 def _command(kind: str, payload: Callable[[CaseAggregate], dict[str, Any]]) -> Callable[[Ctx], None]:
@@ -408,7 +440,14 @@ def check_view(case: CaseAggregate, real: RealAdapter, view: dict[str, Any]) -> 
         bad.append("I1 READY인데 Package 없음")
     if view["stage"] == "EVIDENCE_REVIEW" and len(selected) != 1:
         bad.append(f"I2 EVIDENCE_REVIEW인데 선택 후보 {len(selected)}개")
-    if view["evidence"] is not None:
+    evidence = view["evidence"]
+    if evidence is not None and evidence["record_id"] is None:
+        # 상황 응답 대기 부분 투영(#239) — EvidenceRecord 없이 상황 독립 값만 싣는다.
+        if any(view[k] is not None for k in ("requirements_evidence", "requirements_package", "package")):
+            bad.append("I9 부분 투영인데 requirements · package 있음")
+        if any(evidence[k]["info_state"] != "INFO_UNKNOWN" for k in ("case_type_display", "report_type_display", "violation_display")):
+            bad.append("I10 부분 투영인데 상황 종속 값이 확정됨")
+    elif evidence is not None:
         record = real.get_evidence_record() or {}
         ref = (record.get("basis") or {}).get("candidate_ref", {}).get("ref")
         if not selected or ref != selected[0].candidate_id or record.get("selection_rev") != case.selection_rev:
@@ -496,33 +535,37 @@ def run_session(observation: str, actions: tuple[str, ...]) -> dict[str, Any]:
     started = time.perf_counter()
     with patched(patches):
         case = CaseAggregate.intake(case_id=f"case_{observation}", hints={}, manifest_summary={})
-        recorder.case = case
         real = RealAdapter(case_id=case.case_id, case=case, search_scope=_scope(), mock_root=MOCK_ROOT)
         ctx = Ctx(case, real)
+        recorder.provider = ctx.current
         step = "0:setup"
         try:
-            case.start_search()
-            jobs.issue_coarse_search(case, scope_ref="scope_h001", input_fingerprint="sha1:h001-coarse-search")
-            service.receive_search_candidates(case, real)
-            _auto_select(case)
-            view = service.build_view_from_adapter(case, real)
+            def setup(case: CaseAggregate) -> None:
+                case.start_search()
+                jobs.issue_coarse_search(case, scope_ref="scope_h001", input_fingerprint="sha1:h001-coarse-search")
+                service.receive_search_candidates(case, real)
+                _auto_select(case)
+
+            ctx.mutate(setup)
+            view = ctx.build_view()
             ctx.view = view
-            result["violations"] += [f"{step}: {v}" for v in check_view(case, real, view)]
+            result["violations"] += [f"{step}: {v}" for v in check_view(ctx.case, real, view)]
 
             for i, action in enumerate(actions, 1):
                 step = f"{i}:{action}"
                 run, allowed, reject_if, rev_delta = ACTIONS[action]
                 must_reject = reject_if(ctx)
                 button = _notice_button(ctx) if action == "NOTICE_ACTION" else None
-                jobs_before = len(case.job_records)
-                before, stage_before = _snapshot(case), case.stage
+                jobs_before = len(ctx.case.job_records)
+                before, stage_before = _snapshot(ctx.case), ctx.case.stage
                 mark = recorder.mark()
                 rejected = False
                 try:
                     run(ctx)
                 except InvalidTransition:
                     rejected = True
-                view = service.build_view_from_adapter(case, real)
+                case = ctx.case  # 행동 뒤 상태 — 등록할 때의 객체가 아니라 저장소에서 다시 읽는다
+                view = ctx.build_view()
                 ctx.view = view
                 called = recorder.since(mark)
                 after = _snapshot(case)

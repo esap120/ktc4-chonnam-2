@@ -12,6 +12,7 @@
       "case_rev": 3,
       "stage": "READY",
       "user_reviewed": false,
+      "description": null,
       "manifest_summary": {},
       "hints": {},
       "progress": [

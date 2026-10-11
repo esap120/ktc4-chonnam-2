@@ -114,8 +114,8 @@ class ContractUnitTests(unittest.TestCase):
         self.assertIn("package.asset.video.each_size", codes)
         self.assertIn("package.deadline.within_policy", codes)
         self.assertNotIn("package.asset.report_video.size", codes)
-        # #172 D-3 — ADR-EVIDENCE-008이 활성 catalog를 v5로 바꿨다.
-        self.assertEqual("policy/requirement-rules-v5", report["policy_ref"])
+        # #280 — ADR-EVIDENCE-010이 활성 catalog를 v6로 바꿨다.
+        self.assertEqual("policy/requirement-rules-v6", report["policy_ref"])
 
     def test_all_four_event_mappings_render_with_adopted_template_and_length(self):
         for visual_type, policy in EVENT_POLICY.items():

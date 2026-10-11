@@ -15,6 +15,20 @@ _APPROVED_GEMINI_BASE_URL_HOSTS: Final = frozenset(
 )
 
 
+# 새 이름을 먼저 읽고, 없으면 기존 이름을 읽는다(#153 합의: alias는 Search config 안).
+# ponytail: GEMINI_API_KEY alias는 팀 .env · 배포 secret migration 뒤 제거한다.
+API_KEY_ENV_NAMES: Final = ("ELICE_ML_API_KEY", "GEMINI_API_KEY")
+
+
+def api_key_from_env(env: Mapping[str, str]) -> str:
+    """Elice ML API 키. 둘 다 없으면 빈 문자열."""
+    for name in API_KEY_ENV_NAMES:
+        value = env.get(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
 @dataclass(frozen=True, slots=True)
 class GeminiSearchConfig:
     """Search 서비스 설정. 이름은 'Gemini'지만 실제 provider는 Elice ML API

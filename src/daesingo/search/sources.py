@@ -60,6 +60,9 @@ class ResolvedAnalysisSource:
     duration_sec: float
     timeline_id: str
     timeline_revision: int = 1
+    # 이 입력의 0초가 Timeline의 몇 초인가(AnalysisSource.timeline_range.start_sec).
+    # Coarse 후보는 이만큼 더해 Timeline 좌표로, Fine은 빼서 입력 좌표로 쓴다(#252).
+    timeline_start_sec: float = 0.0
 
     @property
     def source_id(self) -> str:
@@ -227,6 +230,7 @@ class SourceMeta:
     duration_sec: float
     timeline_id: str
     timeline_revision: int
+    timeline_start_sec: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +258,7 @@ class RecordingAnalysisSourceResolver:
             duration_sec=meta.duration_sec,
             timeline_id=meta.timeline_id,
             timeline_revision=meta.timeline_revision,
+            timeline_start_sec=meta.timeline_start_sec,
         )
 
     def resolve(self, scope: AnalysisScope) -> tuple[ResolvedAnalysisSource, ...]:

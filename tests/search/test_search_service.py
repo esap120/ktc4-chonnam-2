@@ -38,7 +38,11 @@ class _Provider:
                         "event_type": "SOLID_LINE_LANE_CHANGE",
                         "span": {"start_sec": 6, "end_sec": 8},
                         "at_sec": 7,
-                        "observed": ["점선처럼 보이나 횡단", "선 종류 판별 불확실"],
+                        "observed": [
+                            "점선처럼 보이나 횡단",
+                            "선 종류 판별 불확실",
+                            "점선 차로로 변경",
+                        ],
                         "score": 0.3,
                     },
                     {
@@ -115,6 +119,7 @@ def test_service_keeps_uncertain_lane_candidates_and_normalizes_rank_and_time():
     assert lane.span.representative_ms == 7000
     assert lane.span.timeline_revision == 4
     assert "점선처럼 보이나 횡단" in lane.uncertainties
+    assert "점선 차로로 변경" not in lane.uncertainties
     record = service.ledger.records()[0]
     assert record.prompt_version == "coarse-p3"
     assert len(record.prompt_fingerprint) == 64

@@ -156,4 +156,4 @@ def test_retry_plate_read_offered_when_plate_read_was_issued(monkeypatch):
         store=store,
     )
     assert response["ok"] is True
-    assert case.job_records[-1]["kind"] == "PLATE_READ"
+    assert store.get_case(case.case_id).job_records[-1]["kind"] == "PLATE_READ"

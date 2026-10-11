@@ -27,7 +27,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from daesingo.common import load_env_file
-from daesingo.search.config import GeminiSearchConfig
+from daesingo.search.config import GeminiSearchConfig, api_key_from_env
 from daesingo.search.diagnostic import run_case
 from daesingo.search.diagnostic_call import DiagnosticDependencies
 from daesingo.search.diagnostic_models import DiagnosticCase, DiagnosticProfile
@@ -122,9 +122,9 @@ def main() -> None:
         GeminiSearchConfig.from_dotenv(env),
         coarse_fps=2.0, fine_fps=4.0, max_retries=0,
     )
-    key = env.get("GEMINI_API_KEY", "").strip()
+    key = api_key_from_env(env)
     if not key:
-        raise SystemExit(f"no GEMINI_API_KEY in {args.env}")
+        raise SystemExit(f"no ELICE_ML_API_KEY in {args.env}")
     client = importlib.import_module("openai").OpenAI(
         base_url=cfg.base_url, api_key=key, max_retries=0, timeout=args.timeout_sec
     )

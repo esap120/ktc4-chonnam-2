@@ -366,7 +366,7 @@ MVP의 단일 Case 소속 규칙은 `(asset_kind, asset_ref)`의 논리 유일�
 | RemoteCopy | 독립 테이블 | `remote_copies` · analysis_source_ref FK | provider 사본 재사용·만료 / 정철원 |
 | IncidentClip | 독립 테이블 | `incident_clips` · provenance timeline id/revision FK | 원본 유래 사건 클립, 재처리 이력 / 정철원 |
 | DerivedAsset | 독립 테이블 | `derived_assets` · timeline id/revision 선택적 FK | 신고 영상 등 파생 자산 / 정철원 |
-| AnalysisScope | 독립 테이블 | `analysis_scopes` · job_records.scope_ref로 연결 | 별도 ID로 참조되는 입력. 생산자 case, eval 독립 사용 가능 / 유소연 |
+| AnalysisScope | 독립 테이블 | `analysis_scopes` · PK `(case_id, scope_id)`, case FK, `scope` JSON · job_records.scope_ref로 연결 | 별도 ID로 참조되는 입력. 생산자 case, eval 독립 사용 가능. append-only, scope 불변 (2026-10-06 구현, `decisions/case-store-mysql.md` §4) / 유소연 |
 | AnalysisRun | 독립 테이블 | `analysis_runs` · input_kind/input_ref | 탐색·검증 logical run / 서어진 |
 | CandidateEvent | 독립 테이블 | `candidate_events` · run_id 및 timeline 복합 FK | 후보 선택·근거 참조의 대상 / 서어진 |
 | VisualEvidence | 독립 테이블 — search 동의 | `visual_evidences` · run_id FK/UK, candidate_id 선택적 FK | VISUAL_VERIFY당 0..1건 / 서어진 |
@@ -377,10 +377,10 @@ MVP의 단일 Case 소속 규칙은 `(asset_kind, asset_ref)`의 논리 유일�
 | EvidenceRecord | 독립 테이블 | `evidence_records` · case/candidate/visual/time 참조 | 확정 정보의 immutable snapshot / 김준영 |
 | RequirementReport | 독립 테이블 | `requirement_reports` · evidence FK, scope 구분 | 반복 검사·정책 근거 보존 / 김준영 |
 | ReportPackage | 독립 테이블 | `report_packages` · evidence/report FK | 실제 handoff snapshot / 김준영 |
-| JobRecord | 독립 테이블 | `job_records` · case FK, scope 선택적 FK | append-only 발주 의도 / 유소연 |
+| JobRecord | 독립 테이블 | `job_records` · PK `job_id`, case FK, `seq` UK `(case_id, seq)`, `record` JSON | append-only 발주 의도. 계약 dict 그대로 (2026-10-06 구현, `decisions/case-store-mysql.md` §4) / 유소연 |
 | JobExecution | 독립 테이블 | `job_executions` · job FK | 같은 Job의 복수 시도 / 김준영·구현 정철원 |
 | UsageRecord | 독립 테이블 | `usage_records` · execution/case 선택적 FK, run 다형 참조 | 실제 호출 단위 비용 / 김준영 |
-| CorrectionRecord | 독립 테이블 | `correction_records` · case FK, supersedes FK | typed 값 변경과 계보 / 유소연 |
+| CorrectionRecord | 독립 테이블 | `correction_records` · PK `correction_id`, case FK, `seq` UK `(case_id, seq)`, `record` JSON | typed 값 변경과 계보. append-only, 계약 dict 그대로 (2026-10-06 구현, `decisions/case-store-mysql.md` §4) / 유소연 |
 
 ### 5.2 값 객체·배열·projection·미정 항목
 
@@ -388,7 +388,7 @@ MVP의 단일 Case 소속 규칙은 `(asset_kind, asset_ref)`의 논리 유일�
 
 | Contract 또는 내부 구조 | 분류 | 저장 위치 후보 / 처리 | 근거·확인할 사항 / Owner |
 | --- | --- | --- | --- |
-| Case (아키텍처 내부 aggregate) | 독립 테이블 | `cases` | 현재 stage/user_reviewed/revision·선택 참조. 상세 schema 미정 / 유소연 |
+| Case (아키텍처 내부 aggregate) | 독립 테이블 | `cases` · PK `case_id`, `case_rev` · `stage` · `selection_rev` 칼럼, `state` JSON, `created_at` · `updated_at` | 현재 stage/user_reviewed/revision·선택 참조. user_reviewed 등 나머지는 `state` JSON (2026-10-06 구현, `decisions/case-store-mysql.md` §4) / 유소연 |
 | Selection 현재값·과거 문맥 | Case 내부 필드 — case 결정 | `cases.selection_rev` 단일 현재값. 별도 선택 이력 테이블 없음 | 후보 선택 시 case_rev와 함께 증가. CaseView 비노출. 기존 CorrectionRecord/EvidenceRecord snapshot·supersedes 및 JobRecord 이력 활용 / 유소연 |
 | Case↔recording 자산 매핑 (내부 구조) | 독립 테이블 — recording 결정 | `case_asset_links` · `(case_id, asset_kind, asset_ref)` PK | §4.1. 새 공개 Contract 아님. 관리 자산은 MVP에서 단일 Case 소속, 외부 원본은 제외 |
 | AssetSpan | JSON embed | `incident_clips.source_provenance.asset_spans[]` | 독립 identity 금지. sequence와 두 범위·source/stream 참조 보존 / 정철원 |
@@ -418,7 +418,7 @@ MVP의 단일 Case 소속 규칙은 `(asset_kind, asset_ref)`의 논리 유일�
 | JobExecution.produced | **논리 Contract 확정 / 물리 저장 미정** | `job_executions.produced` JSON 또는 `job_execution_products(execution_id, kind, ref)` 정규화 | Final JobExecution Contract의 `produced: ContractRef[]` 존재·의미는 확정. 미정인 것은 MySQL 물리 표현뿐이다. 후자는 execution FK·typed 대상 검증, 실행별 run/UsageRecord 조회에 유리. 공개 produced는 Contract대로 조립하며 두 저장소를 독립 정본으로 이중 관리하지 않음. readout 호출 실행의 run 1건 및 STALE 예외 유지 / 김준영·정철원·유소연 |
 | AnalysisRun / ReadoutRun.usage_refs | projection·파생 | UsageRecord.run_kind/run_ref로 조회 | 정본은 UsageRecord.run_ref. 별도 양방향 원장 없음 / 김준영 |
 | JobExecution.usage_refs | **논리 Contract 확정 / 물리 materialization 미정** | Final serialization에는 `usage_refs: ID[]`가 존재. DB에서는 별도 저장하거나 `UsageRecord.execution_ref`로 projection하는 두 방식 검토 | UsageRecord가 비용 원장이고 JobExecution은 참조만 소비한다. `usage_refs`를 물리 저장할지 projection할지는 Runtime 구현에서 결정하되 두 방향을 독립 authoritative 원장으로 이중 관리하지 않음 / 김준영·정철원 |
-| CorrectionRecord 수정 전후 값 | 미정 | `correction_records.previous_value`, `.new_value`의 구체 물리 저장 | target별 타입 검증은 확정. 공용 JSON 사용 여부는 미정 / 유소연 |
+| CorrectionRecord 수정 전후 값 | JSON embed — case 결정(2026-10-06, decisions/case-store-mysql.md §4) | `correction_records.record` JSON에 `previous_value`, `.new_value` 포함 | target별 타입 검증은 확정. 값 저장은 계약 dict를 `record` JSON으로 그대로 — 닫음 (2026-10-06 구현, `decisions/case-store-mysql.md` §4) / 유소연 |
 | ContractRef (공통 값 구조) | 미정 | 단일 대상은 §6의 FK 후보로, 다형 참조는 kind/ref로 표현. JSON 배열 속 참조는 해당 부모를 따름 | 필드별 변환과 구현 방식을 확인. 공통 ref 테이블은 제안하지 않음 / 각 Owner |
 | Money (금액·통화 값 구조) | 미정 | UsageRecord.cost 등 부모의 상세 값 | 금액·통화는 보존하되 컬럼 분리/JSON과 물리 정밀도는 후속 결정 / 김준영 |
 | 정책·가격표·profile·template 등 versioned artifact refs | 미정 | 소유 모듈의 versioned config/artifact와 연결 | 단순 ID 참조를 근거로 신규 DB 테이블을 만들지 않음 / 각 Owner |

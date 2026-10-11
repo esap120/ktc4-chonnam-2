@@ -31,6 +31,8 @@ K1-K4가 모두 결정되어 ADR 전체 상태를 `ACCEPTED`로 올렸다. 각 �
 
 > **후속 3 (2026-09-29).** [`ADR-EVIDENCE-008`](adr-plate-identification-failure-boundary.md)이 **K3의 번호판 rule 두 건의 outcome 매핑을 대체**했다(#172 D-3). 영향 절은 §5.4(`evidence.vehicle_number.present`)·§5.6(`package.vehicle.plate_visible_in_report_video`)이며 각 표 아래에 표시만 달고 원문은 보존했다. 활성 catalog는 `policy/requirement-rules-v5`가 된다. rule 수와 다른 rule은 바뀌지 않는다.
 
+> **후속 4 (2026-10-07).** [`ADR-EVIDENCE-010`](adr-i4-report-video-visibility-rules-removal.md)이 **최종 신고용 영상 재관찰(I4) rule 두 건을 MVP `FINAL_PACKAGE`에서 뺐다**(#280). 영향 절은 §5.6(`package.vehicle.plate_visible_in_report_video`)·§5.7(`package.time.overlay_visible` 갈래)이며 각 표 아래에 표시만 달고 원문은 보존했다. 무조건 rule은 12 → 11, 활성 catalog는 `policy/requirement-rules-v6`가 된다. K1·K2·K4와 다른 rule은 바뀌지 않는다.
+
 > **후속 2 (2026-09-14).** [`ADR-EVIDENCE-005`](adr-event-context-rules-removal.md)가 **K3의 `FINAL_PACKAGE` 무조건 rule 세 건(사건 장면·전 상황·후 상황)을 제거**했다. 판정 입력을 생산하는 모듈이 계약 어디에도 없어 공용 Scenario 전부가 영구 `UNKNOWN`으로 막혀 있었고, 제품은 이 판정을 사용자 확인(`core-user-flow.md` §8·§15)에 맡기기로 이미 정해 두었다. **영향 절은 §5.6·§5.12·§5.14·§5.15**이며 각 절에 표시를 달고 원문은 보존했다. rule 수는 15 → 12, 활성 catalog는 `policy/requirement-rules-v4`가 된다. K1·K2·K4와 D1은 영향을 받지 않는다.
 
 ## 3. K1 — 첨부 용량·개수 policy
@@ -397,6 +399,8 @@ v2에서는 H/U/P/R 네 Scenario가 모두 같은 `EVIDENCE` 기본 4개를 실�
 
 > **#172 D-3에 따른 대체 (2026-09-29).** 위 표의 `package.vehicle.plate_visible_in_report_video` 관찰 `false → BLOCK`은 [`ADR-EVIDENCE-008`](adr-plate-identification-failure-boundary.md) §5.2로 `WARN`이 됐다(`policy/requirement-rules-v5`). 관찰 `true → PASS`, 미관찰 `→ UNKNOWN`은 그대로다.
 
+> **#280에 따른 제거 (2026-10-07).** 위 표의 `package.vehicle.plate_visible_in_report_video`는 [`ADR-EVIDENCE-010`](adr-i4-report-video-visibility-rules-removal.md)로 MVP `FINAL_PACKAGE`에서 빠졌다(`policy/requirement-rules-v6`, 무조건 12 → 11). 최종 `REPORT_VIDEO`를 다시 관찰하는 Producer(I4)를 MVP에서 만들지 않기 때문이다. `package.asset.report_video.exists`는 그대로다.
+
 `category`는 Final Contract §3이 고정한 7개 값(`EVIDENCE`·`TIME`·`VEHICLE`·`LOCATION`·`ASSET`·`DEADLINE`·`REPORT_CONTENT`)만 사용한다. 사건 장면·전후 상황은 별도 `EVENT` category를 신설하지 않고 `EVIDENCE`로 분류한다. K3는 evidence 내부 정책이므로 Contract enum을 확장하지 않는다.
 
 #### 사건 장면과 전·후 상황
@@ -435,6 +439,8 @@ v2에서는 H/U/P/R 네 Scenario가 모두 같은 `EVIDENCE` 기본 4개를 실�
 | `package.time.overlay_visible` | `TIME` | 최종 신고영상 관찰 `true` / `false` / 미관찰 | `PASS` / `BLOCK` / `UNKNOWN` |
 | `package.time.post_stamp_applied` | `TIME` | 최종 신고영상 관찰 `true` / `false` / 미관찰 | `PASS` / `BLOCK` / `UNKNOWN` |
 | `package.time.display_unresolved` | `TIME` | 항상 | `UNKNOWN` (`reason_code=time.source_unresolved`) |
+
+> **#280에 따른 제거 (2026-10-07).** 위 두 표의 `OK` · `time.verified_overlay_already_present` 갈래가 고르던 `package.time.overlay_visible`은 [`ADR-EVIDENCE-010`](adr-i4-report-video-visibility-rules-removal.md)로 MVP에서 빠졌다. `policy/requirement-rules-v6`에서 그 갈래는 정확히 하나로 선택되지만 rule을 추가하지 않는다(`no_rule`). 나머지 세 갈래와 「정확히 한 갈래」 selector 검증은 그대로다.
 
 `package.time.display_unresolved`는 "어느 시각 표시 rule을 적용할지조차 판정할 수 없다"를 드러내는 rule이다. 값을 모르는 상태를 rule 부재로 감추지 않고 `checks[]`에 남긴다.
 

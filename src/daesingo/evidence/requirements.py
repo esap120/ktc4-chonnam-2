@@ -35,14 +35,12 @@ _PACKAGE_ROLES = {"REPORT_VIDEO", "PLATE_IMAGE"}
 _SUPPORTED_RULES = {
     "evidence.vehicle_number.present", "evidence.occurred_at.present",
     "evidence.visual_event.present", "evidence.location.present",
-    "package.asset.report_video.exists", "package.vehicle.plate_visible_in_report_video",
-    "package.location.present",
+    "package.asset.report_video.exists", "package.location.present",
     "package.report.content_length", "package.evidence.situation_response",
     "package.asset.image.each_size", "package.asset.video.each_size",
     "package.asset.total_size", "package.asset.image.count", "package.asset.video.count",
     "package.asset.total_count", "package.deadline.within_policy",
-    "package.time.overlay_visible", "package.time.post_stamp_applied",
-    "package.time.display_unresolved",
+    "package.time.post_stamp_applied", "package.time.display_unresolved",
 }
 
 
@@ -91,7 +89,8 @@ def _selected_rules(catalog: Contract, scope: str, record: Contract,
             "status": status, "post_stamp_reason_code": reason}]
         if len(selected) != 1:
             raise PolicyConfigurationError("time display branch must select exactly one rule")
-        rules.append(deepcopy(selected[0]))
+        if selected[0].get("no_rule") is not True:
+            rules.append(deepcopy(selected[0]))
     codes = [rule["code"] for rule in rules]
     if not rules or len(codes) != len(set(codes)):
         raise PolicyConfigurationError("selected requirement rules must be non-empty and unique")
@@ -208,8 +207,6 @@ def _observation_check(rule: Contract, observation_facts: Contract) -> Contract:
     condition = "not_observed" if fact is None else "observed_true" if fact["value"] else "observed_false"
     code = rule["code"]
     reason_roots = {
-        "package.vehicle.plate_visible_in_report_video": "readout.plate_visibility",
-        "package.time.overlay_visible": "time.overlay_visibility",
         "package.time.post_stamp_applied": "time.post_stamp",
     }
     suffix = {"observed_true": "confirmed", "observed_false": "failed",

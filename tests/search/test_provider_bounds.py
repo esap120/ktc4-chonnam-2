@@ -448,7 +448,9 @@ def test_retry_stops_when_run_deadline_exhausted_between_attempts(
             now[0] += 0.2  # each attempt burns 200ms of budget
             raise _FakeApiError("rate limited", status_code=429)
 
-    mod = _make_openai_module(lambda **_kw: _FakeClient(_Chat(_ClockBurningCompletions())))
+    mod = _make_openai_module(
+        lambda **_kw: _FakeClient(_Chat(_ClockBurningCompletions()))
+    )
     original = importlib.import_module
 
     def fake_import(name: str) -> ModuleType:
@@ -465,7 +467,9 @@ def test_retry_stops_when_run_deadline_exhausted_between_attempts(
         "key", GeminiSearchConfig(max_retries=3, retry_base_sec=5.0)
     )
 
-    deadline = RunDeadline(clock, budget_ms=100)  # 100ms budget; one attempt exhausts it
+    deadline = RunDeadline(
+        clock, budget_ms=100
+    )  # 100ms budget; one attempt exhausts it
     request = CoarseRequest(
         _source(),
         (VisualEventType.SIGNAL,),
@@ -478,3 +482,46 @@ def test_retry_stops_when_run_deadline_exhausted_between_attempts(
         _ = provider.search_coarse(request)
 
     assert len(call_counts) == 1  # exhausted after the first attempt → no retry
+
+
+def test_retry_attempt_timeout_is_what_remains_of_run_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """30s budget, first attempt burns 20s then 429 → the retry gets ~10s, not 30s."""
+    now = [0.0]
+    timeouts: list[object] = []
+
+    class _SlowThenOk:
+        def parse(self, **kwargs: object) -> _Completion:
+            timeouts.append(kwargs["timeout"])
+            if len(timeouts) == 1:
+                now[0] += 20.0
+                raise _FakeApiError("rate limited", status_code=429)
+            return _Completion([_Choice(_Msg(CoarseResponse(candidates=())))])
+
+    mod = _make_openai_module(lambda **_kw: _FakeClient(_Chat(_SlowThenOk())))
+    original = importlib.import_module
+
+    def fake_import(name: str) -> ModuleType:
+        return mod if name == "openai" else original(name)
+
+    monkeypatch.setattr("daesingo.search.provider.importlib.import_module", fake_import)
+    monkeypatch.setitem(sys.modules, "openai", mod)
+
+    media_file = tmp_path / "clip.mp4"
+    media_file.write_bytes(b"bytes")
+    provider = GeminiProvider(
+        "key", GeminiSearchConfig(max_retries=1, retry_base_sec=0.001)
+    )
+    deadline = RunDeadline(lambda: now[0], budget_ms=30_000)
+    request = CoarseRequest(
+        _source(),
+        (VisualEventType.SIGNAL,),
+        media=_make_media(media_file),
+        timeout_sec=deadline.remaining_sec(),
+        deadline=deadline,
+    )
+
+    _ = provider.search_coarse(request)
+
+    assert timeouts == [30.0, 10.0]
