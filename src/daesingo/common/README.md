@@ -45,9 +45,11 @@ claim latency는 transaction 시작부터 COMMIT 응답 확인까지의 monotoni
 
 runner 성공 후 재실행은 version 기준 no-op이다. MySQL implicit-commit DDL은 전체 rollback되지 않으므로 실패한 revision에 부분 DDL이 남으면 검사·복구가 필요하다. RT-02는 Implementation Log 기준 `DONE`, RT-03은 (b) 독립 재리뷰 전까지 `IN_PROGRESS`다.
 
+RT-06(a)는 `jobs/retry_policy.py`의 만료·상한·backoff pure logic과 `jobs/sweep.py`의 caller transaction 참여·주기 thread를 추가한다. STALE과 다음 QUEUED는 같은 commit이며, 원본 row 잠금 재확인·기존 UNIQUE(job_id, attempt)·재시도 동안 고정한 retry ID로 중복을 막는다. 만료 판단과 시각은 DB `NOW(6)`을 사용한다. Worker startup에서 첫 claim 전 실행하고 handler와 별개 thread로 반복한다. RT-07 hook은 sweep commit·connection 반환 뒤 실행한다. claim receipt의 내부 `queued_at`으로 attempt별 queue 대기 지표를 기록한다.
+
 아직 실제 구현되지 않은 범위:
 
-- heartbeat / lease 갱신 / stale sweep
+- terminal T2 재전달 scan · 실제 kill E2E(RT-06(b))
 - Runtime UsageRecord DB persistence
 - API / Worker 실제 app·handler 조립(config bootstrap만 있음)
 - Runtime health endpoint

@@ -11,6 +11,15 @@ from daesingo.worker.composition import compose_worker
 from daesingo.worker.registry import KindRegistry
 
 
+def _failure(logger, event):
+    # The process boundary must remain safe even if the sink raises a fatal.
+    # Never serialize the original exception or ask stdlib to print a traceback.
+    try:
+        log_event_best_effort(logger, event, level=logging.ERROR)
+    except BaseException:
+        pass
+
+
 def main() -> int:
     startup = bootstrap(revision="unknown")
     stop = Event()
@@ -30,19 +39,24 @@ def main() -> int:
         # Real Recording/Search capabilities are registered in RT-10.
         registry = KindRegistry({})
         compose_worker(engine=engine, startup=startup, registry=registry, stop=stop).run()
-    except Exception:
-        log_event_best_effort(startup.logger, "runtime.worker.failed", level=logging.ERROR)
+    except BaseException:
+        stop.set()
+        _failure(startup.logger, "runtime.worker.failed")
         code = 1
     finally:
         try:
             if engine is not None:
                 engine.dispose()
-        except Exception:
-            log_event_best_effort(startup.logger, "runtime.worker.cleanup_failed", level=logging.ERROR)
+        except BaseException:
+            _failure(startup.logger, "runtime.worker.cleanup_failed")
             code = 1
         finally:
             for sig, handler in previous.items():
-                signal.signal(sig, handler)
+                try:
+                    signal.signal(sig, handler)
+                except BaseException:
+                    _failure(startup.logger, "runtime.worker.cleanup_failed")
+                    code = 1
     return code
 
 
