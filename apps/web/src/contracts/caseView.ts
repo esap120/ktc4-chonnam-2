@@ -1,4 +1,4 @@
-// CaseView — `contract-job-record-case-view.md` B절 §5·§6·§7 (case-view/v1.3)
+// CaseView — `contract-job-record-case-view.md` B절 §5·§6·§7 (case-view/v1.7)
 //
 // 이 파일이 web의 타입 정본이다. `apps/prototype/src/types.ts`의 CaseState는
 // 참고만 하고 가져오지 않는다(`docs/modules/web/decisions/web-stack.md`).
@@ -76,6 +76,8 @@ export interface PackageView {
   report_fields: Record<string, string | null>
   report_field_states: Record<string, FieldState>
   unconfirmed_fields: string[]
+  /** 최종 신고문(v1.7, #274). `package`가 있으면 둘 다 non-null이고 description은 줄바꿈 평문이다. */
+  report: { title: string; description: string }
   artifact_ref: string | null
   capabilities: string[]
   warnings: string[]
@@ -142,6 +144,11 @@ export interface CaseView {
     duration_sec: number
     range: [string, string] | null
   }
+  /**
+   * 사용자가 분석 시작 때 적은 설명 원문(v1.7, #259). 분석 시작 전 `null`, 빈 설명이면 `""`.
+   * `package.report.description`(최종 신고문)과 이름만 같은 다른 값이다.
+   */
+  description: string | null
   hints: { time: string | null; vehicle: string | null; situation: string | null; location: string | null }
   progress: { step: string; state: ProgressState }[]
   candidates: Candidate[]

@@ -50,6 +50,20 @@ describe('HintRecall — 사용자가 말한 것을 그대로 옮긴다', () => 
     expect(container.textContent).toContain('기억 단서를 남기지 않으셨습니다')
   })
 
+  it('단서 구조화가 안 됐으면 사용자가 적은 원문을 그대로 보여준다 (v1.7)', () => {
+    const none = { time: null, vehicle: null, situation: null, location: null }
+    const { container } = render(<HintRecall hints={none} description={'흰색 SUV가\n실선을 넘었어요'} />)
+    expect(container.querySelector('.hint-original')?.textContent).toBe('흰색 SUV가\n실선을 넘었어요')
+    expect(container.textContent).not.toContain('기억 단서를 남기지 않으셨습니다')
+    cleanup()
+    // 단서가 하나라도 있으면 원문 대신 단서를 쓰고, 원문이 비어 있으면 없다고 적는다
+    const a = render(<HintRecall hints={{ ...none, vehicle: '흰색 SUV' }} description="원문" />)
+    expect(a.container.querySelector('.hint-original')).toBeNull()
+    cleanup()
+    const b = render(<HintRecall hints={none} description="  " />)
+    expect(b.container.textContent).toContain('기억 단서를 남기지 않으셨습니다')
+  })
+
   it('hints가 통째로 비어 있어도 깨지지 않는다', () => {
     // 실제 파이프라인이 `{}`를 내리던 시기가 있었다(이슈 #103). 계약상 네 키는
     // 항상 있지만 화면이 그 약속에 기대어 터지지는 않게 둔다.

@@ -43,6 +43,7 @@ function view(candidates: Candidate[]): CaseView {
     stage: 'EVIDENCE_REVIEW',
     user_reviewed: false,
     manifest_summary: { file_count: 1, ok_file_count: 1, failed_file_count: 0, duration_sec: 600, range: null },
+    description: null,
     hints: { time: '18시쯤', vehicle: '흰색 SUV', situation: null, location: null },
     progress: [],
     candidates,

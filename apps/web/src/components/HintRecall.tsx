@@ -19,15 +19,22 @@ import '../styles/candidates.css'
 // 카드마다 반복하지 않는 이유도 같다. `hints`는 사건 단위 값이라 카드 3장에
 // 같은 「흰색 SUV」를 세 번 적으면 후보별 정보처럼 보인다 — 대조를 안 한다면서
 // 대조한 것처럼 읽힌다.
-export function HintRecall(props: { hints: CaseView['hints'] }): JSX.Element {
+export function HintRecall(props: { hints: CaseView['hints']; description?: CaseView['description'] }): JSX.Element {
   // 계약상 네 키는 항상 있지만 실제 산출물이 `{}`로 오는 사례가 있었다(이슈
   // #103). 키가 없는 것과 값이 null인 것을 같게 다룬다.
   const given = HINT_ORDER.filter((key) => props.hints?.[key])
+  // 단서 구조화가 안 됐어도(진행 중·실패) 사용자가 적은 원문은 그대로 보여 준다(v1.7, #259).
+  // 원문을 web이 해석하거나 나누지 않는다.
+  const original = props.description?.trim() ? props.description : null
 
   return (
     <div className="hint-recall">
       <div className="sec-label">기억하신 것</div>
-      {given.length === 0 ? (
+      {given.length === 0 && original ? (
+        <span className="hint-original" style={{ whiteSpace: 'pre-wrap' }}>
+          {original}
+        </span>
+      ) : given.length === 0 ? (
         <span className="hint-none">{HINT_NONE}</span>
       ) : (
         <ul className="hint-chips">
