@@ -40,7 +40,7 @@ W5/W6 마감(월요일 20:00 회의 — 대표 시나리오 1개가 E2E를 실�
 맞춰 readout/recording도 이미 실제 공개 함수가 있다는 걸 확인했다(`real_e2e.py` 참고
 — recording의 `resolve_span`/`build_incident_clip`, readout의 `read_plate`/
 `read_overlay_time` 전부 fixture 없이도 순수 호출 가능). evidence 6개 메서드를
-`real_e2e.build_fixture_evidence_bundle()`(당시 이름 `build_fixture_evidence_bundle`)로 교체했다 — recording→search.verify_visual
+`real_e2e.build_fixture_evidence_bundle()`(당시 이름 `build_happy_001_evidence_bundle`)로 교체했다 — recording→search.verify_visual
 →readout→evidence 전체 체인을 실제 함수로 잇는다.
 
 `get_job_executions()`(common/runtime)는 여전히 `NotImplementedError`다 — 다만
