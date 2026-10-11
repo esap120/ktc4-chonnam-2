@@ -8,11 +8,8 @@ import '../styles/candidates.css'
 // 내보내지 않는다. v5 fixture는 아직 키를 안 내려서 지금은 전부 fallback
 // 문구가 뜬다 — 키가 들어오면 문구가 자동으로 바뀐다.
 //
-// `ordinal`은 candidates[] 배열에서의 자리(1부터)다. 화면이 계산한 순위가
-// 아니라 case가 준 순서를 그대로 센 것이다(core-user-flow.md §8-2의
-// 「시간축 마커와 같은 번호」 자리). case가 `candidates[].rank`를 싣고 배열을
-// rank 오름차순으로 내리기로 했다(#122, 9/27). 타입에 `rank`가 들어오면 이
-// 번호를 그 값으로 바꾼다.
+// 번호는 case가 준 `rank`다(#122). web이 순위를 계산하지 않는다. mock fixture처럼
+// `rank`가 없으면 case가 준 배열 순서(`ordinal`, 1부터)를 그대로 쓴다.
 //
 // `selected`는 사용자가 고른 후보가 아니라 case가 자동 선택한 현재 초안의
 // 기준 후보다(§8-1, #122). 태그 문구도 그 뜻으로 적는다.
@@ -26,7 +23,7 @@ export function CandidateCard(props: { candidate: Candidate; ordinal: number }):
       </div>
       <div className="cand-b">
         <div className="cand-h">
-          <span className="cnum">{props.ordinal}</span>
+          <span className="cnum">{c.rank ?? props.ordinal}</span>
           <span className="cand-tc">{c.at === null ? '시각 미확정' : formatValue(c.at)}</span>
           {c.selected && <span className="cand-tag">지금 신고자료 기준</span>}
         </div>

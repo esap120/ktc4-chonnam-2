@@ -93,6 +93,13 @@ export interface Candidate {
    * `undefined`를 받을 수 있고, `null`과 같게 다룬다(둘 다 fallback 문구).
    */
   at_provenance_label_key?: string | null
+  /** case가 매긴 후보 순위(1부터, #122; 계약상 int|null). 배열은 rank 오름차순. mock fixture는 아직 안 내린다. */
+  rank?: number | null
+  /**
+   * 후보의 시간축 위치(ms, #184). `null`이면 마커를 그리지 않고 stale 배지만 둔다.
+   * mock fixture는 아직 안 내린다.
+   */
+  marker_ms?: number | null
   observed: string
   thumb_ref: string | null
   selected: boolean

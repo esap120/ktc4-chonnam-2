@@ -118,6 +118,21 @@ describe('CandidatesScreen — 나란히 비교(A-1)', () => {
   })
 })
 
+describe('CandidatesScreen — rank 번호', () => {
+  it('case가 준 rank를 번호로 쓰고, 없으면 배열 순서를 센다', () => {
+    const withRank = view([
+      candidate({ candidate_id: 'c1', rank: 2 }),
+      candidate({ candidate_id: 'c2', rank: 5 }),
+    ])
+    const a = render(<CandidatesScreen view={withRank} />)
+    expect([...a.container.querySelectorAll('.cnum')].map((n) => n.textContent)).toEqual(['2', '5'])
+    cleanup()
+    const noRank = view([candidate({ candidate_id: 'c1' }), candidate({ candidate_id: 'c2' })])
+    const b = render(<CandidatesScreen view={noRank} />)
+    expect([...b.container.querySelectorAll('.cnum')].map((n) => n.textContent)).toEqual(['1', '2'])
+  })
+})
+
 // ── 실제 데이터 회귀 ──────────────────────────────────────────────
 //
 // 값을 손으로 베껴 두지 않고 로더가 읽는 실제 산출물을 그대로 먹인다
