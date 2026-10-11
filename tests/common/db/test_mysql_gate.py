@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[3]
 # Independent role/scenario acceptance inventory, deliberately not imported
 # from the implementation being tested. Test function names are irrelevant.
 REQUIRED_CHECKS = (
+    ("heartbeat_lifecycle", "owned_cleanup"),
+    *(("heartbeat_lifecycle", scenario) for scenario in (
+        "renewal", "zero_rows", "commit_race", "retry_fence", "cleanup", "slow_attempt", "error_isolation", "connection_fault", "zero_commit_failure")),
     # RT-04(b): T2 delivery, atomicity, retry and fake E2E-0.
     *(("worker_t2", scenario) for scenario in (
         "delivery", "rollback", "t1_gap", "commit_recovery", "metric",
@@ -74,6 +77,17 @@ REQUIRED_CHECKS = (
 )
 
 REQUIRED_PARAMETERS = (
+    *(("heartbeat_lifecycle", "retry_fence", mode) for mode in ("transaction", "loop")),
+    *(("heartbeat_lifecycle", "owned_cleanup", mode) for mode in
+      ("success", "heartbeat_interrupt", "handler_interrupt")),
+    *(("heartbeat_lifecycle", "zero_rows", sink) for sink in
+      ("healthy", "logger", "filter", "handler", "observer")),
+    *(("heartbeat_lifecycle", "connection_fault", fault) for fault in ("disconnect", "timeout")),
+    *(("heartbeat_lifecycle", "commit_race", mode) for mode in ("local_loss", "db_transfer")),
+    *(("heartbeat_lifecycle", "cleanup", mode) for mode in
+      ("success", "failure", "exception", "interrupt", "exit", "signal")),
+    *(("heartbeat_lifecycle", "error_isolation", sink) for sink in
+      ("healthy", "logger", "filter", "handler", "observer")),
     *(("worker_t2", "delivery", outcome) for outcome in
       ("APPLIED", "ALREADY_APPLIED", "STOPPED_WAITING", "CANCELLED", "SUPERSEDED")),
     *(("worker_t2", "rollback", fault) for fault in
@@ -185,6 +199,21 @@ def good_report():
 
 def test_report_accepts_complete_real_mysql_evidence():
     checker().validate_report(good_report())
+
+
+@pytest.mark.parametrize("scenario", ["renewal", "zero_rows", "commit_race", "retry_fence",
+                                    "cleanup", "slow_attempt", "error_isolation", "connection_fault",
+                                    "zero_commit_failure", "owned_cleanup"])
+def test_heartbeat_acceptance_family_is_required(scenario):
+    report = good_report()
+    role = "heartbeat_lifecycle"
+    removed = {n["nodeid"] for n in report["collected"] if any(
+        c["role"] == role and c["scenario"] == scenario for c in n.get("checks", []))}
+    report["collected"] = [n for n in report["collected"] if n["nodeid"] not in removed]
+    report["selected"] = [n for n in report["selected"] if n not in removed]
+    report["reports"] = [r for r in report["reports"] if r["nodeid"] not in removed]
+    with pytest.raises(ValueError, match="role/scenario"):
+        checker().validate_report(report)
 
 
 @pytest.mark.parametrize("broken", ["empty", "skip", "xfail", "deselected", "missing_call", "missing_scenario", "collection", "wrong_server", "missing_case"])

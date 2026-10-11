@@ -14,7 +14,9 @@ RT-01의 `bootstrap.py`를 구현했다. `bootstrap(revision=...)`은 `DAESINGO_
 
 RT-04(a)는 `python -m daesingo.worker` 진입점 · 단일 kind registry · claim loop · ExecutionContext · T1 terminal 기록을 구현한다. 기존 Worker engine/claim/finish/transaction helper를 재사용하며 claim commit 후 handler를 실행한다. 빈 queue는 B-Q1, 완료 후 다음 claim은 즉시, DB 오류는 B-Q3 대기다. T1은 B-D8 재시도 소진 뒤에도 결과를 유지하고 B-Q3 간격으로 재기록한다. SIGINT/SIGTERM은 실행 중 handler·T1을 중단하지 않고 다음 idle 지점에서 반영한다.
 
-실제 handler 등록은 비어 있다. 미등록 kind는 `RUNTIME_UNREGISTERED_KIND`로 `FAILED`다. 성공·모듈 failure taxonomy·예외 처리와 registration은 fake handler 및 실제 MySQL로 검증한다. heartbeat/cancel은 RT-05, STALE/sweep은 RT-06, usage 영속은 RT-07, 실제 Recording/Search handler는 RT-10 범위다.
+실제 handler 등록은 비어 있다. 미등록 kind는 `RUNTIME_UNREGISTERED_KIND`로 `FAILED`다. 성공·모듈 failure taxonomy·예외 처리와 registration은 fake handler 및 실제 MySQL로 검증한다. cancel은 RT-05(b), STALE/sweep은 RT-06, usage 영속은 RT-07, 실제 Recording/Search handler는 RT-10 범위다.
+
+RT-05(a)는 claim된 execution별 heartbeat thread를 handler/T1 동안 유지한다. monotonic fixed-rate tick에서 동기 lease 갱신을 한 번만 실행하고, 느린 시도나 관측 때문에 지난 tick은 집계하여 건너뛴다. B-D9 전용 Connection은 Worker QueuePool과 분리되며 실패하면 다음 tick에 재연결한다. heartbeat에는 transaction retry를 적용하지 않는다. 0행 UPDATE는 COMMIT 성공 여부와 무관하게 ownership fence를 설정한다. T1의 기존 owner 조건부 UPDATE에 더해 B-D8 매 시도와 COMMIT 직전에도 fence를 확인한다. 실행이 끝나면 finally에서 thread를 stop/join하고 연결과 소유 engine을 닫는다. 단계별 I/O timeout은 전체 시도나 join의 hard deadline을 뜻하지 않는다.
 
 RT-04(b)는 `compose_worker(reflector=...)`로 `ResultReflector`를 주입한다. T1 commit 후 별도 B-D8 transaction에서 reflector → 후속 enqueue → `case_applied_at`을 처리한다. reflector는 전달된 Connection에서 Case 행을 먼저 잠그고 `execution_id` 중복 반영을 판정하며 직접 commit·rollback·retry하지 않는다. `APPLIED`만 immutable `RuntimeJobRecord(job_id, case_id, kind)` 목록을 반환할 수 있다. `ALREADY_APPLIED`와 `NOT_APPLIED(STOPPED_WAITING/CANCELLED/SUPERSEDED)`도 전달 완료 표식을 기록한다. T2 실패는 전체 rollback하고 이미 확정된 T1을 유지한다. T2 DB 오류(재시도 소진 포함)는 안전한 DB 오류 event와 `runtime.reflect.failed`를 기록하고 다음 claim 전에 interruptible B-Q3 대기를 거친다. 일반 reflector 예외는 `runtime.reflect.failed`만 기록하고 DB 장애 대기 없이 다음 claim으로 진행한다. 표식 없는 terminal 재전달 scan은 RT-06에 남긴다.
 

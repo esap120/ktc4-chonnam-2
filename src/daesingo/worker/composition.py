@@ -10,8 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
 from daesingo.common.bootstrap import Startup
+from daesingo.common.db import create_heartbeat_engine
 from daesingo.common.db.transactions import run_worker_transaction
 from daesingo.common.jobs.execution import ExecutionContext, HandlerResult
+from daesingo.common.jobs.heartbeat import Heartbeat, LeaseConnection
 from daesingo.common.jobs.repository import claim_one, finish
 from daesingo.common.jobs.schema import job_execution
 from daesingo.common.jobs.worker_loop import WorkerLoop
@@ -23,6 +25,7 @@ from daesingo.worker.registry import KindRegistry
 def compose_worker(
     *, engine: Engine, startup: Startup, registry: KindRegistry, stop: Event,
     reflector: ResultReflector | None = None,
+    heartbeat_engine: Engine | None = None, heartbeat_observe: Callable | None = None,
     worker_id: str | None = None, sleep: Callable[[float], None] = time.sleep,
     idle_wait: Callable[[float], object] | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -41,6 +44,7 @@ def compose_worker(
         produced = [ref.model_dump() for ref in result.produced]
 
         def operation(conn):
+            context.ownership.check()
             changed = finish(conn, context.execution_id, owner, status=result.status,
                              produced=result.produced, failure_kind=result.failure_kind)
             if changed == 1:
@@ -58,7 +62,19 @@ def compose_worker(
                         and stored["produced"] == produced
                         and stored["failure_kind"] == result.failure_kind)
 
-        return run_worker_transaction(engine, operation, sleep=sleep, logger=startup.logger)
+        return run_worker_transaction(engine, operation, sleep=sleep, logger=startup.logger,
+                                      before_attempt=context.ownership.check,
+                                      commit_guard=context.ownership.commit_guard)
+
+    def heartbeat(context):
+        dedicated = heartbeat_engine if heartbeat_engine is not None else create_heartbeat_engine(
+            startup.config.db, startup.config.heartbeat)
+        lease = LeaseConnection(dedicated, context.execution_id, owner, settings.lease_duration_sec,
+                                fence=context.ownership,
+                                owns_engine=heartbeat_engine is None)
+        return Heartbeat(renew=lease.renew, close=lease.close, fence=context.ownership,
+                         interval=settings.heartbeat_interval_sec, logger=startup.logger,
+                         observe=heartbeat_observe)
 
     def reflect(context: ExecutionContext, terminal: HandlerResult):
         incoming = ReflectionInput(context.execution_id, context.job_id, context.case_id,
@@ -81,4 +97,5 @@ def compose_worker(
         dispatch=registry.dispatch, record=record, settings=settings, stop=stop,
         logger=startup.logger, sleep=sleep, idle_wait=idle_wait or stop.wait, clock=clock,
         reflect=reflect if reflector is not None else None,
+        heartbeat=heartbeat,
     )
