@@ -12,7 +12,7 @@ Connection.commit()/rollback() misuse only; it cannot enforce arbitrary Python.
 """
 
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from contextvars import ContextVar
 from dataclasses import dataclass
 import logging
@@ -91,7 +91,8 @@ def _callback_boundary(conn: Connection):
         event.remove(conn, "rollback", reject)
 
 
-def _attempt(engine: Engine, operation: Callable[[Connection], T], state: dict) -> T:
+def _attempt(engine: Engine, operation: Callable[[Connection], T], state: dict,
+             commit_guard=None) -> T:
     state["phase"] = "acquire"
     try:
         with engine.connect() as conn:
@@ -99,16 +100,18 @@ def _attempt(engine: Engine, operation: Callable[[Connection], T], state: dict) 
             token = _active_attempt.set((conn, state))
             try:
                 state["started_ns"] = time.monotonic_ns()
-                with conn.begin():
+                with ExitStack() as guard_scope, conn.begin():
                     state["phase"] = "body"
                     try:
                         with _callback_boundary(conn):
                             result = operation(conn)
+                        if commit_guard is not None:
+                            guard_scope.enter_context(commit_guard())
+                        # Before DBAPI commit: socket send failures can be ambiguous.
+                        state["phase"] = "committing"
                     except BaseException as error:
                         primary = error
                         raise
-                    # Before DBAPI commit: socket send failures can be ambiguous.
-                    state["phase"] = "committing"
                 # Context exit acknowledged COMMIT, before pool checkin/close.
                 state["duration_ms"] = (time.monotonic_ns() - state["started_ns"]) / 1_000_000
             except BaseException as error:
@@ -171,18 +174,25 @@ def run_worker_transaction(
     engine: Engine, operation: Callable[[Connection], T], *,
     sleep: Callable[[float], None] = time.sleep, logger: logging.Logger | None = None,
     observe: Callable[[TransactionAttempt], None] | None = None,
+    before_attempt: Callable[[], None] | None = None,
+    commit_guard: Callable | None = None,
 ) -> T:
     """At most three complete DB attempts; resources release before each 1s wait.
 
     Pool exhaustion is not a B-D8 retry (the Worker loop owns B-Q3). Heartbeat
     must not use this helper. Unknown-commit replays require a DB-state/idempotency
     check in the operation; exhaustion preserves whether any commit was unknown.
+    Optional admission/commit guards stay domain-independent. A commit guard is
+    entered after the callback and held through transaction context exit; its
+    failure rolls back and retains the same primary-exception precedence.
     """
     unknown = False
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        if before_attempt is not None:
+            before_attempt()
         state: dict = {}
         try:
-            result = _attempt(engine, operation, state)
+            result = _attempt(engine, operation, state, commit_guard)
             _observe(observe, state, "COMMITTED")
             return result
         except Exception as error:

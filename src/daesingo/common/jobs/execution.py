@@ -1,11 +1,12 @@
 """Execution-scoped invocation data, without DB resources or domain state."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from daesingo.common.job_execution import RuntimeContractRef
+from daesingo.common.jobs.heartbeat import OwnershipFence
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class ExecutionContext:
     # Reserved injection points. RT-05/07 own their protocols and behavior.
     cancel_signal: object | None = None
     usage_sink: object | None = None
+    ownership: OwnershipFence = field(default_factory=OwnershipFence, compare=False, repr=False)
 
 
 class HandlerResult(BaseModel):

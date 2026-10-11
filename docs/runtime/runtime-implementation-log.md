@@ -41,6 +41,7 @@ Plan §0.1이 Task PR로 넘긴 선택은 미리 행을 둔다. 그 밖의 선�
 | application/worker UTC checkout | connection 생성·checkout에서 UTC session 복원 · B-L6 `NOW(6)` 유지 | RT-03(b) · 로컬, PR 미생성 | 아래 RT-03(b) · `common/db/engines.py` |
 | attempt observer · claim latency | sanitized outcome/duration · transaction 시작 → COMMIT acknowledgement · checkout/checkin/retry 대기 제외 · 관측 실패와 retry 분리 | RT-03(b) · 로컬, PR 미생성 | 아래 RT-03(b) · `common/db/transactions.py` |
 | Worker invocation · T1 replay | 불변 kind registry · execution context/result · claim/handler/T1 분리 · 결과 보존 재시도 · durable terminal facts 재조회 | RT-04(a) · 로컬, PR 미생성 · `Refs #291` | 아래 RT-04 · `worker/composition.py` · `common/jobs/worker_loop.py` |
+| heartbeat lifecycle · commit fencing | 실행별 전용 thread/NullPool connection · monotonic fixed-rate/skip · 내부 ownership fence · B-D8 매 시도/COMMIT 직전 guard · BaseException 소유 thread 전파 | RT-05(a) · 로컬 미커밋 · `Refs #292` | 아래 RT-05 · `common/jobs/heartbeat.py` · `common/db/transactions.py` |
 | `DECIMAL` precision/scale (Plan P-10) | pending | RT-07 | — |
 | type checker 도구 (Plan RT-15) | pending | RT-15 | — |
 | secret scan 배치 — PR gate 편입 여부 (Plan RT-15) | pending | RT-15 | — |
@@ -632,35 +633,93 @@ Status: **IN_PROGRESS** · PR 연결: **`Refs #291`** · PR 번호 **pending** �
 
 ## RT-05 — Lease · heartbeat · fencing · 협력적 중단
 
-Status: NOT_STARTED · Issue: #292 · Audit: A
+Status: IN_PROGRESS · Issue: #292 · Audit: A · 연결 문구: `Refs #292`
 
 | PR | 내용 | Merge SHA |
 | --- | --- | --- |
-| — | — | — |
+| 로컬 미커밋 | RT-05(a) heartbeat · lease · fencing (독립 재리뷰 준비) | — |
 
 ### 구현 결과
 
-—
+- claimed execution마다 `common/jobs/heartbeat.py`의 전용 thread를 생성한다. main thread는 claim → handler → T1을 수행하고, heartbeat thread는 B-D9 engine의 Connection 하나를 보관하여 B-L1 주기로 조건부 lease UPDATE를 실행한다. DB 시간은 `NOW(6)`이며 lease duration은 기존 WorkerSettings를 소비한다.
+- thread는 monotonic clock의 `T0 + k × interval`을 따른다. 동기 DB 시도가 interval보다 길면 완료 뒤 해당 시도 중 지나간 tick을 집계하고 다음 미래 tick을 기다린다. 중첩 시도·밀린 tick 몰아 실행·transaction helper 재시도는 없다. 실패한 연결은 닫고 다음 tick에서 새 연결을 연다.
+- 갱신 0행은 observer/logger 호출 전에 `ExecutionContext.ownership`의 내부 fence에 기록한다. WorkerLoop의 T1 재기록, B-D8 매 시도 진입, callback 진입, 최종 COMMIT 경계가 fence를 확인한다. 기존 finish의 `RUNNING ∧ lease_owner=owner` UPDATE 조건은 유지한다. ownership 상실은 handler taxonomy FAILED로 바꾸지 않고 `runtime.execution.finish_rejected`로 기록한다.
+- handler 성공·모듈 실패·일반 예외·BaseException·종료 신호 이후 모든 실행 종료 경로에서 heartbeat stop + join을 finally로 보장하고 전용 connection/소유 engine을 정리한다. 일반 logger/filter/handler·observer 예외는 격리하고 unsafe logging 검증 오류와 BaseException 정책은 유지한다.
 
 ### Plan 대비 변경
 
-—
+- RT-05(a)만 구현한다. cancel port, CancelSignal, checkpoint, 중단 표식 읽기·Case cancel 연결은 RT-05(b)에 남긴다. 기존 reserved cancel injection 필드는 유지한다.
+- 갱신 SQL·연결 lifecycle은 별도 repository public API 대신 `LeaseConnection` 내부에 둔다. 후속 cancel이 같은 연결/갱신 경계를 확장할 수 있다. Contract·Decision·Baseline 변경 없이 선택한 implementation detail이다.
+- 실행별 factory로 B-D9 NullPool engine을 소유하고 finally dispose한다. 테스트는 별도 heartbeat engine을 주입할 수 있다. Worker 업무 engine의 QueuePool checkout을 공유하지 않는다.
 
 ### 새 implementation detail
 
-—
+- `OwnershipFence`의 commit lock은 최종 check부터 DB COMMIT까지 유지한다. 로컬 ownership 상실 표식과 COMMIT의 순서를 직렬화하고, DB owner 이전과 T1 경합은 기존 조건부 UPDATE·InnoDB row lock으로 판정한다. heartbeat DB 호출 전체를 이 lock 안에 넣으면 T1 row lock과 교착할 수 있어 DB 갱신은 밖에서 실행한다.
+- `run_worker_transaction`에 선택적 `before_attempt` / `commit_guard` 경계를 추가했다. helper는 Runtime ownership을 import하지 않으며 claim·T2·기존 호출은 기존 동작이다. 모든 T1 DB 재시도에 같은 fence가 적용된다. API transaction 경계는 변경하지 않는다.
+- heartbeat thread의 BaseException은 raw threading traceback으로 노출하지 않고 보관·fence 후 소유 main thread의 join에서 재전파한다. cleanup의 추가 BaseException이 기존 primary BaseException을 덮지 않게 한다.
+- 관측값은 immutable `HeartbeatObservation`에 attempt_ms·성공 간격 기준 lag_ms·skipped_tick_count·consecutive_failures로 전달한다. 기존 안전한 logging field 계약을 확장하지 않고 duration은 `duration_ms`, 숫자 count는 안전한 `status` 숫자 token으로 기록한다. skip 관측은 느린 시도 완료 뒤에 남는다.
+- observer/logger에 시간이 걸려 다음 tick을 놓친 경우도 다음 시도 전에 미래 tick으로 이동하고 누락 tick을 집계한다. 0행 표식은 empty COMMIT 이전에 설정하여 COMMIT 오류에도 유지한다. commit guard 진입의 예외를 transaction helper의 primary 보존 범위에 포함하며 connection close 이후 engine dispose 오류가 첫 BaseException을 덮지 않게 한다. 독립 리뷰에서 재현한 경계 문제를 TDD로 보정한 implementation detail이다.
+- 전체 회귀에서 실제 MySQL 하위 suite가 test harness의 300초 subprocess 제한에 걸렸다. migration fixture를 포함한 확대 inventory의 느린 로컬 실행을 허용하기 위해 이 테스트 제한만 900초로 늘렸다. Runtime timeout·Contract·Decision·Baseline이나 gate의 증거 판정 조건을 바꾸지 않는다.
 
 ### Owner 확인 포인트
 
-—
+- 김준영 Audit A: 0행 fencing 및 T1 commit 직전 경합, B-D8/loop 재시도 진입 fence, B-L1 skip 계산·관측 지연, B-D9 전용 연결 재사용·재연결, BaseException 보존 경계. Contract·Accepted Decision·Baseline 값/의미 변경 없음. 다른 Owner에 새 의무 없음.
 
 ### Verification
 
-—
+- 구현 전 WorkerLoop·claim_one/finish·transaction helper·역할별 engine·기존 테스트와 Issue #292, Plan §6/§12, Baseline을 직접 확인했다.
+- 초기 RED: heartbeat lifecycle/composition 부재로 unit 6 + 실제 MySQL 17 = **23 failed**. 추가 gate RED: heartbeat family 누락을 허용하는 **7 failed**. cleanup 중 BaseException이 primary를 덮는 회귀 **1 failed**를 확인한 뒤 수정했다.
+- 독립 리뷰 지적과 추가 장애 회귀: 느린 observer의 off-cadence 실행 **1 RED**, 0행 UPDATE 뒤 empty COMMIT 실패 **실제 MySQL 1 RED**, guard loss/KeyboardInterrupt + rollback 실패 **2 RED**, connection close SystemExit + engine dispose 오류 **1 RED**, renewal SQL SystemExit + rollback 오류 **1 RED**를 각각 확인해 수정했다. 신규 gate family 누락(zero_commit_failure/owned_cleanup)도 각각 **1 RED**를 확인했다. 보정 후 core **117 passed**, heartbeat MySQL **27 passed**, 추가 B-D8/B-Q3 retry fence **2 passed**.
+- 첫 MySQL require 실행은 실행 도중 소스를 수정하여, 먼저 import된 구버전 LeaseConnection과 뒤에 import된 신버전 composition이 섞였다. traceback의 `unexpected keyword argument 'fence'` 등 **83 failed / 146 passed**를 최종 검증 근거에서 제외하고 원출력을 보존한다(`require.txt`). 이후 고정된 코드로 `require-final`을 실행했으며, 재개 시 해당 실행의 종료 코드와 보존 보고서를 먼저 확인했다.
+- 실제 MySQL 8.4.7 작업 전용 서버(port 13329, `/tmp/rt05-20261011/data`)와 `rt05_test`/harness 일회 schema를 사용한다. 기존 Windows MySQL service와 사용자 DB는 변경하지 않는다. 증거는 `C:/Users/cheol/AppData/Local/Temp/rt05-20261011/`에 보관한다.
+- **재개 시 보존 증거 대조:** 실행 중이던 `require-final` session의 완료 응답은 **exit 0**, 최종 **234 passed / 4 skipped / 3271 deselected**다. skip 4개는 `typer`가 없는 비-MySQL Search 수집 항목이다. JSON/JUnit의 실제 MySQL **234 tests / 702 phases passed / skip 0 / xfail 0**, heartbeat **28 passed**를 대조했다. 하위 실제 MySQL suite **233 passed / skip 0 / xfail 0**, JSON/JUnit gate PASS, parameter 증거 누락 **896/896 거부**(heartbeat **175/175**), heartbeat role/scenario 누락 **11/11 거부**도 보존 보고서로 확인했다. 기존 standalone heartbeat 27개와 달리 최종 inventory는 transaction/loop retry fencing parameter를 분리하여 28개다.
+- **반복하지 않은 검증:** 고정된 구현·테스트·gate·README 11개 SHA-256이 중단 시 manifest와 일치하여 core **117 passed**, gate unit **1025 passed**, boundary **위반 0**, Contract fixture **62/26/104 검사 PASS**, workflow YAML policy·bash syntax·ShellCheck **5 run steps PASS** 및 actionlint **5 files / 0 errors**의 기존 실행 증거를 재사용했다. 독립 source 리뷰에서 지적된 네 경계 수정과 재리뷰 통과도 보존 근거이며, 재개 후 구현·리뷰를 다시 수행하지 않았다.
+- **보호 파일 대조:** 기존 manifest에 포함된 미추적 pytest/recording 파일 **1052개**의 SHA-256 변경 0건. 이전 manifest에 빠진 dotfile `.env` 17개는 과거 해시 대조 대상이라고 주장하지 않는다(확인된 최종 수정 시각은 2026-10-07). 재개 시 별도 해시를 보관했으며 해당 경로를 수정·삭제·staging하지 않았다.
+- **재개 후 첫 전체 실행:** `full`은 **exit 1 / 3482 passed / 26 skipped / 1 failed**다. 실패는 `test_actual_report_rejects_each_missing_migration_check`의 하위 실제 MySQL subprocess **300초 TimeoutExpired** 한 건이며 원출력·JSON/JUnit을 보존한다. 이전 통과 하위 suite의 JUnit 실행 시간은 **217.049초**다. 실패 뒤 Python 하위 프로세스 잔존 없음, 남은 일회 schema 1개와 테스트 계정 0개를 확인하여 해당 schema만 정리했다. 테스트 제한 변경 후 구현·gate 판정·테스트 10개는 이전 해시와 같고, `test_migration_gate.py`만 제한/설명 주석이 변경됐다. 변경 후 11개 해시를 별도 고정하고 `full-final`을 새 임시 경로에서 실행한다.
+- **재개 후 직접 실행 GREEN:** 고정한 `full-final` 전체 pytest **exit 0 / 3483 passed / 26 skipped / 990.27초**, 실제 MySQL **234 tests / 702 phases passed / skip 0 / xfail 0**, heartbeat **28 passed**. skip 26개는 비-MySQL `typer`·로컬 미디어·영상 opt-in 미충족 항목이다. 상위 JSON/JUnit gate **PASS**, 하위 실제 MySQL **233 passed / skip 0 / xfail 0 / 297.527초**와 하위 JSON/JUnit gate **PASS**, 새 parameter 누락 증거 **896/896 거부**(heartbeat **175/175**)를 직접 확인했다. 테스트 harness timeout RED → 전체 GREEN을 별도 기록하며 첫 실패 보고서를 덮어쓰지 않는다.
+- **최종 해시:** timeout 수정 뒤 고정한 코드·테스트·gate·README **11개 변경 0**, 기존 보호 파일 **1052개 변경 0**, 재개 시 별도 기록한 `.env` **17개 변경 0**. 이전 require 및 정적 검사 증거는 Runtime/판정 코드가 유지된 범위의 보존 근거로 구분한다. 증거 manifest는 `code-hashes.json`, `code-hashes-post-timeout.json`, `preserved-evidence-hashes.json`, `resume-verification.json`, `final-hashes.json`, `verification-summary.json`이다.
+- **MySQL 정리:** 최종 pytest 프로세스 잔존 없음. MySQL **8.4.7 / port 13329 / datadir `/tmp/rt05-20261011/data/`**를 확인한 뒤 test schema·계정 **0**, 기타 비시스템 schema·비기본 계정 **0**을 검사하고 `rt05_test`를 제거했다. SQL SHUTDOWN 성공, 소유 server exec session **59725 exit 0**, 기존 PID·pid file·socket 없음, port **13329 연결 거부(10061)**를 확인했다. 종료 뒤 WSL의 Linux log 경로는 존재하지 않아 shutdown log에 근거한 주장은 하지 않는다. Windows에 정리 JSON과 실행 결과를 보존하며 기존 MySQL service는 변경하지 않았다.
+- **최종 diff:** `git diff --check` **PASS**, branch `feature/runtime-heartbeat-fencing`, index 변경 **0**. 작업 변경은 tracked 9개 + 신규 구현/테스트 3개 = **12개**이며 보호된 기존 미추적 경로는 그대로다. 커밋·푸시·PR 생성 없이 독립 재리뷰 상태로 남긴다.
 
 ### 남은 위험
 
-—
+- B-D9는 I/O 단계별 timeout이며 whole-attempt 상한이 아니다. DB 호출이 길면 stop/join·skip 기록도 지연될 수 있다. 강제 thread kill이나 임의 join timeout은 도입하지 않는다.
+- SIGINT/SIGTERM은 기존 정책대로 handler와 T1을 강제 중단하지 않고 다음 idle 경계에 반영한다. ownership이 유지되는 동안의 T1 DB 장기 장애는 종료를 지연시킬 수 있다.
+- T1 COMMIT 응답 유실 뒤 heartbeat가 이미 terminal인 row의 0행을 관찰하면 보수적으로 T1 재시도를 차단한다. durable terminal 자체는 유지되며 T2 재전달은 RT-06이 담당한다.
+- cancel·checkpoint(RT-05(b)), STALE/sweep·재전달(RT-06), 실제 handler(RT-10)는 미구현이다. RT-05 전체 상태는 IN_PROGRESS다. 원격 CI 미실행. 이번 작업은 커밋·푸시·PR 생성 없이 독립 재리뷰용 변경으로 남긴다.
+
+### RT-05(a) 독립 재리뷰 통과 — 후속 기록
+
+사용자가 전달한 독립 재리뷰 결과를 기존 구현·검증 이력에 추가한다. **병합 차단 문제 없음**으로 판정됐다. 이번 갱신은 이 절의 문서 기록만 추가하며 코드·테스트 수정이나 테스트 재실행은 하지 않는다.
+
+| 상태 | RT-05(a) PR 연결 | PR 번호 | Merge SHA |
+| --- | --- | --- | --- |
+| RT-05 IN_PROGRESS | `Refs #292` | pending | pending |
+
+**리뷰어 직접 실행 결과:**
+
+| 검증 | 결과 |
+| --- | --- |
+| 핵심 단위 회귀 | 168 passed |
+| gate unit | 1,025 passed |
+| 실제 MySQL inventory | 233 passed · skip 0 · xfail 0 |
+| heartbeat MySQL | 28 passed |
+| parameter 증거 누락 | 896/896 거부 |
+| heartbeat parameter 증거 누락 | 175/175 거부 |
+| role/scenario 증거 누락 | 68/68 거부 |
+
+**구현 단계 보존 증거:** 아래 수치는 구현 단계에서 실행해 보존한 결과이며, 이번 리뷰어 직접 실행 결과와 구분한다.
+
+| 검증 | 보존 결과 |
+| --- | --- |
+| 전체 pytest | 3,483 passed / 26 skipped |
+| 실제 MySQL | 234 passed · skip 0 · xfail 0 |
+
+- **정책 판정:** monotonic fixed-rate scheduling, Worker 업무 연결과 분리된 heartbeat 전용 DB 연결, ownership 상실 후 T1 commit·재시도 fencing, 실행 종료 경로의 heartbeat thread cleanup 판정이 통과했다.
+- **Timeout 한계:** 전체 heartbeat 시도를 묶는 단일 wall-clock deadline은 없다. Baseline의 단계별 connect/read/write **2/5/5초**를 적용하며, 이는 whole-attempt 상한을 보장하지 않는다. 기존 stop/join 지연 위험은 유지한다.
+- **900초 변경 범위:** 전체 실제 MySQL 하위 suite를 실행하는 test harness의 subprocess timeout에만 적용된다. production timeout이나 gate의 통과 조건을 완화하지 않는다.
+- **비차단 후보:** `Heartbeat.start()` 중복 호출 방지, tick 경계 및 COMMIT 성공 직후 ownership 상실 회귀 보강, 원격 CI 실행 시간 확인을 후속 검토 후보로 남긴다.
+- **남은 범위:** RT-05(b) cancel이 남아 있으므로 RT-05 상태는 **IN_PROGRESS**, RT-05(a) 연결은 **`Refs #292`**를 유지한다. PR 번호와 merge SHA는 **pending**이다.
 
 ---
 

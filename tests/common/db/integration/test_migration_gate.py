@@ -48,6 +48,9 @@ LIFECYCLE_CHECKS = (
 )
 
 WORKER_CHECKS = (
+    ("heartbeat_lifecycle", "owned_cleanup"),
+    *(("heartbeat_lifecycle", scenario) for scenario in (
+        "renewal", "zero_rows", "commit_race", "retry_fence", "cleanup", "slow_attempt", "error_isolation", "connection_fault", "zero_commit_failure")),
     # RT-04(b): T2 delivery, atomicity, retry and fake E2E-0.
     *(("worker_t2", scenario) for scenario in (
         "delivery", "rollback", "t1_gap", "commit_recovery", "metric",
@@ -60,6 +63,17 @@ WORKER_CHECKS = (
 )
 
 WORKER_PARAMETERS = (
+    *(("heartbeat_lifecycle", "retry_fence", mode) for mode in ("transaction", "loop")),
+    *(("heartbeat_lifecycle", "owned_cleanup", mode) for mode in
+      ("success", "heartbeat_interrupt", "handler_interrupt")),
+    *(("heartbeat_lifecycle", "zero_rows", sink) for sink in
+      ("healthy", "logger", "filter", "handler", "observer")),
+    *(("heartbeat_lifecycle", "connection_fault", fault) for fault in ("disconnect", "timeout")),
+    *(("heartbeat_lifecycle", "commit_race", mode) for mode in ("local_loss", "db_transfer")),
+    *(("heartbeat_lifecycle", "cleanup", mode) for mode in
+      ("success", "failure", "exception", "interrupt", "exit", "signal")),
+    *(("heartbeat_lifecycle", "error_isolation", sink) for sink in
+      ("healthy", "logger", "filter", "handler", "observer")),
     *(("worker_t2", "delivery", outcome) for outcome in
       ("APPLIED", "ALREADY_APPLIED", "STOPPED_WAITING", "CANCELLED", "SUPERSEDED")),
     *(("worker_t2", "rollback", fault) for fault in
@@ -136,11 +150,14 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
     result = subprocess.run(
         [sys.executable, "-B", "-X", "utf8", "-m", "pytest", "tests/common/db/integration", "tests/common/jobs",
          "tests/worker/test_worker_mysql.py", "tests/worker/test_reflection_mysql.py",
+         "tests/worker/test_heartbeat_mysql.py",
          "tests/case/test_store_mysql.py", "tests/case/test_case_repository_contract.py",
          "--ignore=tests/common/db/integration/test_migration_gate.py", "-m", "mysql", "-q",
          "-p", "no:cacheprovider", f"--basetemp={tmp_path / 'child'}",
          f"--mysql-report={report_path}", f"--junitxml={junit_path}"],
-        env=env, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=300,
+        # This repeats the complete MySQL inventory, including migrations for
+        # each fixture. Allow slower local servers without relaxing the gate.
+        env=env, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=900,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(report_path.read_text(encoding="utf-8"))

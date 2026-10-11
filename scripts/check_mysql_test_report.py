@@ -16,6 +16,9 @@ REQUIRED_SCENARIOS = frozenset({
 
 # Stable acceptance identifiers, independent of Python test function names.
 REQUIRED_CHECKS = frozenset({
+    ("heartbeat_lifecycle", "owned_cleanup"),
+    *(("heartbeat_lifecycle", scenario) for scenario in (
+        "renewal", "zero_rows", "commit_race", "retry_fence", "cleanup", "slow_attempt", "error_isolation", "connection_fault", "zero_commit_failure")),
     # RT-04(b): T2 delivery, atomicity, retry and fake E2E-0.
     *(("worker_t2", scenario) for scenario in (
         "delivery", "rollback", "t1_gap", "commit_recovery", "metric",
@@ -81,6 +84,17 @@ REQUIRED_CHECKS = frozenset({
 # Each parameter is an independent acceptance obligation. Names come from
 # explicit pytest marks, never from function names or parsed node ID suffixes.
 REQUIRED_PARAMETERS = frozenset({
+    *(("heartbeat_lifecycle", "retry_fence", mode) for mode in ("transaction", "loop")),
+    *(("heartbeat_lifecycle", "owned_cleanup", mode) for mode in
+      ("success", "heartbeat_interrupt", "handler_interrupt")),
+    *(("heartbeat_lifecycle", "zero_rows", sink) for sink in
+      ("healthy", "logger", "filter", "handler", "observer")),
+    *(("heartbeat_lifecycle", "connection_fault", fault) for fault in ("disconnect", "timeout")),
+    *(("heartbeat_lifecycle", "commit_race", mode) for mode in ("local_loss", "db_transfer")),
+    *(("heartbeat_lifecycle", "cleanup", mode) for mode in
+      ("success", "failure", "exception", "interrupt", "exit", "signal")),
+    *(("heartbeat_lifecycle", "error_isolation", sink) for sink in
+      ("healthy", "logger", "filter", "handler", "observer")),
     *(("worker_t2", "delivery", outcome) for outcome in
       ("APPLIED", "ALREADY_APPLIED", "STOPPED_WAITING", "CANCELLED", "SUPERSEDED")),
     *(("worker_t2", "rollback", fault) for fault in
