@@ -140,3 +140,17 @@ def test_main_error_and_cleanup_sink_failures_preserve_exit_and_do_not_disclose(
     expected = 0 if scenario == "ok" else 1
     assert child.returncode == expected
     assert json.loads(child.stdout) == {"code": expected, "calls": ["loop", "dispose"], "signals_restored": True}
+
+
+@pytest.mark.parametrize("requested_code", [0, 42])
+def test_fatal_system_exit_cannot_choose_worker_process_success_or_arbitrary_code(monkeypatch, requested_code):
+    from daesingo.common.logging import configure_logging
+    module = import_module("daesingo.worker.__main__")
+    startup = SimpleNamespace(config=SimpleNamespace(db=object()),
+                              logger=configure_logging("worker", stream=StringIO()))
+    monkeypatch.setattr(module, "bootstrap", lambda **kw: startup)
+    monkeypatch.setattr(module, "create_worker_engine", lambda db: SimpleNamespace(dispose=lambda: None))
+    def run():
+        raise SystemExit(requested_code)
+    monkeypatch.setattr(module, "compose_worker", lambda **kw: SimpleNamespace(run=run))
+    assert module.main() == 1

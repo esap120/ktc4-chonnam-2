@@ -48,6 +48,13 @@ LIFECYCLE_CHECKS = (
 )
 
 WORKER_CHECKS = (
+    *(("sweep", scenario) for scenario in ("detect_latency", "detect_boundary", "detect_fault")),
+    ("sweep_worker", "hook_fatal"), ("sweep_worker", "hook_exception"),
+    *(("sweep", scenario) for scenario in (
+        "atomicity", "eligibility", "cap_cancel", "backoff", "concurrent", "recheck",
+        "rollback_retry", "unknown_commit", "cancel_race", "expiry", "metrics")),
+    *(("sweep_worker", scenario) for scenario in (
+        "startup", "independent", "heartbeat", "queue_wait", "slow_queue_logger")),
     ("cancel_worker", "terminal_ack"),
     ("cancel_worker", "observe_commit"), ("cancel_worker", "queued_no_usage"),
     *(("cancel", scenario) for scenario in (
@@ -69,6 +76,18 @@ WORKER_CHECKS = (
 )
 
 WORKER_PARAMETERS = (
+    *(("sweep", "detect_latency", f"{lease}_{reason}") for lease in (60, 7)
+      for reason in ("RETRIED", "EXHAUSTED", "CANCELLED")),
+    *(("sweep", "detect_boundary", mode) for mode in ("transition_clock", "null", "future")),
+    *(("sweep", "detect_fault", mode) for mode in ("calculation", "logger", "filter", "handler")),
+    *(("sweep_worker", "hook_fatal", f"{phase}_{kind}_{sink}") for phase in ("startup", "periodic")
+      for kind in ("exit", "interrupt", "base") for sink in ("healthy", "logger", "filter", "handler")),
+    ("sweep_worker", "hook_exception", "startup_periodic"),
+    *(("sweep", "atomicity", mode) for mode in ("commit", "rollback")),
+    *(("sweep", "cap_cancel", mode) for mode in ("cancel", "exhausted", "disabled")),
+    *(("sweep", "recheck", mode) for mode in ("heartbeat", "finish", "cancel")),
+    *(("sweep", "cancel_race", mode) for mode in ("sweep", "cancel")),
+    *(("sweep_worker", "queue_wait", mode) for mode in ("1", "2")),
     *(("cancel_worker", "terminal_ack", mode) for mode in
       ("commit_delay", "slow_logger", "lock_wait", "unknown_commit", "retry",
        "logger", "filter", "handler", "calculation", "zero_rows")),
@@ -173,6 +192,7 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
          "tests/worker/test_worker_mysql.py", "tests/worker/test_reflection_mysql.py",
          "tests/worker/test_heartbeat_mysql.py",
          "tests/worker/test_cancel_checkpoint_mysql.py",
+         "tests/worker/test_sweep_worker_mysql.py",
          "tests/case/test_store_mysql.py", "tests/case/test_case_repository_contract.py",
          "--ignore=tests/common/db/integration/test_migration_gate.py", "-m", "mysql", "-q",
          "-p", "no:cacheprovider", f"--basetemp={tmp_path / 'child'}",

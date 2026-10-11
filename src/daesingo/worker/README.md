@@ -14,7 +14,11 @@ RT-01의 `bootstrap.py`를 구현했다. `bootstrap(revision=...)`은 `DAESINGO_
 
 RT-04(a)는 `python -m daesingo.worker` 진입점 · 단일 kind registry · claim loop · ExecutionContext · T1 terminal 기록을 구현한다. 기존 Worker engine/claim/finish/transaction helper를 재사용하며 claim commit 후 handler를 실행한다. 빈 queue는 B-Q1, 완료 후 다음 claim은 즉시, DB 오류는 B-Q3 대기다. T1은 B-D8 재시도 소진 뒤에도 결과를 유지하고 B-Q3 간격으로 재기록한다. SIGINT/SIGTERM은 실행 중 handler·T1을 중단하지 않고 다음 idle 지점에서 반영한다.
 
-실제 handler 등록은 비어 있다. 미등록 kind는 `RUNTIME_UNREGISTERED_KIND`로 `FAILED`다. 성공·모듈 failure taxonomy·예외 처리와 registration은 fake handler 및 실제 MySQL로 검증한다. STALE/sweep은 RT-06, usage 영속은 RT-07, 실제 Recording/Search handler는 RT-10 범위다.
+실제 handler 등록은 비어 있다. 미등록 kind는 `RUNTIME_UNREGISTERED_KIND`로 `FAILED`다. 성공·모듈 failure taxonomy·예외 처리와 registration은 fake handler 및 실제 MySQL로 검증한다. usage 영속은 RT-07, 실제 Recording/Search handler는 RT-10 범위다.
+
+RT-06(a)는 첫 claim 전에 startup sweep을 실행하고, handler와 독립적인 `runtime-sweep` thread에서 같은 만료 조건으로 주기 sweep을 수행한다. 만료 후보마다 짧은 transaction에서 row 잠금·lease·중단 표식을 재확인하고 STALE과 상한 내 다음 attempt QUEUED를 함께 기록한다. backoff는 DB 생성 시각에 더한 `available_at`으로 적용한다. startup DB 장애는 성공할 때까지 B-Q3 대기하며 claim을 막고, 종료 시 sweep thread를 stop/join한다. `compose_worker(sweep_hooks=(...))`는 RT-07용 등록 지점이며 hook은 connection 반환 뒤 startup/주기 sweep에서 호출되고 일반 예외는 격리된다. T2 재전달 scan·실제 kill E2E는 RT-06(b)에 남는다.
+
+`runtime.queue.wait_ms`는 DB `queued_at → started_at`을 측정하고 `status=INITIAL/RETRY`로 attempt 묶음을 구분한다. retry의 계획된 backoff도 포함한다. 로그 sink가 느려도 lease를 갱신할 수 있도록 heartbeat 시작 뒤 기록한다.
 
 RT-05(a)는 claim된 execution별 heartbeat thread를 handler/T1 동안 유지한다. monotonic fixed-rate tick에서 동기 lease 갱신을 한 번만 실행하고, 느린 시도나 관측 때문에 지난 tick은 집계하여 건너뛴다. B-D9 전용 Connection은 Worker QueuePool과 분리되며 실패하면 다음 tick에 재연결한다. heartbeat에는 transaction retry를 적용하지 않는다. 0행 UPDATE는 COMMIT 성공 여부와 무관하게 ownership fence를 설정한다. T1의 기존 owner 조건부 UPDATE에 더해 B-D8 매 시도와 COMMIT 직전에도 fence를 확인한다. 실행이 끝나면 finally에서 thread를 stop/join하고 연결과 소유 engine을 닫는다. 단계별 I/O timeout은 전체 시도나 join의 hard deadline을 뜻하지 않는다.
 

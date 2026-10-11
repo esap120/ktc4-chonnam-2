@@ -74,6 +74,7 @@ class ClaimedExecution:
     lease_owner: str
     started_at: datetime
     lease_expires_at: datetime
+    queued_at: datetime | None = None
 
 
 _CLAIM_SELECT = text("""SELECT execution_id FROM job_execution
@@ -112,6 +113,7 @@ def _claimed(row: Mapping[str, Any]) -> ClaimedExecution:
         kind=row["kind"], case_id=row["case_id"], trace_id=row["trace_id"],
         lease_owner=row["lease_owner"], started_at=model.started_at,
         lease_expires_at=row["lease_expires_at"].replace(tzinfo=timezone.utc),
+        queued_at=model.queued_at,
     )
 
 

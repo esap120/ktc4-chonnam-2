@@ -1,6 +1,6 @@
 """Worker wiring: reuse RT-01 config and RT-02/03 DB transaction boundaries."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from functools import partial
 from threading import Event
@@ -18,6 +18,7 @@ from daesingo.common.jobs.cancel import CancelledExecution
 from daesingo.common.jobs.heartbeat import Heartbeat, LeaseConnection
 from daesingo.common.jobs.repository import claim_one, finish
 from daesingo.common.jobs.schema import job_execution
+from daesingo.common.jobs.sweep import SweepService, sweep_once
 from daesingo.common.jobs.worker_loop import WorkerLoop, TerminalCommit
 from daesingo.common.jobs.reflection import ReflectionInput, ResultReflector, reflect_terminal
 from daesingo.common.logging import bind_context, log_event_best_effort, safe_correlation
@@ -36,6 +37,7 @@ def compose_worker(
     worker_id: str | None = None, sleep: Callable[[float], None] = time.sleep,
     idle_wait: Callable[[float], object] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    sweep_hooks: Sequence[Callable[[], object]] = (),
 ) -> WorkerLoop:
     """One main-thread execution at a time; no domain service is instantiated.
 
@@ -149,4 +151,8 @@ def compose_worker(
         logger=startup.logger, sleep=sleep, idle_wait=idle_wait or stop.wait, clock=clock,
         reflect=reflect if reflector is not None else None,
         heartbeat=heartbeat,
+        sweeper=SweepService(
+            sweep=partial(sweep_once, engine, settings, sleep=sleep, logger=startup.logger),
+            settings=settings, stop=stop, logger=startup.logger, hooks=sweep_hooks,
+        ),
     )

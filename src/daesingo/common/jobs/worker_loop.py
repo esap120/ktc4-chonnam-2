@@ -37,11 +37,13 @@ class WorkerLoop:
         idle_wait: Callable[[float], object] | None = None,
         clock: Callable[[], float] = time.monotonic,
         heartbeat: Callable | None = None,
+        sweeper=None,
     ):
         self.claim, self.dispatch, self.record = claim, dispatch, record
         self.settings, self.stop, self.logger = settings, stop, logger
         self.reflect = reflect
         self.heartbeat = heartbeat
+        self.sweeper = sweeper
         self.sleep, self.idle_wait, self.clock = sleep, idle_wait or sleep, clock
 
     def _db_error(self, error: Exception):
@@ -51,6 +53,20 @@ class WorkerLoop:
                   status=reason.upper())
 
     def run(self) -> None:
+        try:
+            if self.sweeper is not None:
+                self.sweeper.start()
+            self._run_claims()
+        finally:
+            if self.sweeper is not None:
+                primary = sys.exc_info()[1]
+                try:
+                    self.sweeper.stop_and_join()
+                except BaseException:
+                    if primary is None:
+                        raise
+
+    def _run_claims(self) -> None:
         while not self.stop.is_set():
             try:
                 claimed = self.claim()
@@ -77,6 +93,10 @@ class WorkerLoop:
                 try:
                     if heartbeat is not None:
                         heartbeat.start(context.execution_id)
+                    if claimed.queued_at is not None:
+                        log_event_best_effort(self.logger, "runtime.queue.wait_ms",
+                            status="RETRY" if claimed.attempt >= 2 else "INITIAL",
+                            duration_ms=max(0, (claimed.started_at - claimed.queued_at).total_seconds() * 1000))
                     log_event_best_effort(self.logger, "runtime.execution.started", status="RUNNING")
                     try:
                         result = self.dispatch(context)
