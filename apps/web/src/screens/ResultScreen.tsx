@@ -20,10 +20,17 @@ export function ResultScreen(props: {
   onPlate: () => void
   onDetails: () => void
   onAction: (noticeCode: string, action: Action) => void
+  /** 신고 상황 응답. RECORD_SITUATION_RESPONSE가 받는 두 값만 둔다 — 「다른 상황」은 입력형이라 command가 아직 없다 */
+  onRespond?: (value: 'CONFIRMED' | 'USER_UNSURE') => void
 }): JSX.Element {
   const { view } = props
   const pkg = view.package
   const evidence = view.evidence
+  // 신고 상황은 결과 화면에서 묻는다(core-user-flow §20, #171 B-2). 응답 전에는 묶음이 없다.
+  const selected = view.candidates.find((c) => c.selected)
+  const awaiting =
+    selected?.situation_confirmation === 'NOT_ASKED' &&
+    view.notices.some((n) => n.code === 'case.situation_response_pending')
 
   // 요약 칩은 상태별 개수를 셀 뿐 판정하지 않는다.
   const counts = new Map<InfoState, number>()
@@ -44,7 +51,9 @@ export function ResultScreen(props: {
       <h1 className="page-title">신고자료</h1>
 
       <section className="panel panel-p">
-        <h2 className="panel-t">{ready ? '신고자료가 준비됐어요.' : '신고자료를 완성하지 못했어요.'}</h2>
+        <h2 className="panel-t">
+          {ready ? '신고자료가 준비됐어요.' : awaiting ? '신고 상황을 확인해 주세요.' : '신고자료를 완성하지 못했어요.'}
+        </h2>
         {view.notices.map((n) => (
           <div key={n.code} className={`flow-notice${n.blocking ? ' blocking' : ''}`} style={{ marginTop: 10 }}>
             {noticeMessage(n.message_key)}
@@ -65,27 +74,68 @@ export function ResultScreen(props: {
         </div>
       </section>
 
+      {awaiting && selected && props.onRespond && (
+        <section className="panel panel-p stack">
+          <div className="sec-label">신고 상황</div>
+          <p className="kv-val">이 사건을 이렇게 정리했어요. “{selected.observed}”</p>
+          {/* 근거 장면은 FrameRef로만 와서 아직 그릴 수 없다(#47) — 자리만 둔다 */}
+          <div className="video-main">
+            <span className="video-cap">근거 장면 준비 중</span>
+          </div>
+          {/* 상황에 따라 정해지는 값 셋(#171)만 응답 뒤로 미룬다. 나머지(번호판·시각·위치)는 그대로 둔다 */}
+          <div className="kv kv-rows">
+            {['사건 유형', '신고 유형', '위반 내용'].map((label) => (
+              <div className="kv-row" key={label}>
+                <span className="kv-k">{label}</span>
+                <span className="kv-v">
+                  <span className="kv-val">상황 응답 뒤에 정해져요</span>
+                </span>
+              </div>
+            ))}
+          </div>
+          {/* 「잘 모르겠어요」도 진행을 막지 않는다. 값은 AI 추정으로 남는다(core-user-flow 「신고 상황」) */}
+          <div className="btnrow">
+            <button type="button" className="btn pri" onClick={() => props.onRespond!('CONFIRMED')}>
+              맞아요
+            </button>
+            <button type="button" className="btn" onClick={() => props.onRespond!('USER_UNSURE')}>
+              잘 모르겠어요
+            </button>
+          </div>
+          {/* 응답 전에는 영상 칸(evidence)이 없으니 다른 후보 입구를 여기에 둔다(§20 묶음 전) */}
+          {others > 0 && (
+            <button type="button" className="link-btn" onClick={props.onCandidates}>
+              다른 장면이었나요? 다른 후보 {others} →
+            </button>
+          )}
+        </section>
+      )}
+
       {evidence && (
         <section className="panel panel-p stack">
-          <div className="video-box">
-            <div className="video-main">
-              {noVideo ? (
-                <span>신고용 영상이 아직 없어요</span>
-              ) : (
-                <>
-                  <span className="video-play" aria-hidden>
-                    ▶
-                  </span>
-                  <span className="video-cap">신고용 영상 · 원본에서 사건 구간만 잘라 만든 영상이에요</span>
-                </>
+          {/* 신고용 영상은 응답 뒤 조립에서 만들어진다. 응답 전(v1.8 부분 투영 포함)에는 영상 칸을 그리지 않는다.
+              다른 후보 입구는 위 「신고 상황」 패널에 이미 있다 */}
+          {!awaiting && (
+            <div className="video-box">
+              <div className="video-main">
+                {noVideo ? (
+                  <span>신고용 영상이 아직 없어요</span>
+                ) : (
+                  <>
+                    <span className="video-play" aria-hidden>
+                      ▶
+                    </span>
+                    <span className="video-cap">신고용 영상 · 원본에서 사건 구간만 잘라 만든 영상이에요</span>
+                  </>
+                )}
+              </div>
+              {others > 0 && (
+                <button type="button" className="video-side" onClick={props.onCandidates}>
+                  다른 후보 영상 {others} →
+                </button>
               )}
             </div>
-            {others > 0 && (
-              <button type="button" className="video-side" onClick={props.onCandidates}>
-                다른 후보 영상 {others} →
-              </button>
-            )}
-          </div>
+          )}
           <div className="plate-row">
             <span className="plate-img">{evidence.plate_display.value ?? '번호판 없음'}</span>
             <span className="plate-meta">

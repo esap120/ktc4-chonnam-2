@@ -26,10 +26,15 @@ function start(caseKey: string) {
   const wait = () => {
     for (let i = 0; i < 20; i++) act(() => vi.advanceTimersByTime(5_000))
   }
-  return { ...r, text, wait }
+  // 결과 화면에서 신고 상황에 답하고 나머지 준비가 끝날 때까지 흘린다.
+  const answer = (label = '맞아요') => {
+    fireEvent.click(r.getByText(label))
+    wait()
+  }
+  return { ...r, text, wait, answer }
 }
 
-it('정상: 업로드 완료 → 진행 → 결과, 하위 화면은 「<」로 돌아온다', () => {
+it('정상: 업로드 완료 → 진행 → 신고 상황 응답 → 결과, 하위 화면은 「<」로 돌아온다', () => {
   const { text, wait, getByText, container } = start('main')
   expect(text()).toContain('올리는 중')
   wait()
@@ -37,7 +42,17 @@ it('정상: 업로드 완료 → 진행 → 결과, 하위 화면은 「<」로 
   fireEvent.click(getByText('영상에서 찾아보기'))
   expect(text()).toContain('경과 시간')
   wait()
+  // 응답 전에는 신고자료 묶음이 없다 — 초안·제출 버튼 없이 상황 요약과 응답 버튼만
+  expect(text()).toContain('신고 상황을 확인해 주세요')
+  expect(text()).toContain('이 사건을 이렇게 정리했어요')
+  expect(text()).not.toContain('안전신문고로 이동')
+  // 응답에 따라 정해지는 값 셋은 응답 뒤로 미룬다
+  expect(text()).toContain('상황 응답 뒤에 정해져요')
+  fireEvent.click(getByText('맞아요'))
+  expect(text()).toContain('신고자료를 준비하고 있어요')
+  wait()
   expect(text()).toContain('신고자료가 준비됐어요')
+  expect(text()).not.toContain('신고 상황을 확인해 주세요')
   // 최종 신고문(v1.7)은 case가 만든 제목·내용을 그대로 보여 준다
   expect(text()).toContain('진로변경 위반 차량 신고')
   expect(text()).toContain('백색 실선을 넘어 진로를 변경하는 것을 확인하여 신고합니다')
@@ -94,14 +109,15 @@ it('결과 없음: 아래에서 다시 적고 다시 찾으면 새로 진행한�
   fireEvent.click(getByText('다시 찾기'))
   expect(text()).toContain('경과 시간')
   wait()
-  expect(text()).toContain('신고자료가 준비됐어요')
+  expect(text()).toContain('신고 상황을 확인해 주세요')
 })
 
 it('다른 후보: 기준 후보를 같이 놓되 버튼은 다른 후보에만 달고, 고르면 다시 준비한다', () => {
-  const { wait, getByText, getAllByText, text, container } = start('main')
+  const { wait, getByText, getAllByText, text, container, answer } = start('main')
   wait()
   fireEvent.click(getByText('영상에서 찾아보기'))
   wait()
+  answer()
   fireEvent.click(getByText('다른 후보 영상 2 →'))
   expect(container.querySelectorAll('.cand')).toHaveLength(3)
   expect(text()).toContain('지금 신고자료 기준')
@@ -111,6 +127,9 @@ it('다른 후보: 기준 후보를 같이 놓되 버튼은 다른 후보에만 
   fireEvent.click(container.querySelector('.cand-col button')!)
   expect(text()).toContain('경과 시간')
   wait()
+  // 새 후보에는 응답을 새로 받는다 — 이전 응답을 옮기지 않는다(§8-1)
+  expect(text()).toContain('신고 상황을 확인해 주세요')
+  answer()
   fireEvent.click(getByText('다른 후보 영상 2 →'))
   const cards = [...container.querySelectorAll('.cand')]
   expect(cards.map((c) => c.classList.contains('sel'))).toEqual([false, true, false])
@@ -125,13 +144,14 @@ it('업로드 실패: 다시 선택하면 다시 올린다', () => {
 })
 
 it('설명이 비어 있으면 Tab이 예시를 채우고, 「새 신고」는 처음 화면으로 돌아간다', () => {
-  const { container, getByText, text, wait } = start('main')
+  const { container, getByText, text, wait, answer } = start('main')
   const box = container.querySelector('textarea')!
   fireEvent.keyDown(box, { key: 'Tab' })
   expect(box.value).toContain('흰색 SUV')
   wait()
   fireEvent.click(getByText('영상에서 찾아보기'))
   wait()
+  answer()
   expect(text()).toContain('신고자료가 준비됐어요')
   fireEvent.click(getByText('새 신고'))
   expect(text()).toContain('블랙박스 영상을 올려주세요')
@@ -139,10 +159,11 @@ it('설명이 비어 있으면 Tab이 예시를 채우고, 「새 신고」는 �
 })
 
 it('번호판은 자세히 보기에서 읽은 값을 채운 채 고치고, 결과 화면에 「사용자 확인됨」으로 반영된다', () => {
-  const { wait, getByText, text, container } = start('main')
+  const { wait, getByText, text, container, answer } = start('main')
   wait()
   fireEvent.click(getByText('영상에서 찾아보기'))
   wait()
+  answer()
   fireEvent.click(getByText('자세히 보기'))
   expect(text()).toContain('번호판을 읽은 장면')
   fireEvent.click(getByText('번호 수정'))
@@ -157,10 +178,11 @@ it('번호판은 자세히 보기에서 읽은 값을 채운 채 고치고, 결�
 })
 
 it('복사 버튼은 붙여넣을 칸에만 있다', () => {
-  const { wait, getByText, container } = start('main')
+  const { wait, getByText, container, answer } = start('main')
   wait()
   fireEvent.click(getByText('영상에서 찾아보기'))
   wait()
+  answer()
   const rows = [...container.querySelectorAll('.kv-row.draft')]
   const withCopy = rows.filter((r) => r.textContent!.includes('복사')).map((r) => r.querySelector('.kv-k')!.textContent)
   // 제목·내용은 case가 만든 신고문(v1.7)이라 통째로 복사한다. 나머지는 붙여넣을 칸만이다
@@ -200,7 +222,7 @@ it('장면 찾기 실패: 실패 화면에서 「다시 찾기」로 이어서 �
   fireEvent.click(getByText('다시 찾기'))
   expect(text()).toContain('장면을 다시 찾고 있어요')
   wait()
-  expect(text()).toContain('신고자료가 준비됐어요')
+  expect(text()).toContain('신고 상황을 확인해 주세요')
 })
 
 it('업로드 일부 실패: 건너뛴 파일을 알리고 나머지로 계속한다', () => {
@@ -211,10 +233,11 @@ it('업로드 일부 실패: 건너뛴 파일을 알리고 나머지로 계속�
 })
 
 it('다른 후보를 고르면 「새 후보 기준으로」 다시 준비한다고 말한다', () => {
-  const { wait, getByText, text, container } = start('main')
+  const { wait, getByText, text, container, answer } = start('main')
   wait()
   fireEvent.click(getByText('영상에서 찾아보기'))
   wait()
+  answer()
   fireEvent.click(getByText('다른 후보 영상 2 →'))
   fireEvent.click(container.querySelector('.cand-col button')!)
   expect(text()).toContain('새 후보 기준으로 신고자료를 다시 준비하고 있어요')
@@ -227,6 +250,36 @@ it('위반 미관찰: 다른 후보를 버튼 없이 바로 펼쳐 둔다', () =
   wait()
   expect(container.querySelectorAll('.cand')).toHaveLength(3)
   expect(getAllByText('이 장면으로 다시 준비')).toHaveLength(2)
+})
+
+it('신고 상황 「잘 모르겠어요」도 진행을 막지 않고, 다른 후보 입구는 응답 전에도 있다', () => {
+  const { wait, answer, getByText, text } = start('main')
+  wait()
+  fireEvent.click(getByText('영상에서 찾아보기'))
+  wait()
+  expect(text()).toContain('다른 장면이었나요? 다른 후보 2 →')
+  answer('잘 모르겠어요')
+  expect(text()).toContain('신고자료가 준비됐어요')
+})
+
+it('응답 대기 중 evidence가 부분 투영돼도 신고용 영상 칸은 그리지 않고 확보한 번호판은 보여 준다 (v1.8)', () => {
+  const full = SNAPSHOTS.map((x) => x.view).find((v) => v.evidence && v.package)!
+  const view = {
+    ...full,
+    stage: 'EVIDENCE_REVIEW' as const,
+    package: null,
+    candidates: full.candidates.map((c) => (c.selected ? { ...c, situation_confirmation: 'NOT_ASKED' as const } : c)),
+    notices: [
+      { code: 'case.situation_response_pending', severity: 'INFO' as const, blocking: false, message_key: 'notice.situation_response_pending', actions: [] },
+    ],
+  }
+  const noop = () => {}
+  const { container } = render(
+    <ResultScreen view={view} onCandidates={noop} onPlate={noop} onDetails={noop} onAction={noop} onRespond={noop} />,
+  )
+  expect(container.textContent).toContain('신고 상황을 확인해 주세요')
+  expect(container.textContent).toContain(full.evidence!.plate_display.value!)
+  expect(container.textContent).not.toContain('신고용 영상 · 원본에서')
 })
 
 it('package에 report가 없는 옛 판본이 와도 결과 화면이 깨지지 않는다', () => {
