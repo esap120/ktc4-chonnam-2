@@ -115,6 +115,7 @@ develop에 있다. 3개 gap 전부 종결(`doc/real-e2e-protocol.md`/`doc/real e
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -337,6 +338,29 @@ class ObservationBundle:
     asset_facts: list[dict[str, Any]] = field(default_factory=list)
     # 번호판 판독 `ReadoutRun.outcome`(#172 [D]). 판독을 시작하지 않았으면 None.
     plate_read_outcome: str | None = None
+
+
+def select_case_assets(incident_clip_ref: str, asset_facts: Iterable[Any]) -> list[Any]:
+    """선택 후보의 IncidentClip 자신과, `lineage`에 그 clip이 있는 asset만 남긴다(5순위,
+    `decisions/real-e2e-scenarios.md` §4-2). 입력 순서를 지킨다.
+
+    역할(`derived_role`)로는 거르지 않는다 — 어느 역할이 패키지에 쓰이는지는 evidence가 정한다. 후보 목록은
+    호출자가 준다: fixture 경로는 fixture에 등록된 전부, 8-6 2단계는 recording 공개 조회 결과. 원소는 recording
+    `AssetFacts` 모델이나 그 JSON dict다."""
+    target = ("incident_clip", incident_clip_ref)
+
+    def field_of(obj: Any, name: str) -> Any:
+        return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+    def key(ref: Any) -> tuple[Any, Any]:
+        return (field_of(ref, "kind"), field_of(ref, "ref")) if ref is not None else (None, None)
+
+    return [
+        facts
+        for facts in asset_facts
+        if key(field_of(facts, "asset_ref")) == target
+        or target in (key(entry) for entry in field_of(facts, "lineage") or [])
+    ]
 
 
 def assemble_evidence_bundle(
@@ -635,9 +659,10 @@ def observe_fixture_candidate(
     )
     time_source_candidates = raw_recording.get("time_source_candidates", [])
 
-    asset_refs = [facts.asset_ref for facts in fixture.asset_facts]
+    # 5순위 — fixture에 등록된 asset 전부가 아니라 이 후보 clip의 것만 넘긴다.
+    related = select_case_assets(incident_clip.incident_clip_ref, fixture.asset_facts)
     asset_facts_real = [
-        rec_service.lookup_asset_facts(ref).model_dump(mode="json") for ref in asset_refs
+        rec_service.lookup_asset_facts(facts.asset_ref).model_dump(mode="json") for facts in related
     ]
 
     return ObservationBundle(
