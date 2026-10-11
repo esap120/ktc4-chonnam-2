@@ -57,7 +57,15 @@ def receive_search_candidates(case: CaseAggregate, adapter: ModuleAdapter) -> li
         # 실패 Run(후보 0개)은 투영 대상을 바꾸지 않는다 — 계약 §7 `RESUME_SEARCH` 행.
         case.record_candidate_search_failure()
         return []
-    candidates = [
+    candidates = candidates_from_events(raw_candidates)
+    case.receive_candidates(candidates)
+    return candidates
+
+
+def candidates_from_events(raw_candidates: list[dict[str, Any]]) -> list[Candidate]:
+    """search `CandidateEvent` → case `Candidate`. 동기 경로(`receive_search_candidates`)와 Worker 반영 경로
+    (`reflection.reflect_execution`)가 같은 변환을 쓴다."""
+    return [
         Candidate(
             candidate_id=c["candidate_id"],
             at=None,
@@ -71,8 +79,6 @@ def receive_search_candidates(case: CaseAggregate, adapter: ModuleAdapter) -> li
         )
         for c in raw_candidates
     ]
-    case.receive_candidates(candidates)
-    return candidates
 
 
 def receive_hint_extraction(case: CaseAggregate, result: dict[str, Any]) -> None:

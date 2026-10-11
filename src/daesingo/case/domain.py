@@ -143,6 +143,11 @@ class CaseAggregate:
     # 여기 없는 JobRecord다(계약 B§10 불변조건 5). 처음 사유가 이긴다. CaseView 비노출.
     settled_jobs: dict[str, str] = field(default_factory=dict)
 
+    # Worker T2로 반영을 마친 execution(`execution_id` → `job_id`). 같은 execution이 다시 오면 반영하지 않는다 —
+    # T1 · T2 사이 Worker가 죽거나 T2 commit 응답을 잃으면 Runtime이 다시 넘긴다(Tech Spec §12.2 · #245 D-5,
+    # `decisions/result-reflection.md`). CaseView 비노출.
+    processed_executions: dict[str, str] = field(default_factory=dict)
+
     # 분석 시작 때 사용자가 적은 설명 원문(case-command Draft §11). 받은 그대로 두고 CaseView `description`으로
     # 내린다. 분석 시작 전에는 `None`.
     description: str | None = None
