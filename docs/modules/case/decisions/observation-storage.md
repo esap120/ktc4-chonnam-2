@@ -71,7 +71,7 @@
 | `candidate_id`만으로 거른다 | 재탐색 뒤 같은 id에 이전 세대 관찰을 잘못 쓴다(`reselect-observation-reuse.md` (c)) |
 | T2에서 관찰 내용을 case state에 복사 | 저장소가 원본이라 같은 사실이 두 곳에 생긴다 |
 
-## 8. 맞출 것 (Consult 이슈 — RT-10 Implementer @cheol1203, Contract 판단은 @flosure23, search · readout 사실 확인)
+## 8. 맞출 것 (Consult #346 — RT-10 Implementer @cheol1203, Contract 판단은 @flosure23, search · readout 사실 확인)
 
 1. 결과 저장소 신설 — common/runtime, 해석 없는 append-only.
 2. T1 범위 확장 — terminal 행 · `produced`와 같은 transaction에서 저장소 append.
