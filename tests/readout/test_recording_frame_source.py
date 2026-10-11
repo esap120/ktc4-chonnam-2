@@ -44,10 +44,11 @@ def test_recording_frame_source_preserves_recording_frame_refs(monkeypatch):
 
     frames = paddle_provider.RecordingFrameSource(recording).frames("clip_real")
 
-    assert [frame.frame_ref for frame in frames] == ["fr_103.0", "fr_105.0", "fr_107.0"]
-    assert [frame.offset_sec for frame in frames] == [3.0, 5.0, 7.0]
-    assert [frame.image for frame in frames] == [marker, marker, marker]
-    assert recording.offsets == [103.0, 105.0, 107.0]
+    offsets = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]  # SAMPLE_RATIOS × 10초
+    assert [frame.frame_ref for frame in frames] == [f"fr_{100 + o:.1f}" for o in offsets]
+    assert [frame.offset_sec for frame in frames] == pytest.approx(offsets)
+    assert [frame.image for frame in frames] == [marker] * len(offsets)
+    assert recording.offsets == pytest.approx([100 + o for o in offsets])
 
 
 def test_recording_frame_source_maps_recording_failure_to_provider_failure(monkeypatch):

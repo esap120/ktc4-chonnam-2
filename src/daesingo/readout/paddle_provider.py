@@ -40,6 +40,12 @@ from .providers import (
     ProviderError,
 )
 
+SAMPLE_RATIOS = (0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80)
+"""clip 길이 대비 샘플 지점. 7점인 이유 — 번호판 합의는 같은 문자열 3장 이상 + 과반이어야
+하므로(`api.MIN_AGREEING_FRAMES`) 3장이면 한 장만 놓쳐도 합의가 깨진다. 양 끝 20%를 빼는 것은
+구간 경계에서 대상이 막 들어오거나 나가는 프레임을 피하려는 것이다. overlay 검증은 2점 이상이면
+성립하므로 그대로 쓴다."""
+
 MIN_DIGITS = 3
 MIN_ASPECT = 2.2
 """번호판 영역의 최소 가로세로비. 1줄 기준이다 — 2줄은 검출 박스가 아랫줄만 감싸므로
@@ -153,13 +159,13 @@ class LocalVideoFrameSource:
     **`frame_ref`가 임시값이고 `read_frame()`으로 조회되지 않는다.**
     """
 
-    def __init__(self, clip_paths: dict, offsets_sec=(0.30, 0.50, 0.70)):
+    def __init__(self, clip_paths: dict, offsets_sec=SAMPLE_RATIOS):
         """`clip_paths`는 `{incident_clip_ref: 영상 경로}`, `offsets_sec`은 길이 대비 비율.
 
-        기본 3점인 이유 — `consensus.method=MULTI_FRAME`은 읽힌 프레임 2장 이상에서만
-        성립하고, overlay `monotonic_ok`·`duration_match_ok`도 sample 2건 이상이라야
-        `null`이 아닌 값이 된다. sample 1건이면 evidence가 이 overlay를 최종 시각으로
-        선택하지 않는다(`evidence/time_resolution.py` `_valid_overlay`).
+        2점 이상이어야 하는 이유 — overlay `monotonic_ok`·`duration_match_ok`는 sample 2건
+        이상이라야 `null`이 아닌 값이 된다. sample 1건이면 evidence가 이 overlay를 최종
+        시각으로 선택하지 않는다(`evidence/time_resolution.py` `_valid_overlay`). 기본값은
+        `SAMPLE_RATIOS`.
         """
         if len(offsets_sec) < 2:
             raise ValueError("offsets_sec은 2점 이상이어야 한다 — 1점이면 consensus와 "
@@ -216,7 +222,7 @@ def _decode_image(content: bytes):
 class RecordingFrameSource:
     """IncidentClip에서 recording이 발급한 실제 `FrameRef`와 픽셀을 가져온다."""
 
-    def __init__(self, recording, sample_ratios=(0.30, 0.50, 0.70)):
+    def __init__(self, recording, sample_ratios=SAMPLE_RATIOS):
         if len(sample_ratios) < 2 or any(
             not isfinite(ratio) or ratio < 0 or ratio >= 1 for ratio in sample_ratios
         ):

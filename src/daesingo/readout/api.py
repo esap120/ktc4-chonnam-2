@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import NamedTuple, Optional
@@ -84,6 +85,11 @@ PLATE_ACCEPT_CONFIDENCE = 0.50
 
 MIN_PLATE_PX_HEIGHT = 20
 """번호판 영역 높이(px) 하한. 이 아래면 문자 판독 자체가 성립하지 않는다고 본다."""
+
+MIN_AGREEING_FRAMES = 3
+"""프레임이 서로 다를 때, 같은 문자열을 읽은 프레임이 이 수 이상이고 과반이면 다수결로 합의한다.
+2:1은 1표 차이라 합의로 보지 않는다. 실측(GT 13, 2026-09-28)에서 「투표 일치 + 프레임 ≥ 3」이
+오답 확정을 0으로 만든 조건이다(`experiments/plate-ocr-ablation-2026-09-27/` §3-⑥)."""
 
 FULL_PLATE = re.compile(r"\d{2,3}[가-힣]\d{4}|[가-힣]{2}\d{1,2}[가-힣]\d{4}")
 """온전한 번호판 형식 — 신형(`12가3456`·`123가4567`)과 지역명 포함(`서울12가3456`).
@@ -277,15 +283,22 @@ def _observation(value, status, source_kind, run_id, reason=None) -> Observation
 def _consensus_of(texts):
     """프레임별 OCR 문자열을 모아 합의 문자열과 불일치 위치를 만든다.
 
-    합의는 **만장일치**다 — 한 자리에서 하나라도 다르면 `?`로 남긴다. 2:1 다수결을 쓰지 않는
-    이유는 frame 수가 2~3장이라 다수결이 곧 1표 차이이고, 틀린 번호판을 확정해 내보내는 쪽의
-    비용이 보류보다 크기 때문이다(계약 §4 핵심 원칙 1·3). 다수결 전환은 실측 뒤 Technical Spec.
+    합의는 **문자열 다수결**이다 — 같은 문자열을 읽은 프레임이 `MIN_AGREEING_FRAMES` 이상이고
+    과반이면 그 문자열이 합의다. 자리별 다수결을 쓰지 않는 이유는 테두리·볼트를 글자로 읽어
+    한 자리가 더 붙은 프레임이 섞이면 자리가 밀려 엉뚱한 문자열을 조립하기 때문이다(Laroca
+    2023, arXiv 2309.04331 — 문자열 다수결 90.1% vs 자리별 87.6%).
 
-    길이가 다르면 자리를 맞출 수 없다 — 합의 문자열 없이 불일치로만 처리한다.
+    다수결이 안 되면 예전 만장일치로 본다 — 한 자리에서 하나라도 다르면 `?`. 길이가 다르면
+    자리를 맞출 수 없다 — 합의 문자열 없이 불일치로만 처리한다. 그래서 1~2장이 모두 같게 읽은
+    경우는 지금도 합의다. 「3장 미만은 확정하지 않는다」는 공용 Mock Pack(`data/mock/readout/`의
+    2장 OK 시나리오)과 case 테스트가 기대는 동작을 바꾸므로 따로 합의한 뒤 넣는다.
     """
     usable = [t for t in texts if t]
     if not usable:
         return "", [], False
+    top, votes = Counter(usable).most_common(1)[0]
+    if votes >= MIN_AGREEING_FRAMES and votes * 2 > len(usable):
+        return top, [], False
     if len({len(t) for t in usable}) > 1:
         return "", [], True
 
@@ -300,13 +313,16 @@ def _consensus_of(texts):
     return "".join(chars), positions, bool(positions)
 
 
-def _best_index(frames):
+def _best_index(frames, agreed=None):
     """대표 근거 프레임의 **자리**. 신뢰도 우선, 같으면 선명도, 그래도 같으면 먼저 온 것.
 
     객체가 아니라 index를 주는 이유 — 같은 프레임에서 뜬 영역이 둘이면 reading 객체만으로는
     어느 crop이 그것인지 고를 수 없다.
+
+    합의 문자열(`agreed`)이 있으면 그 문자열을 읽은 프레임 중에서만 고른다 — 소수 프레임이
+    옆 차량을 읽었을 때 그 crop이 대표 근거로 올라가지 않게 한다.
     """
-    readable = [i for i, f in enumerate(frames) if f.text]
+    readable = [i for i, f in enumerate(frames) if f.text and (agreed is None or f.text == agreed)]
     if not readable:
         return None
     return max(
@@ -411,7 +427,7 @@ def _interpret_plate(reading, target_hint, request, run_id) -> PlateReadout:
     ]
 
     text, disagree_positions, disagreed = _consensus_of([f.text for f in frames])
-    best_at = _best_index(frames)
+    best_at = _best_index(frames, None if disagreed else text)
     best = frames[best_at] if best_at is not None else None
     reason = _abstain_reason(association, best, disagreed)
     abstained = reason is not None
