@@ -403,7 +403,7 @@ frame: max-age 1 h → 같은 썸네일은 세션 동안 1회 · 생성은 동�
 | `runtime.stale.detect_latency_s` | STALE 기록 시각 − 마지막 heartbeat | DB · log | p95 |
 | `runtime.stale.false_count` | STALE 뒤 **원래 Worker가 terminal 기록을 시도해 0 rows를 받은** 수 = Worker가 살아 있었는데 STALE | log | 합계 — **1건이면 trigger** |
 | `runtime.retry.auto_count` · `…exhausted_count` | 자동 attempt 생성 수 · 상한 소진 수 | DB | 합계 |
-| `runtime.retry.after_case_stopped_count` | attempt ≥ 2가 끝났을 때 case가 반영하지 않은 수(§3.2) | log | 합계 |
+| `runtime.retry.after_case_stopped_count` | attempt ≥ 2의 T2 결과가 `NOT_APPLIED(STOPPED_WAITING)`인 수(§3.2). `APPLIED` · `ALREADY_APPLIED` · `NOT_APPLIED(CANCELLED)` · `NOT_APPLIED(SUPERSEDED)`는 제외하고 reflector 예외/rollback은 집계하지 않고 재전달 대상으로 남긴다 | log | 합계 |
 | `runtime.cancel.observe_latency_ms` | 중단 요청 기록 → handler 관찰. B-X1 목표와 비교할 때는 DB 정상 구간만 본다 | log | p95 · max |
 | `runtime.cancel.terminal_latency_ms` | 중단 요청 기록 → `CANCELLED` 기록 | DB | p95 · max |
 | `runtime.db.claim_latency_ms` | claim transaction 시작 → commit | log | p95 |
@@ -497,3 +497,4 @@ recording 쪽(B-C3 `temp_root` 주입 · B-F2)은 recording의 기존 인자 · 
 | --- | --- | --- |
 | 2026-10-05 | v0.1 최초 작성 — workflow §6. RD-04 축 · 제약 · 초기값, RD-11a(local rotation) · 11b, Register 「§5 → §6 Baseline 입력」, HTTP API Contract §4가 넘긴 숫자를 Provisional로 정함. 새 Decision · Contract 변경 없음 | `origin/develop` `a6027f6` |
 | 2026-10-06 | PR #276 Runtime 구현 담당 리뷰 반영 — 기술적 정합성 보정, 새 Architecture Decision 아님. PyMySQL의 I/O 단계별 timeout(B-D9)을 heartbeat 시도 전체의 wall-clock 상한으로 해석한 오류를 고쳤다. 시도 ≤ 7 s · 「5회 연속 실패해야 STALE」 · cancel 관찰 ≤ 17 s hard bound를 제거하고, B-L1을 heartbeat 겹침 금지(이전 시도가 안 끝난 tick은 건너뜀)로, STALE 설명을 마지막 성공 heartbeat + lease 기준으로, B-X1을 DB 정상 구간 p95 ≤ 20 s 측정 목표로 정합화. §3.1 · §3.6 · §6 · §7 · §9(config 불변조건 · integration test) 함께 수정. 10 s · 60 s · 15 s 값과 B-R1 · RD-04b 결론은 그대로. Owner 확인 결과 기록(§8.1) | PR #276 리뷰 |
+| 2026-10-10 | Issue #291 RT-04(b) T2 결과 taxonomy 합의에 맞춰 `runtime.retry.after_case_stopped_count`의 집계 의미를 §3.2의 원래 관찰 목적에 맞게 명확화. `attempt ≥ 2 ∧ NOT_APPLIED(STOPPED_WAITING)`만 집계하고 `CANCELLED` · `SUPERSEDED` · `ALREADY_APPLIED` 및 reflector 예외/rollback은 제외한다. retry/timeout 숫자와 정책 변경 없음 | Issue #291 · PR #337 |

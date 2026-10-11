@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 from daesingo.common import load_env_file
 
-from .config import GeminiSearchConfig
+from .config import GeminiSearchConfig, api_key_from_env
 from .diagnostic import DiagnosticDependencies, run_case
 from .diagnostic_artifacts import (
     ArtifactLocationError,
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             provider = FixtureInvoker(fixture)
             mode = "FIXTURE"
         else:
-            key = env.get("GEMINI_API_KEY", "").strip()
+            key = api_key_from_env(env)
             if not key:
                 raise DiagnosticPreconditionError("api key prerequisite failed")
             provider = GeminiProvider(key, config)

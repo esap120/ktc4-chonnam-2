@@ -14,9 +14,25 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: mysql-ci-only
+          MYSQL_ROOT_HOST: "%"
+          MYSQL_DATABASE: daesingo_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pmysql-ci-only"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONIOENCODING: utf-8
+      DAESINGO_MYSQL_URL: mysql+pymysql://root:mysql-ci-only@127.0.0.1:3306/daesingo_test
+      DAESINGO_REQUIRE_MYSQL: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,5 +69,12 @@ jobs:
           assert len(cases) == 1, 'Expected exactly one Recording media smoke'
           assert all(c.find(tag) is None for c in cases for tag in ('skipped', 'failure', 'error')), 'Media smoke must pass without skips'
           PY
-      - name: Full pytest regression (offline fixtures)
-        run: uv run --no-sync python -m pytest -q -p no:cacheprovider
+      - name: Full pytest regression (offline capability fixtures and real MySQL)
+        run: >-
+          uv run --no-sync python -m pytest -q -p no:cacheprovider
+          --mysql-report="$RUNNER_TEMP/mysql-tests.json"
+          --junitxml="$RUNNER_TEMP/pytest.xml"
+      - name: MySQL execution gate (required scenarios, skip 0, xfail 0)
+        run: >-
+          uv run --no-sync python scripts/check_mysql_test_report.py
+          "$RUNNER_TEMP/mysql-tests.json" "$RUNNER_TEMP/pytest.xml"

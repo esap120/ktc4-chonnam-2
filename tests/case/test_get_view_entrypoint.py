@@ -54,6 +54,7 @@ def test_get_view_with_mock_adapter_matches_smoke_fixture():
     adapter = MockFixtureAdapter(MOCK_ROOT, SCENARIO_ID)
     store.register(case, adapter)
 
+    case = store.load_for_update("case_h001_getview_mock")  # 등록 뒤 변경은 복사본을 받아 고친 뒤 save
     candidates = service.receive_search_candidates(case, adapter)
     case.select_candidate(candidates[0].candidate_id)
     jobs.issue_plate_read(case, input_fingerprint="sha1:h001-plate-read-clip_h001")
@@ -61,6 +62,7 @@ def test_get_view_with_mock_adapter_matches_smoke_fixture():
     jobs.issue_fine_verify(case, input_fingerprint="sha1:h001-fine-verify-as_h001_fine")
     jobs.issue_report_video_export(case, input_fingerprint="sha1:h001-report-video-export")
     assert service.mark_ready_if_package_ready(case, adapter) is True
+    store.save(case)
 
     view = service.get_view("case_h001_getview_mock", store=store)
     assert view["stage"] == "READY"
@@ -81,6 +83,8 @@ def test_get_view_with_real_adapter_reaches_ready_caseview():
     real = RealAdapter(case_id="case_h001_getview_real", case=case, search_scope=scope, mock_root=MOCK_ROOT)
     store.register(case, real)
 
+    case = store.load_for_update("case_h001_getview_real")  # 등록 뒤 변경은 복사본을 받아 고친 뒤 save
+    store.get_adapter(case.case_id, case)  # real adapter에 방금 로드한 aggregate를 붙인다
     candidates = service.receive_search_candidates(case, real)
     case.select_candidate(candidates[0].candidate_id)
     jobs.issue_plate_read(case, input_fingerprint="sha1:h001-plate-read-clip_h001")
@@ -88,6 +92,7 @@ def test_get_view_with_real_adapter_reaches_ready_caseview():
     jobs.issue_fine_verify(case, input_fingerprint="sha1:h001-fine-verify-as_h001_fine")
     jobs.issue_report_video_export(case, input_fingerprint="sha1:h001-report-video-export")
     service.mark_ready_if_package_ready(case, real)
+    store.save(case)
 
     view = case_package.get_view("case_h001_getview_real", store=store)
 

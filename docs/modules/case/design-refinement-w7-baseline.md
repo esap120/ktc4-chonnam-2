@@ -184,8 +184,8 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 | # | 할 일 | 출처 |
 | --- | --- | --- |
-| 8-1 | case-command Draft에 분석 시작 · 중단 command 추가 — 이름 · payload · 허용 상태, 시작 command가 hints를 어디서 받는지 포함. **분석 시작은 초안 작성(2026-10-04, Draft §11 — #210 Search 의견 반영 · case 결정 4건(`HINT_EXTRACT` · 실패 notice 없음 · 빈 설명은 구조화 생략 · CaseView `description`) · 남은 미결 5건)**, 중단은 C-1a 결정 뒤 | #245 C-1 · #247 H-2 |
-| 8-2 | case-command Draft §2 transport 줄을 HTTP API Contract(RD-05)를 가리키도록 수정 — Contract는 `docs/architecture/contracts/contract-http-api.md`(Draft, #265). #265 merge 뒤 그 경로로 고친다 | #247 H-6 |
+| 8-1 | 🔄 **분석 시작 구현(2026-10-07) — `START_ANALYSIS` · 단서 반영 진입 함수 · 타임라인 port(임시: 등록 순서 이어 붙이기). 결정 `decisions/start-analysis.md`. 중단 command는 남음.** case-command Draft에 분석 시작 · 중단 command 추가 — 이름 · payload · 허용 상태, 시작 command가 hints를 어디서 받는지 포함. **분석 시작은 초안 작성(2026-10-04, Draft §11 — #210 Search 의견 반영 · case 결정 4건(`HINT_EXTRACT` · 실패 notice 없음 · 빈 설명은 구조화 생략 · CaseView `description`) · 남은 미결 5건)**, 중단은 C-1a 결정 뒤 | #245 C-1 · #247 H-2 |
+| 8-2 | ✅ **2026-10-08 case-command §2 반영 — HTTP API Contract(`http-api/v1`, Final) §5.3을 가리킨다.** case-command Draft §2 transport 줄을 HTTP API Contract(RD-05)를 가리키도록 수정 — Contract는 `docs/architecture/contracts/contract-http-api.md`(Draft, #265). #265 merge 뒤 그 경로로 고친다 | #247 H-6 |
 | 8-3 | ✅ CaseView 계약에 `running_jobs[]` 정의 추가 — 「case가 아직 결과를 기다리는 job」, 실행 종료부터 case 반영까지 · backoff 중에도 유지, 중단 · timeout으로 기다리기를 멈춘 job은 제외. **2026-10-04 B절 §10 불변조건 5로 반영됨**(#263, common/runtime이 case 답변대로 정합) | #247 H-4 |
 | 8-4 | ✅ **2026-10-06 CaseView 계약 B절 §7 반영(#269).** CaseView 계약에 「중단된 job은 실제 실행 상태와 상관없이 `PARTIAL`로 투영」 추가 — 마지막 attempt가 `STALE`이어도 `FAILED`로 보이지 않게 | #245 C-3 · #248 Q-1 |
 | 8-5 | ✅ **2026-10-06 budget 결정 문서 반영(#269).** `decisions/budget-krw-normalization.md` 「남은 것」에 정규화 층(cost를 계산하는 Search)과 `amount=null`은 0이 아니라는 원칙 반영 | #244 U-2 |
@@ -195,17 +195,17 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 | # | 할 일 | 출처 |
 | --- | --- | --- |
-| 8-6 | 🔄 **1단계 설계 — `decisions/case-store-mysql.md`(#267, Runtime §9 확인 완료). 구현 · adapter 제거(2단계)는 남음.** `CaseStore` MySQL 구현 — case마다 adapter를 들고 CaseView 때마다 adapter에서 다시 읽는 구조도 함께 바꾼다. 영속화 대상: Case aggregate(`Candidate.thumb_ref` 포함) · JobRecord · `scope_ref`가 가리키는 AnalysisScope · 처리한 `execution_id`. **첫 비동기 Real E2E의 선행**이고 8-7 ~ 8-11은 이 위에서 한다 | #245 D-1 · #246 S-4 |
+| 8-6 | 🔄 **1단계 구현(2026-10-06) — `MySQLCaseRepository` · in-memory 복사본 load · `CaseStore` facade. 처리 execution · 중단 job 테이블(8-8 · 8-9)과 adapter 제거(2단계)는 남음.** 설계: `decisions/case-store-mysql.md`(#267, Runtime §9 확인 완료). `CaseStore` MySQL 구현 — case마다 adapter를 들고 CaseView 때마다 adapter에서 다시 읽는 구조도 함께 바꾼다. 영속화 대상: Case aggregate(`Candidate.thumb_ref` 포함) · JobRecord · `scope_ref`가 가리키는 AnalysisScope · 처리한 `execution_id`. **첫 비동기 Real E2E의 선행**이고 8-7 ~ 8-11은 이 위에서 한다 | #245 D-1 · #246 S-4 |
 | 8-7 | ✅ **2026-10-06 `execute_command()` → `CommandResult.appended_job_records`(#268, 결정 `decisions/command-appended-job-records.md`).** command 처리가 「이번 command로 append한 JobRecord 목록」을 응답 body 밖으로 돌려준다 — composition root의 dispatch와 HTTP 202/200 판단에 쓴다 | #245 D-2 · #247 H-3 |
-| 8-8 | 결과 반영 함수를 `execution_id` 기준 idempotent로 | #245 D-5 |
+| 8-8 | 결과 반영 함수를 `execution_id` 기준 idempotent로. 8-6 1단계 후속: COARSE_SEARCH 첫 발주 경로는 `issue_coarse_search(scope=…)`로 AnalysisScope를 남겨야 한다(지금은 데모 · 스크립트만 발주) · adapter 캐시가 rollback된 case_rev를 기억할 수 있다(2단계 adapter 제거 때 함께). | #245 D-5 |
 | 8-9 | 중단 command 처리 + 「중단된 `job_id` 집합」으로 늦은 결과를 거르는 guard. 6.6순위 조건 2(현재 선택 context 대조)와 함께 동작한다 | #245 C-1a · C-4 |
 | 8-10 | JobExecution read port 연결 + attempt 최댓값 선택(CaseView 계약 A§10-6)을 case가 구현. `view.py`의 「최신 attempt 선택은 runtime이 건네준다」 주석 수정. **선택 규칙 · 주석 수정은 선반영(2026-10-04, `view.representative_execution_status()`)** — read port 연결만 D-6 뒤 | #245 D-6 · #248 Q-1 |
-| 8-11 | `running_jobs` 투영을 8-3 정의대로 구현 — `handle_command()`가 `running_jobs`를 호출자에게 받지 않고 case가 직접 계산한다. **command 응답의 `case_view`에는 이번 command로 append한 job이 들어 있어야 한다**(HTTP 202 직후 polling이 멈추지 않게, #265 §5.3 · §7-2). 응답을 만드는 시점에는 enqueue 전이라 실행 기록이 없으므로, JobRecord는 있고 실행 기록이 없는 job은 `PENDING`으로 싣는다 | #247 H-4 · #265 |
+| 8-11 | 🔄 **구현(2026-10-06) — JobRecord 정산 기록으로 case가 계산, 실행 기록 없으면 `PENDING`. 결정: `decisions/running-jobs-derivation.md`. #282 머지 뒤 PR.** `running_jobs` 투영을 8-3 정의대로 구현 — `handle_command()`가 `running_jobs`를 호출자에게 받지 않고 case가 직접 계산한다. **command 응답의 `case_view`에는 이번 command로 append한 job이 들어 있어야 한다**(HTTP 202 직후 polling이 멈추지 않게, #265 §5.3 · §7-2). 응답을 만드는 시점에는 enqueue 전이라 실행 기록이 없으므로, JobRecord는 있고 실행 기록이 없는 job은 `PENDING`으로 싣는다 | #247 H-4 · #265 |
 | 8-12 | ✅ **2026-10-06 구현 — `create_case()` · `record_source_registered()`(#270, 결정 `decisions/empty-case-and-manifest.md`).** 빈 case 생성 경로 — `CaseAggregate.intake()` 필수 인자(`hints` · `manifest_summary`) 정리, adapter 없이 등록, 업로드마다 `manifest_summary` 갱신 | #247 H-2 |
 | 8-13 | source asset을 `RealVideoAdapter`의 local path 대신 recording 공개 함수로 조회 | #246 S-3 |
 | 8-14 | ✅ `FINE_VERIFY` 실행 실패의 notice · action 정하기 — **2026-10-04 `search.visual_verify_failed`**(ERROR · blocking · `actions:[]`, 출구는 「다른 후보 보기」, CaseView 계약 등재). 실행 상태는 호출자가 `visual_verify_status`로 넘긴다. 동기 real 경로의 Fine 예외 → 실행 실패 분류는 Search failure taxonomy 접합(#244) 뒤 | #244 R-1 |
 | 8-15 | ✅ **2026-10-04 overlay 판독 결과 notice 3종**(`readout.overlay_not_present` · `_presence_undetermined` · `_ocr_failed`)을 case가 붙인다 — readout `failure-taxonomy.md` 매핑 그대로, 현재 선택 후보의 가장 나중 판독 기준. 이 카드들의 후속은 아니고 8순위 검토 중 찾은 공백(코드가 붙이지 않았고 CaseView 계약 등재도 둘 빠짐) | readout `failure-taxonomy.md` |
-| 8-16 | 단서 구조화(`HINT_EXTRACT`) 결과 반영 — **결과 반영 함수만 선반영(2026-10-04, `service.receive_hint_extraction()`)**. 결과 모양은 #210 Search 의견 가정, 발주 · 배선은 Search PR · D-5 뒤. 3순위와 같은 일 | #210 · 3순위 |
+| 8-16 | ✅ **2026-10-07 — 반영 함수 + `service.receive_hint_extraction_result()`(첫 탐색 발주까지). Worker 배선은 Runtime #297.** 단서 구조화(`HINT_EXTRACT`) 결과 반영 — **결과 반영 함수만 선반영(2026-10-04, `service.receive_hint_extraction()`)**. 결과 모양은 #210 Search 의견 가정, 발주 · 배선은 Search PR · D-5 뒤. 3순위와 같은 일 | #210 · 3순위 |
 | 8-17 | 🔄 **case 쪽 완료(2026-10-06) — `INTAKE`에서만 받고 아니면 `SourceNotAccepted`(#270). HTTP 매핑은 #265.** source 연결은 `INTAKE`에서만 받는다 — 분석 시작 뒤 추가 업로드는 거부. product에 분석 시작 뒤 업로드 흐름이 없고 `START_ANALYSIS` 초안도 `INTAKE` 전용이다(2026-10-05 case 결정, #265 §9). 거부 status · code 모양은 HTTP Contract가 정한다 | #265 |
 
 **case가 정할 미결** — 정하기 전에는 위 해당 항목을 끝냈다고 부르지 않는다.

@@ -98,7 +98,7 @@ def check_live_preconditions(
 ) -> None:
     """Raise LivePreconditionError naming the first absent prerequisite."""
     if not api_key:
-        raise LivePreconditionError("GEMINI_API_KEY")
+        raise LivePreconditionError("ELICE_ML_API_KEY")
     if config.input_usd_per_million == 0.0:
         raise LivePreconditionError("DAESINGO_GEMINI_INPUT_USD_PER_MILLION")
     if config.output_usd_per_million == 0.0:

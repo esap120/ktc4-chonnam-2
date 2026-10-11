@@ -75,9 +75,15 @@ def test_plate_reread_pending_and_resolved_match_fixture():
     adapter = MockFixtureAdapter(MOCK_ROOT, SCENARIO_ID)
     case = _build_case_and_candidate(adapter, pending_view["hints"], pending_view["manifest_summary"])
 
-    jobs.issue_plate_read(case, input_fingerprint="sha1:p001-plate-read-clip_p001")
-    jobs.issue_overlay_time_read(case, input_fingerprint="sha1:p001-overlay-read-clip_p001")
-    jobs.issue_fine_verify(case, input_fingerprint="sha1:p001-fine-verify-as_p001_fine")
+    first_jobs = [
+        jobs.issue_plate_read(case, input_fingerprint="sha1:p001-plate-read-clip_p001"),
+        jobs.issue_overlay_time_read(case, input_fingerprint="sha1:p001-overlay-read-clip_p001"),
+        jobs.issue_fine_verify(case, input_fingerprint="sha1:p001-fine-verify-as_p001_fine"),
+    ]
+    # v1은 처음 세 job의 결과(번호판 abstain 포함)가 이미 evidence에 반영된 시점이다 — 8-8이 할 정산을
+    # 테스트가 대신한다.
+    for job in first_jobs:
+        case.settle_job(job["job_id"], "REFLECTED")
 
     evidence_records = adapter.get_evidence_records()
     evidence_reports = adapter.get_requirement_reports("EVIDENCE")
@@ -103,14 +109,6 @@ def test_plate_reread_pending_and_resolved_match_fixture():
         evidence_record=evidence_v1,
         plate_readouts=adapter.get_plate_readouts(),
         requirement_report_evidence=report_v1,
-        running_jobs=[
-            {
-                "job_id": reread_job["job_id"],
-                "kind": reread_job["kind"],
-                "label_key": "job.plate_read",
-                "status": "PENDING",
-            }
-        ],
         notices=pending_view["notices"],
     )
 
@@ -133,6 +131,7 @@ def test_plate_reread_pending_and_resolved_match_fixture():
 
     # ── v2: 재판독 성공 → EvidenceRecord supersede, case_rev만 오르고 stage는 그대로 ──
     case.bump_revision()
+    case.settle_job(reread_job["job_id"], "REFLECTED")  # 재판독 결과 반영(8-8이 할 정산을 테스트가 대신)
 
     view_resolved = build_case_view(
         case,

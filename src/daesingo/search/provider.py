@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Protocol, cast, final
 if TYPE_CHECKING:
     import openai as _openai
     from openai.types.chat import ChatCompletionMessageParam
-    from openai.types.shared_params import ReasoningEffort
 
 from pydantic import BaseModel, ValidationError
 
@@ -73,6 +72,16 @@ class StructuredInvocation[ResponseT: BaseModel]:
     prompt: str
     response_model: type[ResponseT]
     timeout_sec: float
+
+
+@dataclass(frozen=True, slots=True)
+class TextInvocation[ResponseT: BaseModel]:
+    """영상 없이 텍스트만 넣는 structured 호출(자연어 단서 구조화, #210)."""
+
+    system_prompt: str
+    user_prompt: str
+    response_model: type[ResponseT]
+    deadline: RunDeadline
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,7 +226,7 @@ class GeminiProvider:
             )
 
         data_url = _video_data_url(media.path, media.content_type)
-        messages = [
+        messages: list[dict[str, object]] = [
             {
                 "role": "user",
                 "content": [
@@ -229,14 +238,48 @@ class GeminiProvider:
                 ],
             }
         ]
+        return self._call(
+            messages,
+            response_model,
+            timeout_sec,
+            deadline,
+            speed=speed,
+            reasoning_effort=self._config.reasoning_effort,
+        )
+
+    def invoke_text[ResponseT: BaseModel](
+        self, request: TextInvocation[ResponseT]
+    ) -> ProviderResult[ResponseT]:
+        # reasoning_effort는 보내지 않는다 — case 실험(intent-llm-model-comparison)이
+        # 프록시 기본값으로 측정했으므로 같은 조건을 유지한다.
+        messages: list[dict[str, object]] = [
+            {"role": "system", "content": request.system_prompt},
+            {"role": "user", "content": request.user_prompt},
+        ]
+        return self._call(
+            messages,
+            request.response_model,
+            request.deadline.remaining_sec(),
+            request.deadline,
+        )
+
+    def _call[ResponseT: BaseModel](
+        self,
+        messages: list[dict[str, object]],
+        response_model: type[ResponseT],
+        timeout_sec: float,
+        deadline: RunDeadline | None,
+        *,
+        speed: float = 1.0,
+        reasoning_effort: str | None = None,
+    ) -> ProviderResult[ResponseT]:
+        options: dict[str, object] = {}
+        if reasoning_effort is not None:
+            options["reasoning_effort"] = reasoning_effort
 
         # --- Cap 2: serialized request bytes (BEFORE network call) ---
         serialized = json.dumps(
-            {
-                "model": self._config.model,
-                "messages": messages,
-                "reasoning_effort": self._config.reasoning_effort,
-            },
+            {"model": self._config.model, "messages": messages, **options},
             separators=(",", ":"),
         ).encode()
         if len(serialized) > self._config.max_inline_request_bytes:
@@ -258,8 +301,8 @@ class GeminiProvider:
                 model=self._config.model,
                 messages=cast("list[ChatCompletionMessageParam]", messages),
                 response_format=response_model,
-                reasoning_effort=cast("ReasoningEffort", self._config.reasoning_effort),
                 timeout=attempt_timeout,
+                **options,  # pyright: ignore[reportArgumentType]
             )
             latency_ms = round((time.monotonic() - started) * 1000)
             parsed = completion.choices[0].message.parsed

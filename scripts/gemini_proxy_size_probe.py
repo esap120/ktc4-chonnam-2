@@ -21,7 +21,7 @@ from pathlib import Path
 from gemini_coarse_fine_slowdown_trace import DEFAULT_ENV, VID, _ffmpeg
 
 from daesingo.common import load_env_file
-from daesingo.search.config import GeminiSearchConfig
+from daesingo.search.config import GeminiSearchConfig, api_key_from_env
 
 SOURCE = "20260620_141927_EVT_1.avi"
 DURATION = 10.0
@@ -50,9 +50,9 @@ def main() -> None:
 
     env = load_env_file(args.env)
     cfg = GeminiSearchConfig.from_dotenv(env)
-    key = env.get("GEMINI_API_KEY", "").strip()
+    key = api_key_from_env(env)
     if not key:
-        raise SystemExit(f"no GEMINI_API_KEY in {args.env}")
+        raise SystemExit(f"no ELICE_ML_API_KEY in {args.env}")
     client = importlib.import_module("openai").OpenAI(
         base_url=cfg.base_url, api_key=key, max_retries=0, timeout=600.0
     )

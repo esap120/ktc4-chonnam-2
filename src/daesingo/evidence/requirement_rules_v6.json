@@ -1,0 +1,268 @@
+{
+  "policy_ref": "policy/requirement-rules-v6",
+  "supersedes_policy_ref": "policy/requirement-rules-v5",
+  "decided_at": "2026-10-07",
+  "decision_ref": "docs/modules/evidence/adr/adr-i4-report-video-visibility-rules-removal.md#5-requirement-policy-반영--policyrequirement-rules-v6",
+  "referenced_policies": {
+    "attachment": "policy/safety-report-attachment-size/v1",
+    "deadline": "policy/safety-report-deadline/v1",
+    "calendar": "calendar/kr-public-holidays/2026-2027/r1",
+    "report_template": "safety-report-policy/v1.2"
+  },
+  "applies_to_report_types": [
+    "TRAFFIC_VIOLATION",
+    "MOTORCYCLE_VIOLATION"
+  ],
+  "scopes": {
+    "EVIDENCE": {
+      "always": [
+        {
+          "code": "evidence.vehicle_number.present",
+          "category": "VEHICLE",
+          "outcomes": {
+            "value_present": "PASS",
+            "readout_performed_value_absent": "WARN",
+            "readout_absent": "UNKNOWN"
+          },
+          "note": "PlateReadout 존재 여부는 EvidenceRecord.provenance.input_refs의 plate_readout ref로 판별한다. 실행 실패(PlateReadout=None)는 WARN으로 치환하지 않는다 (ADR-EVIDENCE-008 §5.1)."
+        },
+        {
+          "code": "evidence.occurred_at.present",
+          "category": "TIME",
+          "outcomes": {
+            "resolution_status_ok": "PASS",
+            "resolution_status_needs_review": "WARN",
+            "occurred_at_absent": "UNKNOWN"
+          }
+        },
+        {
+          "code": "evidence.visual_event.present",
+          "category": "EVIDENCE",
+          "outcomes": {
+            "visual_event_type_present": "PASS",
+            "null_with_user_unsure": "WARN",
+            "otherwise_unresolved": "UNKNOWN"
+          }
+        },
+        {
+          "code": "evidence.location.present",
+          "category": "LOCATION",
+          "outcomes": {
+            "any_location_value": "PASS",
+            "no_location_value": "WARN"
+          }
+        }
+      ],
+      "conditional": []
+    },
+    "FINAL_PACKAGE": {
+      "always": [
+        {
+          "code": "package.asset.report_video.exists",
+          "category": "ASSET",
+          "outcomes": {
+            "available": "PASS",
+            "availability_unknown_or_fact_missing": "UNKNOWN",
+            "unavailable": "BLOCK"
+          }
+        },
+        {
+          "code": "package.location.present",
+          "category": "LOCATION",
+          "outcomes": {
+            "display_location_present": "PASS",
+            "display_location_absent": "WARN"
+          }
+        },
+        {
+          "code": "package.report.content_length",
+          "category": "REPORT_CONTENT",
+          "measurement_unit": "report.characters",
+          "outcomes": {
+            "rendered_within_range": "PASS",
+            "rendered_outside_range": "BLOCK",
+            "render_inputs_incomplete": "UNKNOWN"
+          },
+          "render_required_inputs_by_template": {
+            "with_location": [
+              "occurred_at",
+              "package_display_location",
+              "vehicle_number",
+              "violation_expression",
+              "situation_response"
+            ],
+            "without_location": [
+              "occurred_at",
+              "vehicle_number",
+              "violation_expression",
+              "situation_response"
+            ],
+            "with_location_without_plate": [
+              "occurred_at",
+              "package_display_location",
+              "plate_readout_performed",
+              "violation_expression",
+              "situation_response"
+            ],
+            "without_location_without_plate": [
+              "occurred_at",
+              "plate_readout_performed",
+              "violation_expression",
+              "situation_response"
+            ]
+          },
+          "note": "번호판 없는 template은 PlateReadout이 수행된 경우(plate_readout_performed)에만 렌더 입력이 완전하다. 실행 실패(PlateReadout=None)는 render_inputs_incomplete → UNKNOWN (ADR-EVIDENCE-008 §6)."
+        },
+        {
+          "code": "package.evidence.situation_response",
+          "category": "EVIDENCE",
+          "replaces_code": "package.evidence.situation_unconfirmed",
+          "outcomes": {
+            "CONFIRMED": "PASS",
+            "CORRECTED": "PASS",
+            "USER_UNSURE": "WARN",
+            "NOT_ASKED_or_absent": "UNKNOWN"
+          },
+          "template_selection": {
+            "CONFIRMED": "tmpl/safety-report-specific-v1",
+            "CORRECTED": "tmpl/safety-report-specific-v1",
+            "USER_UNSURE": "tmpl/safety-report-generic-v1",
+            "NOT_ASKED_or_absent": null
+          }
+        },
+        {
+          "code": "package.asset.image.each_size",
+          "category": "ASSET",
+          "measurement_unit": "asset.bytes",
+          "policy_source": "policy/safety-report-attachment-size/v1"
+        },
+        {
+          "code": "package.asset.video.each_size",
+          "category": "ASSET",
+          "measurement_unit": "asset.bytes",
+          "policy_source": "policy/safety-report-attachment-size/v1"
+        },
+        {
+          "code": "package.asset.total_size",
+          "category": "ASSET",
+          "measurement_unit": "asset.bytes",
+          "policy_source": "policy/safety-report-attachment-size/v1"
+        },
+        {
+          "code": "package.asset.image.count",
+          "category": "ASSET",
+          "measurement_unit": "asset.count",
+          "policy_source": "policy/safety-report-attachment-size/v1"
+        },
+        {
+          "code": "package.asset.video.count",
+          "category": "ASSET",
+          "measurement_unit": "asset.count",
+          "policy_source": "policy/safety-report-attachment-size/v1"
+        },
+        {
+          "code": "package.asset.total_count",
+          "category": "ASSET",
+          "measurement_unit": "asset.count",
+          "policy_source": "policy/safety-report-attachment-size/v1"
+        },
+        {
+          "code": "package.deadline.within_policy",
+          "category": "DEADLINE",
+          "policy_source": "policy/safety-report-deadline/v1"
+        }
+      ],
+      "conditional": [
+        {
+          "branch": "time_display",
+          "selector": {
+            "inputs": [
+              "time_resolution.status",
+              "time_resolution.post_stamp.reason_code"
+            ],
+            "exactly_one_required": true,
+            "note": "post_stamp.needed 단독으로 분기하지 않는다. status=UNKNOWN이면 needed=false이지만 검증된 overlay가 있다는 뜻이 아니다. 검증된 overlay 갈래(no_rule)는 갈래로는 선택되지만 rule을 추가하지 않는다."
+          },
+          "cases": [
+            {
+              "when": {
+                "status": "OK",
+                "post_stamp_reason_code": "time.verified_overlay_already_present"
+              },
+              "no_rule": true,
+              "removed_code": "package.time.overlay_visible",
+              "note": "검증된 원본 overlay로 시각이 확정된 갈래다. 최종 REPORT_VIDEO를 다시 관찰하는 I4 Producer가 MVP에 없으므로 이 갈래는 rule을 선택하지 않는다 (ADR-EVIDENCE-010). 갈래 자체는 남겨 selector의 정확히-하나 검증을 유지한다."
+            },
+            {
+              "when": {
+                "status": "OK",
+                "post_stamp_reason_code": "time.user_confirmed_no_overlay_present"
+              },
+              "code": "package.time.post_stamp_applied",
+              "category": "TIME",
+              "input": "observation_fact",
+              "observation_fact": "post_stamp_applied",
+              "outcomes": {
+                "observed_true": "PASS",
+                "observed_false": "BLOCK",
+                "not_observed": "UNKNOWN"
+              },
+              "user_notice": "non_blocking"
+            },
+            {
+              "when": {
+                "status": "NEEDS_REVIEW",
+                "post_stamp_reason_code": "time.no_verified_overlay_present"
+              },
+              "code": "package.time.post_stamp_applied",
+              "category": "TIME",
+              "input": "observation_fact",
+              "observation_fact": "post_stamp_applied",
+              "outcomes": {
+                "observed_true": "PASS",
+                "observed_false": "BLOCK",
+                "not_observed": "UNKNOWN"
+              }
+            },
+            {
+              "when": {
+                "status": "UNKNOWN",
+                "post_stamp_reason_code": "time.no_resolvable_source"
+              },
+              "code": "package.time.display_unresolved",
+              "category": "TIME",
+              "outcomes": {
+                "always": "UNKNOWN"
+              },
+              "reason_code": "time.source_unresolved"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "asset_requirements": {
+    "REPORT_VIDEO": "REQUIRED",
+    "PLATE_IMAGE": "OPTIONAL",
+    "ORIGINAL_SOURCE_ATTACHMENT": "OPTIONAL"
+  },
+  "not_stored": [
+    "pre_event_seconds",
+    "post_event_seconds",
+    "internal_target_bytes",
+    "pc_vs_mobile_catalog_split"
+  ],
+  "policy_configuration_errors": [
+    "unknown_policy_ref",
+    "no_matching_catalog_entry",
+    "multiple_matching_catalog_entries",
+    "unsupported_rule_code",
+    "empty_selected_rule_list",
+    "duplicate_rule_code",
+    "time_display_branch_not_exactly_one",
+    "attachment_limit_data_missing_or_malformed",
+    "deadline_calendar_coverage_missing_or_malformed",
+    "selector_value_malformed_or_unregistered",
+    "observation_fact_malformed"
+  ]
+}

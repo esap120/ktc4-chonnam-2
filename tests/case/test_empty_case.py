@@ -97,7 +97,9 @@ def test_record_source_registered_does_not_compute_duration_or_range():
 def test_record_source_registered_rejects_after_intake():
     store = CaseStore()
     case_id = service.create_case(store=store)
-    store.get_case(case_id).start_search()
+    case = store.load_for_update(case_id)
+    case.start_search()
+    store.save(case)
 
     with pytest.raises(SourceNotAccepted):
         service.record_source_registered(case_id, _source_asset("sa_late"), store=store)
@@ -113,10 +115,11 @@ def test_record_source_registered_unknown_case_is_key_error():
 def test_get_view_after_selection_without_adapter_fails_clearly():
     store = CaseStore()
     case_id = service.create_case(store=store)
-    case = store.get_case(case_id)
+    case = store.load_for_update(case_id)
     case.start_search()
     case.receive_candidates([Candidate(candidate_id="cand_a", at=None, at_provenance=None, observed="", thumb_ref=None, rank=1)])
     case.select_candidate("cand_a")
+    store.save(case)
 
     with pytest.raises(service.AdapterNotAttached):
         service.get_view(case_id, store=store)
@@ -146,7 +149,9 @@ def test_empty_case_progress_lists_all_steps_pending():
 def test_file_intake_is_done_once_analysis_starts():
     store = CaseStore()
     case_id = service.create_case(store=store)
-    store.get_case(case_id).start_search()
+    case = store.load_for_update(case_id)
+    case.start_search()
+    store.save(case)
 
     progress = service.get_view(case_id, store=store)["progress"]
 

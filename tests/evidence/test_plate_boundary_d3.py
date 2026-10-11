@@ -6,6 +6,9 @@
 
 기록은 모두 실제 `assemble_evidence()`로 만든다. 입력 PlateReadout만 상황별로 바꾸고,
 Package는 실제 `build_report_package()`로, READY는 case의 `mark_ready_if_package_ready()`로 확인한다.
+
+#280(ADR-EVIDENCE-010) 이후 최종 REPORT_VIDEO 관찰(I4)은 MVP FINAL rule이 아니다. 관찰 입력은
+기본으로 비어 있고(real 경로의 `observation_facts=None`과 같다), 그래도 아래 경계는 그대로다.
 """
 
 from __future__ import annotations
@@ -58,6 +61,9 @@ class _Snapshot:
     def get_visual_evidence_decision(self):
         return ASSEMBLE
 
+    def get_independent_facts(self):
+        return None
+
     def get_requirement_report(self, scope):
         return self._final if scope == "FINAL_PACKAGE" else None
 
@@ -104,24 +110,28 @@ class PlateBoundaryD3Tests(unittest.TestCase):
         plate["abstained"] = True
         return plate
 
-    def _facts(self, plate_visible):
-        facts = deepcopy(self.config["requirement_observation_facts"])
-        if plate_visible is None:
-            facts.pop("plate_visible_in_report_video")
-        else:
-            facts["plate_visible_in_report_video"]["value"] = plate_visible
-        return facts
+    @staticmethod
+    def _legacy_i4_facts(plate_visible):
+        """v5까지 I4가 넘기려던 최종 영상 관찰. v6는 이 key를 읽는 rule이 없다."""
+        return {
+            "plate_visible_in_report_video": {
+                "value": plate_visible,
+                "subject_refs": [{"kind": "derived_asset", "ref": "da_h001_report_video"}]},
+            "time_overlay_visible": {
+                "value": plate_visible,
+                "subject_refs": [{"kind": "derived_asset", "ref": "da_h001_report_video"}]},
+        }
 
     # --- pipeline -----------------------------------------------------------------------------
 
-    def _run(self, plate, *, plate_visible=True):
+    def _run(self, plate, *, observation_facts=None):
         """EVIDENCE → FINAL → Package(없으면 None) → case READY 여부."""
         record = self._record(plate)
         evidence = evaluate_requirements(record, scope="EVIDENCE", report_id="req_d3_evidence",
                                          evaluated_at=EVIDENCE_AT, time_resolution=self.time)
         final = evaluate_requirements(record, scope="FINAL_PACKAGE", report_id="req_d3_final",
                                       evaluated_at=FINAL_AT, time_resolution=self.time,
-                                      asset_facts=self.assets, observation_facts=self._facts(plate_visible))
+                                      asset_facts=self.assets, observation_facts=observation_facts)
         try:
             package = build_report_package(record, final, package_id="pkg_d3_unit",
                                            created_at=CREATED_AT, asset_facts=self.assets)
@@ -143,11 +153,18 @@ class PlateBoundaryD3Tests(unittest.TestCase):
 
     # --- catalog ------------------------------------------------------------------------------
 
-    def test_active_catalog_is_v5_superseding_v4(self):
+    def test_active_catalog_is_v6_superseding_v5(self):
         catalog = load_requirement_catalog()
-        self.assertEqual("policy/requirement-rules-v5", catalog["policy_ref"])
-        self.assertEqual("policy/requirement-rules-v4", catalog["supersedes_policy_ref"])
+        self.assertEqual("policy/requirement-rules-v6", catalog["policy_ref"])
+        self.assertEqual("policy/requirement-rules-v5", catalog["supersedes_policy_ref"])
         self.assertEqual("safety-report-policy/v1.2", catalog["referenced_policies"]["report_template"])
+
+    def test_v5_revision_is_preserved_with_its_i4_rules(self):
+        v5 = json.loads((ROOT / "src/daesingo/evidence/requirement_rules_v5.json").read_text(encoding="utf-8"))
+        rule = next(item for item in v5["scopes"]["FINAL_PACKAGE"]["always"]
+                    if item["code"] == "package.vehicle.plate_visible_in_report_video")
+        self.assertEqual("policy/requirement-rules-v5", v5["policy_ref"])
+        self.assertEqual(("WARN", "UNKNOWN"), (rule["outcomes"]["observed_false"], rule["outcomes"]["not_observed"]))
 
     def test_v4_revision_is_preserved_with_its_historical_block(self):
         v4 = json.loads((ROOT / "src/daesingo/evidence/requirement_rules_v4.json").read_text(encoding="utf-8"))
@@ -203,33 +220,39 @@ class PlateBoundaryD3Tests(unittest.TestCase):
         self.assertNotIn("34?6", package["report"]["description"])
         self.assertTrue(ready)
 
-    # --- I4 ------------------------------------------------------------------------------------
+    # --- I4 (#280 · ADR-EVIDENCE-010) -----------------------------------------------------------
 
-    def test_4_i4_observed_plate_not_visible_is_warn_not_block_and_builds_a_package(self):
-        # v4는 observed_false → BLOCK이었다. #172 D-3이 WARN으로 대체했다.
-        _, _, final, package, ready, _ = self._run(self.plate, plate_visible=False)
-        check = self._check(final, "package.vehicle.plate_visible_in_report_video")
-        self.assertEqual(("WARN", "readout.plate_visibility.not_visible"),
-                         (check["outcome"], check["reason_code"]))
-        self.assertEqual("WARN", final["overall"])
-        self.assertEqual([], validate_contract(package))
-        self.assertTrue(ready)
+    def test_4_no_report_video_observation_is_not_a_final_gate(self):
+        # v5까지는 I4 미관찰 → UNKNOWN → Package 없음이었다. v6는 이 rule이 없다.
+        for observation_facts in (None, {}):
+            with self.subTest(observation_facts=observation_facts):
+                _, _, final, package, ready, stage = self._run(self.plate, observation_facts=observation_facts)
+                self.assertNotIn("package.vehicle.plate_visible_in_report_video",
+                                 [item["code"] for item in final["checks"]])
+                self.assertEqual("PASS", final["overall"])
+                self.assertEqual([], validate_contract(package))
+                self.assertTrue(ready)
+                self.assertEqual("READY", stage)
 
-    def test_5_i4_not_run_is_unknown(self):
-        _, _, final, package, ready, _ = self._run(self.plate, plate_visible=None)
-        check = self._check(final, "package.vehicle.plate_visible_in_report_video")
-        self.assertEqual(("UNKNOWN", "readout.plate_visibility.not_observed"),
-                         (check["outcome"], check["reason_code"]))
-        self.assertEqual("UNKNOWN", final["overall"])
-        self.assertIsNone(package)
-        self.assertFalse(ready)
+    def test_5_legacy_i4_observation_is_ignored_even_when_not_visible(self):
+        # 관찰값이 들어와도 판정하지 않는다 — 「보인다」고도 「안 보인다」고도 말하지 않는다.
+        _, _, baseline, _, _, _ = self._run(self.plate)
+        for visible in (True, False):
+            with self.subTest(visible=visible):
+                _, _, final, package, ready, _ = self._run(
+                    self.plate, observation_facts=self._legacy_i4_facts(visible))
+                self.assertEqual(baseline["checks"], final["checks"])
+                self.assertEqual("PASS", final["overall"])
+                self.assertIsNotNone(package)
+                self.assertTrue(ready)
 
     # --- 4a · 실행 실패 ------------------------------------------------------------------------
 
     def test_6_readout_execution_failure_is_unknown_no_package_no_ready(self):
         # 4a: ReadoutRun.outcome=FAILED면 PlateReadout=None이 온다. 식별 실패 WARN으로 바꾸지 않는다.
-        # I4 관찰이 있어도(plate_visible=True) 결과는 같아야 한다 — 실행 실패는 렌더 입력에서 막힌다.
-        record, evidence, final, package, ready, stage = self._run(None, plate_visible=True)
+        # 최종 영상 관찰이 「보인다」로 들어와도 결과는 같아야 한다 — 실행 실패는 렌더 입력에서 막힌다.
+        record, evidence, final, package, ready, stage = self._run(
+            None, observation_facts=self._legacy_i4_facts(True))
         self.assertFalse(any(ref["kind"] == "plate_readout" for ref in record["provenance"]["input_refs"]))
         check = self._check(evidence, "evidence.vehicle_number.present")
         self.assertEqual(("UNKNOWN", "evidence.plate_readout_missing"), (check["outcome"], check["reason_code"]))
@@ -247,8 +270,7 @@ class PlateBoundaryD3Tests(unittest.TestCase):
         record = self._record(None)
         ready_report = evaluate_requirements(
             self._record(self.plate), scope="FINAL_PACKAGE", report_id="req_d3_forged",
-            evaluated_at=FINAL_AT, time_resolution=self.time, asset_facts=self.assets,
-            observation_facts=self._facts(True))
+            evaluated_at=FINAL_AT, time_resolution=self.time, asset_facts=self.assets)
         ready_report["basis"]["evidence_record_ref"] = deepcopy(record["record_ref"])
         with self.assertRaisesRegex(PackageNotReady, "package.input.vehicle_number_missing"):
             build_report_package(record, ready_report, package_id="pkg_d3_forged",

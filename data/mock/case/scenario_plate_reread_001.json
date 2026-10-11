@@ -71,6 +71,7 @@
       "case_rev": 3,
       "stage": "EVIDENCE_REVIEW",
       "user_reviewed": false,
+      "description": null,
       "manifest_summary": {
         "file_count": 1,
         "ok_file_count": 1,
@@ -283,6 +284,7 @@
       "case_rev": 4,
       "stage": "EVIDENCE_REVIEW",
       "user_reviewed": false,
+      "description": null,
       "manifest_summary": {
         "file_count": 1,
         "ok_file_count": 1,

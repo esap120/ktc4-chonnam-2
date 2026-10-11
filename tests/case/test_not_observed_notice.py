@@ -49,6 +49,9 @@ class _Adapter:
     def get_visual_evidence_decision(self) -> str | None:
         return self._decision
 
+    def get_independent_facts(self) -> dict | None:
+        return None
+
 
 def _case_with_selection() -> CaseAggregate:
     case = CaseAggregate.intake(case_id="case_not_observed", hints={}, manifest_summary={})

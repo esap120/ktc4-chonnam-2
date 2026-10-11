@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from daesingo.common import load_env_file
-from daesingo.search.config import GeminiSearchConfig
+from daesingo.search.config import GeminiSearchConfig, api_key_from_env
 
 PROMPT = "Reply with the single word OK."
 # 영상·이미지 probe 와 같은 기준 영상·구간(0-7s, 1x 기준 462토큰).
@@ -114,9 +114,9 @@ def main() -> None:
 
     env = load_env_file(args.env)
     cfg = GeminiSearchConfig.from_dotenv(env)
-    api_key = env.get("GEMINI_API_KEY", "").strip()
+    api_key = api_key_from_env(env)
     if not api_key:
-        raise SystemExit(f"no GEMINI_API_KEY in {args.env}")
+        raise SystemExit(f"no ELICE_ML_API_KEY in {args.env}")
     client = importlib.import_module("openai").OpenAI(
         base_url=cfg.base_url, api_key=api_key, max_retries=0
     )

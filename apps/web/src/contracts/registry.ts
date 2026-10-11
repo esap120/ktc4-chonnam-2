@@ -83,6 +83,7 @@ export const JOB_LABEL_KEYS = [
   'job.overlay_time_read',
   'job.fine_verify',
   'job.report_video_export',
+  'job.hint_extract',
 ] as const
 
 export const JOB_LABEL_FALLBACK_KEY = 'job.generic_processing'

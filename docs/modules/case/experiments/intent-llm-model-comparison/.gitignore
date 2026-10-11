@@ -5,3 +5,4 @@ predictions-q3/
 predictions-v3-consistency/
 predictions-robustness-v2/**/*.judge.20261004*.json
 predictions-robustness-v2/**/*.judge.20261005*.json
+predictions-luna/

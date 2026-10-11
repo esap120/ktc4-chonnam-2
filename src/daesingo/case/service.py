@@ -21,14 +21,17 @@ orchestration 흐름의 유일한 실행 경로였다. 이 모듈은 그 흐름 
 """
 from __future__ import annotations
 
+import copy
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 from daesingo.case import jobs
+from daesingo.case.analysis_start import InitialSearchBudget, hints_from_result, reflect_hint_extraction
 from daesingo.case.adapters import ModuleAdapter
 from daesingo.case.domain import Candidate, CaseAggregate
 from daesingo.case.store import CaseStore
+from daesingo.case.timeline_source import CaseTimelineSource
 from daesingo.case.view import _belongs_to_current_selection, build_case_view, execution_failed
 from daesingo.evidence import AWAIT_SITUATION_RESPONSE, NOT_ASSEMBLED
 
@@ -67,29 +70,18 @@ def receive_search_candidates(case: CaseAggregate, adapter: ModuleAdapter) -> li
     return candidates
 
 
-# 단서 구조화 결과(#210 Search 의견) 필드 → `case.hints` 키. 매핑은 case 몫이다(#210 (a)).
-_HINT_FIELDS = {"time": "time_hint", "vehicle": "vehicle_hint", "situation": "situation_hint", "location": "location_hint"}
-
-
 def receive_hint_extraction(case: CaseAggregate, result: dict[str, Any]) -> None:
     """단서 구조화(`HINT_EXTRACT`) 결과를 `case.hints`에 반영한다 — case-command Draft §11.
 
     `OK`면 `*_hint` 4개를 `hints` 4개 키로 옮긴다(일부만 있어도 된다). 빈 문자열은 단서가 아니라 `None`
     으로 둔다. `ABSTAINED`(모델이 전부 보류) · `FAILED`(호출 · 파싱 실패)면 결과에 값이 있어도 쓰지 않고
     4개 모두 `None` — 값을 지어내지 않고 빈 단서로 탐색을 이어 간다. 그 밖의 상태는 결과 모양이 바뀐
-    것이라 `ValueError`로 멈춘다. 결과 모양은 #210 Search 의견을 가정했고 Search PR에서 맞춘다.
+    것이라 `ValueError`로 멈춘다. 결과 모양은 #210 Search 의견을 가정했고 Search PR에서 맞춘다. 매핑은 `analysis_start.hints_from_result()`.
 
     `AnalysisScope` · `COARSE_SEARCH` 발주는 여기서 하지 않는다 — scope 기본값과 첫 발주 fingerprint가
     정해지지 않았다(Draft §11 미결).
     """
-    status = result.get("status")
-    if status == "OK":
-        hints = {key: (result.get(field) or "").strip() or None for key, field in _HINT_FIELDS.items()}
-    elif status in ("ABSTAINED", "FAILED"):
-        hints = dict.fromkeys(_HINT_FIELDS)
-    else:
-        raise ValueError(f"알 수 없는 단서 구조화 결과 상태: {status!r} (OK · ABSTAINED · FAILED)")
-    case.record_extracted_hints(hints)
+    case.record_extracted_hints(hints_from_result(result))
 
 
 @dataclass
@@ -114,6 +106,8 @@ class AdapterSnapshot:
     # `evidence.plate_abstained`(#172 D-3)의 발동 근거 — CaseView 값만으로는 번호판 보류(1·2)와
     # 읽지 못함(1·3)이 같게 보인다. notice 판단에만 쓰고 CaseView에 싣지 않는다.
     evidence_needs: list[dict[str, Any]] = field(default_factory=list)
+    # 상황 응답 대기 중 evidence가 계산한 상황 독립 값 — `evidence` 부분 투영(`record_id=null`, #239)의 원천.
+    independent_facts: dict[str, Any] | None = None
 
 
 def fetch_case_view_inputs(adapter: ModuleAdapter) -> AdapterSnapshot:
@@ -128,6 +122,7 @@ def fetch_case_view_inputs(adapter: ModuleAdapter) -> AdapterSnapshot:
         plate_read_status=adapter.get_plate_read_status(),
         visual_evidence_decision=adapter.get_visual_evidence_decision(),
         evidence_needs=adapter.get_evidence_needs(),
+        independent_facts=adapter.get_independent_facts(),
     )
 
 
@@ -180,7 +175,7 @@ def build_view_from_adapter(
     case: CaseAggregate,
     adapter: ModuleAdapter | None,
     *,
-    running_jobs: list[dict[str, Any]] | None = None,
+    job_executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
     visual_verify_status: str | None = None,
 ) -> dict[str, Any]:
@@ -189,9 +184,9 @@ def build_view_from_adapter(
     (downstream 스냅샷 소스)만 있으면 `CaseView`를 조립할 수 있다는 것이 이 함수가
     보이는 계약이다.
 
-    `running_jobs`/`notices`는 adapter가 아니라 호출자가 직접 안다(어떤 job을 방금
-    발주했는지는 이 함수가 추측하지 않는다 — 모듈 docstring 「여기 없는 것」과 동일한
-    이유). 그대로 `build_case_view()`에 전달만 한다. `visual_verify_status`(선택 후보 Fine의 대표
+    `running_jobs`는 case가 정산 기록으로 계산하고(`view.derive_running_jobs`), 실행 상태만
+    `job_executions`로 받는다. `notices`는 adapter가 아니라 호출자가 직접 안다(모듈 docstring
+    「여기 없는 것」과 동일한 이유). 둘 다 그대로 `build_case_view()`에 전달만 한다. `visual_verify_status`(선택 후보 Fine의 대표
     `JobExecution.status`)도 같은 이유로 호출자가 넘긴다 — worker 경로에서는
     `view.representative_execution_status(..., "FINE_VERIFY")`가 만든다.
 
@@ -208,11 +203,12 @@ def build_view_from_adapter(
         requirement_report_package=snapshot.requirement_report_package,
         report_package=snapshot.report_package,
         plate_readouts=snapshot.plate_readouts,
-        running_jobs=running_jobs,
+        job_executions=job_executions,
         notices=notices,
         plate_read_status=snapshot.plate_read_status,
         visual_evidence_decision=snapshot.visual_evidence_decision,
         visual_verify_status=visual_verify_status,
+        independent_facts=snapshot.independent_facts,
     )
     return derive_notices(
         view,
@@ -457,20 +453,30 @@ def create_case(*, store: CaseStore) -> str:
     return case_id
 
 
-def record_source_registered(case_id: str, source_asset: dict[str, Any], *, store: CaseStore) -> None:
+def record_source_registered(
+    case_id: str,
+    source_asset: dict[str, Any],
+    *,
+    media_streams: list[dict[str, Any]] | None = None,
+    store: CaseStore,
+) -> None:
     """recording이 이 case에 등록 · 연결한 원본 1개(`SourceAsset` 계약 dict)를 반영한다(§5.2 upload).
 
     composition root가 recording 등록과 같은 transaction에서 부른다. `INTAKE`가 아니면
     `SourceNotAccepted` — 같은 transaction이라 recording 등록도 함께 rollback된다.
+    `media_streams`(`MediaStream` 계약 dict 목록, recording 등록 결과)를 넘기면 VIDEO 스트림 ref를 함께
+    남긴다 — 분석 시작이 여러 원본을 이어 붙일 때 쓴다.
     """
-    store.get_case(case_id).record_source_registered(source_asset)
+    case = store.load_for_update(case_id)
+    case.record_source_registered(source_asset, media_streams)
+    store.save(case)
 
 
 def get_view(
     case_id: str,
     *,
     store: CaseStore,
-    running_jobs: list[dict[str, Any]] | None = None,
+    job_executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
     visual_verify_status: str | None = None,
 ) -> dict[str, Any]:
@@ -484,7 +490,35 @@ def get_view(
     "완성된 FastAPI/Worker 배선"에 해당한다.
     """
     case = store.get_case(case_id)
-    adapter = store.get_adapter(case_id)
+    adapter = store.get_adapter(case_id, case)
     return build_view_from_adapter(
-        case, adapter, running_jobs=running_jobs, notices=notices, visual_verify_status=visual_verify_status
+        case, adapter, job_executions=job_executions, notices=notices, visual_verify_status=visual_verify_status
     )
+
+
+@dataclass(frozen=True)
+class ReflectionResult:
+    """`receive_hint_extraction_result()`의 결과 — `appended_job_records`는 composition root(Worker T2)가 같은
+    transaction에서 enqueue한다(`CommandResult`와 같은 장치). 반영하지 않았으면 `reflected=False` · `[]`."""
+
+    appended_job_records: list[dict[str, Any]]
+    reflected: bool
+
+
+def receive_hint_extraction_result(
+    case_id: str,
+    result: dict[str, Any],
+    *,
+    store: CaseStore,
+    timelines: CaseTimelineSource,
+    budget: InitialSearchBudget | None = None,
+) -> ReflectionResult:
+    """Worker가 단서 구조화 결과를 반영하는 진입점(`decisions/start-analysis.md` §3-6). `load_for_update` → 반영 →
+    성공했을 때만 `save`. 기다리던 `HINT_EXTRACT`가 없으면(중복 결과) 저장하지 않는다. 예외는 그대로 올라가고
+    저장되지 않는다 — transaction rollback은 호출자 몫이다(#245 D-2)."""
+    case = store.load_for_update(case_id)
+    jobs_before = len(case.job_records)
+    if not reflect_hint_extraction(case, result, timelines=timelines, budget=budget or InitialSearchBudget()):
+        return ReflectionResult(appended_job_records=[], reflected=False)
+    store.save(case)
+    return ReflectionResult(appended_job_records=copy.deepcopy(case.job_records[jobs_before:]), reflected=True)

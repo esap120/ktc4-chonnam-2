@@ -21,7 +21,7 @@ from openai.types.chat import ChatCompletionContentPartParam, ChatCompletionMess
 from pydantic import BaseModel, ConfigDict
 
 from daesingo.common import load_env_file
-from daesingo.search.config import GeminiSearchConfig
+from daesingo.search.config import GeminiSearchConfig, api_key_from_env
 from daesingo.search.prompts import fine_prompt_for
 from daesingo.search.schemas import FineResponse
 from daesingo.search.scope import VisualEventType
@@ -73,7 +73,7 @@ def run(
     count = 0
     with OpenAI(
         base_url=config.base_url,
-        api_key=env["GEMINI_API_KEY"],
+        api_key=api_key_from_env(env),
         max_retries=0,
         timeout=120,
     ) as client:

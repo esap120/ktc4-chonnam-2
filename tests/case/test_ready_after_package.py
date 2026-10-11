@@ -58,6 +58,9 @@ class _SnapshotAdapter:
     def get_visual_evidence_decision(self) -> str | None:
         return None
 
+    def get_independent_facts(self) -> dict | None:
+        return None
+
 
 _EVIDENCE = {
     "record_ref": {"kind": "evidence_record", "ref": "er_test_001"},

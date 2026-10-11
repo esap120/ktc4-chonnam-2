@@ -115,12 +115,11 @@ def test_infra_failure_four_revisions_match_fixture():
     overlay_job = jobs.issue_overlay_time_read(case, input_fingerprint="sha1:x001-overlay-read-clip_x001")
     assert plate_job["case_rev"] == overlay_job["case_rev"] == 1
     report("job_x001_overlay", overlay_job)
+    case.settle_job(overlay_job["job_id"], "REFLECTED")  # overlay 성공은 rev1 시점에 이미 반영됨(8-8이 할 정산을 테스트가 대신)
 
     view1 = build_case_view(
         case,
-        running_jobs=[
-            {"job_id": plate_job["job_id"], "kind": "PLATE_READ", "label_key": "job.plate_read", "status": "RUNNING"}
-        ],
+        job_executions=[{"job_id": plate_job["job_id"], "attempt": 1, "status": "RUNNING"}],
         notices=rev1["notices"],
         plate_read_status=status("PLATE_READ"),  # 아직 어떤 JobExecution도 case에 보고되지 않음 → None
         overlay_time_read_status=status("OVERLAY_TIME_READ"),
@@ -133,6 +132,7 @@ def test_infra_failure_four_revisions_match_fixture():
     case.bump_revision()
     assert [e["status"] for e in executions_by_job_id["job_x001_plate"]] == ["STALE", "FAILED"]  # 전제 확인
     report("job_x001_plate", plate_job)
+    case.settle_job(plate_job["job_id"], "REFLECTED")  # 최종 FAILED가 notice로 반영됨
 
     view2 = build_case_view(
         case,
@@ -148,6 +148,7 @@ def test_infra_failure_four_revisions_match_fixture():
 
     assert [e["status"] for e in executions_by_job_id["job_x001_plate_reread"]] == ["CANCELLED"]  # 전제 확인
     report("job_x001_plate_reread", reread_plate_job)
+    case.settle_job(reread_plate_job["job_id"], "CANCELLED")  # 곧바로 취소됨
 
     view3 = build_case_view(
         case,
@@ -163,6 +164,7 @@ def test_infra_failure_four_revisions_match_fixture():
 
     assert [e["status"] for e in executions_by_job_id["job_x001_overlay_reread"]] == ["SUCCEEDED"]  # 전제 확인
     report("job_x001_overlay_reread", reread_overlay_job)
+    case.settle_job(reread_overlay_job["job_id"], "REFLECTED")  # 재판독 성공이 반영됨
 
     view4 = build_case_view(
         case,

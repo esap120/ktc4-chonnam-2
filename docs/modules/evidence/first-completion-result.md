@@ -26,8 +26,8 @@
 - **실제 baseline 처리:** 시간 source 우선순위/offset/충돌, Evidence 조립, CorrectionRecord head와 타입 검증 및 반영, declarative Needs, 활성 catalog 기반 두 scope rule 선택, K1 첨부·K2 기한 평가, deterministic report rendering, ready-only Package 조립.
 - **공용 Mock 입력:** recording/search/readout/case의 계약 JSON과 AssetFacts. 원본 46 JSON/7 Scenario는 수정하지 않았다. H의 공용 `NOT_ASKED` 경로는 specific renderer에서 차단한다.
 - **evidence 전용 case context:** H의 specific Package 성공 경로에는 `CONFIRMED`, U의 snapshot에는 `USER_UNSURE`의 전체 필드를 test-derived 입력으로 명시한다. 공용 case 원본과 동일하다고 주장하지 않는다.
-- **관찰 fact 경계:** 사건 장면·전 상황·후 상황 세 rule과 입력 key는 v4에서 제거됐다. 남은 번호판·시각 표시·사후 각인 fact는 boolean·`subject_refs` 구조를 계속 검증하며 문자열 값으로 PASS를 만들지 않는다. 제거된 legacy key가 들어와도 선택 rule이 없어 판정에 영향을 주지 않는다.
-- **Runtime 한계:** H/U의 `plate_visible_in_report_video`와 시각 표시 fact는 현재 adapter가 `mock_only: true`로 주입한다. 특히 번호판 가시성은 남은 유일한 무조건 관찰 rule이므로 실제 Runtime에서는 I4 배선 전 `not_observed → UNKNOWN`이 되어 Package가 다시 막힌다. 이번 Package 발행은 Runtime 준비 완료 증거가 아니다.
+- **관찰 fact 경계:** 사건 장면·전 상황·후 상황 세 rule과 입력 key는 v4에서, 최종 신고용 영상의 번호판·시각 표시 가시성 두 rule은 v6에서 제거됐다(ADR-EVIDENCE-010, #280). 남은 사후 각인 fact는 boolean·`subject_refs` 구조를 계속 검증하며 문자열 값으로 PASS를 만들지 않는다. 제거된 legacy key가 들어와도 선택 rule이 없어 판정에 영향을 주지 않는다.
+- **Runtime 한계:** v6부터 무조건 관찰 rule이 없어 H는 관찰 입력 없이 Package가 나온다. U의 사후 각인 fact(`post_stamp_applied`)는 여전히 adapter가 `mock_only: true`로 주입한다 — 실제 Runtime에서는 recording(C-07)이 그 사실을 전달하기 전까지 사후 각인 갈래가 `UNKNOWN`이다. 이번 Package 발행은 Runtime 준비 완료 증거가 아니다.
 - **Consumer Mock:** 공개 Contract JSON만 읽어 current head와 두 gate를 계산한다. CaseView를 만들거나 case 정책을 재구현하지 않으며 `USER_REVIEWED`는 산출하지 않는다.
 - **Fixture 비교:** 실제 baseline 처리 후 상태/overall을 공용 evidence JSON과 비교한다. `scenario_id`별 canned output 재생을 처리 구현의 증거로 사용하지 않는다.
 - **후속 방어 경계:** Package 조립 전에 RequirementReport 구조와 평가 자산 ref 포함 관계를 검증한다. 평가하지 않은 자산으로 바꿔 끼운 Package는 `package.requirement_asset_basis_mismatch`로 차단하며, null·빈 차량번호는 EVIDENCE `PASS`가 아니라 `UNKNOWN`이다.
@@ -66,7 +66,7 @@
 | Q3 timeline revision 직접 필드 | TimeResolution에 새 직접 필드는 확정되지 않았다 | CandidateEvent span과 IncidentClip provenance의 timeline ref/revision/range로 사용 입력 추적 가능 | 비차단 후속. 새 필드 없이 현 경로 유지; Contract 변경 시 반영 |
 | 공용 H/U Package baseline | **반영 완료.** 판정 주체가 없던 세 rule을 v4에서 제거했다 | H `PASS`·`pkg_h001`, U `WARN`·`pkg_u001`; 두 Consumer Mock 모두 `PACKAGE_READY=true` | evidence 범위 완료. 공용 Package는 아직 v1이고 U는 위치 있는 template이므로 I2 fixture 재렌더 대기 |
 | D2-e 녹화 경계 | 사건이 녹화 시작·끝에 걸려 전후가 물리적으로 없을 수 있다 | v4 `RequirementReport`는 이를 판정하지 않는다 | `recording` Owner(정철원)가 생성 실패/경고/사용자 고지와 span 정책을 결정. evidence는 미결을 닫지 않음 |
-| I4 번호판·시각 관찰 전달 | Mock adapter에는 값이 있으나 `mock_only: true`다. 현재 readout은 `IncidentClip`만 읽어 최종 `REPORT_VIDEO` 가시성을 생산하지 않는다 | 실제 Runtime은 `plate_visible_in_report_video` 부재 시 FINAL_PACKAGE `UNKNOWN` | 먼저 readout이 `DerivedAsset(REPORT_VIDEO)`를 관찰 대상으로 받을 수 있는 계약/capability를 열고, 이후 case가 관찰 결과를 evidence `observation_facts`로 전달. `post_stamp_applied`는 recording transform provenance로 확인 |
+| I4 번호판·시각 관찰 전달 | **MVP에서 만들지 않는다(#280 · ADR-EVIDENCE-010).** `policy/requirement-rules-v6`에서 두 가시성 rule을 뺐고 adapter의 `mock_only` I4 값도 지웠다 | I4 미관찰은 FINAL_PACKAGE를 막지 않는다. 최종 영상 가시성은 판정하지 않는다 | 재도입은 readout `REPORT_VIDEO` 입력 계약 → case 배선 → 새 결정 순서(ADR-010 §8). `post_stamp_applied`는 별개로 recording transform provenance로 확인 |
 | 실제 Consumer | 현재 `case` 공개 실행 구현은 골격이며 실제 projection 호출 경로가 없다 | Contract reader Mock까지만 입증 | 유소연이 실제 case 입력 경계/CaseView projection을 구현한 뒤 동일 artifact로 접합 확인 |
 
 ## 재현 명령과 검증 범위
