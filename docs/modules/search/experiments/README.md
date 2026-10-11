@@ -1,5 +1,8 @@
 # search/experiments
 
+- [CV 전체 진행 결과와 남은 작업](cv-lane-track-progress-summary-2026-10-10.md) — 최신 평가 도구·중복 차선 처리·미완료 범위 반영.
+- [CV 잔여 작업 처리 결과](cv-remaining-plan-2026-10-11.md) — 188개 테스트·실제 영상 검증, 최종 선정·정답·L2 환경 미완료 상태 기록.
+
 재현 가능한 실험 기록을 둔다. 입력/설정/결과/실패/다음 learning을 남긴다. AI 원문과 원본 영상은 저장소에 두지 않는다. 신규 실험 결과 원본(JSON·JSONL)은 로컬에만 보관하고, Git에는 설정·수치 요약·해석을 담은 Markdown 보고서를 남긴다.
 
 - [Retrieval Coarse 사전검증 (#279 실험 B)](retrieval-coarse-preflight-2026-10-11.md) — SigLIP so400m 프레임·문장 유사도, set1 13클립 1,240프레임. 판단용 3유형 Recall@3 4/11(무작위 95백분위 3 초과·기준 5/11 미달) → 약한 신호. 적중 4건 중 2건이 신호위반, 차선 유형은 유형 구분 못 함
