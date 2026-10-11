@@ -175,7 +175,6 @@ def handle_command(
     request: dict[str, Any],
     *,
     store: CaseStore,
-    job_executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
     timelines: CaseTimelineSource | None = None,
     budget: InitialSearchBudget | None = None,
@@ -183,7 +182,7 @@ def handle_command(
     """`execute_command()`의 `response`만 돌려준다 — append된 JobRecord가 필요 없는 호출자(transport ·
     테스트)용."""
     return execute_command(
-        request, store=store, job_executions=job_executions, notices=notices, timelines=timelines, budget=budget
+        request, store=store, notices=notices, timelines=timelines, budget=budget
     ).response
 
 
@@ -191,7 +190,6 @@ def execute_command(
     request: dict[str, Any],
     *,
     store: CaseStore,
-    job_executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
     timelines: CaseTimelineSource | None = None,
     budget: InitialSearchBudget | None = None,
@@ -201,11 +199,11 @@ def execute_command(
     성공하면 stage가 `EVIDENCE_REVIEW`일 때 `PACKAGE_READY`를 다시 보고 준비됐으면 `READY`로 올린다
     (§5 — 그 전이도 `case_rev`를 올린다). 검사 순서는 §6 그대로 `invalid_payload` → `unknown_target`(case) → `stale_revision` →
     `unknown_target`(대상) → `not_allowed`다. 실패하면 아무 상태도 바꾸지 않고 현재 CaseView를
-    싣는다 — case_id가 없을 때만 `case_view=None`이다. `job_executions`·`notices`는 `get_view()`에
-    그대로 넘긴다(사용자가 본 화면과 같은 notices로 `RUN_NOTICE_ACTION`을 검사하기 위해).
+    싣는다 — case_id가 없을 때만 `case_view=None`이다. `notices`는 `get_view()`에 그대로 넘긴다(사용자가 본
+    화면과 같은 notices로 `RUN_NOTICE_ACTION`을 검사하기 위해). 실행 상태는 `store`의 read port로 읽는다(8-10).
     `START_ANALYSIS`는 `timelines`(필수) · `budget`(기본 `InitialSearchBudget()`)을 쓴다.
     """
-    view_kwargs = {"store": store, "job_executions": job_executions, "notices": notices}
+    view_kwargs = {"store": store, "notices": notices}
     case_id = request.get("case_id") if isinstance(request, dict) else None
 
     def current_view() -> dict[str, Any] | None:
@@ -215,7 +213,9 @@ def execute_command(
             return None
 
     def view_of(case: CaseAggregate) -> dict[str, Any]:
-        return build_view_from_adapter(case, store.get_adapter(case.case_id, case), job_executions=job_executions, notices=notices)
+        return build_view_from_adapter(
+            case, store.get_adapter(case.case_id, case), executions=store.read_executions(case), notices=notices
+        )
 
     try:
         _check_payload(request)

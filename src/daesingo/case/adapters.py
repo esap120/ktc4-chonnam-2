@@ -45,7 +45,7 @@ W5/W6 마감(월요일 20:00 회의 — 대표 시나리오 1개가 E2E를 실�
 
 `get_job_executions()`(common/runtime)는 여전히 `NotImplementedError`다 — 다만
 `case/service.py`의 `fetch_case_view_inputs()`/`build_view_from_adapter()`는 애초에
-이 메서드를 부르지 않으므로(`running_jobs`는 case가 정산 기록으로 계산함), 오늘 목표인
+이 메서드를 부르지 않으므로(실행 상태는 `CaseStore`의 read port로 읽음, 8-10), 오늘 목표인
 "CaseView까지 E2E 통과"에는 영향이 없다.
 
 시나리오는 `scenario_happy_001` 하나로 고정돼 있다 — `real_e2e.py` 모듈 docstring의

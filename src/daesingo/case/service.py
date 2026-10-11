@@ -32,7 +32,12 @@ from daesingo.case.adapters import ModuleAdapter
 from daesingo.case.domain import Candidate, CaseAggregate
 from daesingo.case.store import CaseStore
 from daesingo.case.timeline_source import CaseTimelineSource
-from daesingo.case.view import _belongs_to_current_selection, build_case_view, execution_failed
+from daesingo.case.view import (
+    _belongs_to_current_selection,
+    build_case_view,
+    execution_failed,
+    representative_execution_status,
+)
 from daesingo.evidence import AWAIT_SITUATION_RESPONSE, NOT_ASSEMBLED
 
 
@@ -175,20 +180,18 @@ def build_view_from_adapter(
     case: CaseAggregate,
     adapter: ModuleAdapter | None,
     *,
-    job_executions: list[dict[str, Any]] | None = None,
+    executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
-    visual_verify_status: str | None = None,
 ) -> dict[str, Any]:
     """`fetch_case_view_inputs()` + `build_case_view()`를 이어붙인 편의 함수 —
     스모크 테스트에서 매번 반복되던 4줄을 한 호출로 줄인다. `case`(상태)와 `adapter`
     (downstream 스냅샷 소스)만 있으면 `CaseView`를 조립할 수 있다는 것이 이 함수가
     보이는 계약이다.
 
-    `running_jobs`는 case가 정산 기록으로 계산하고(`view.derive_running_jobs`), 실행 상태만
-    `job_executions`로 받는다. `notices`는 adapter가 아니라 호출자가 직접 안다(모듈 docstring
-    「여기 없는 것」과 동일한 이유). 둘 다 그대로 `build_case_view()`에 전달만 한다. `visual_verify_status`(선택 후보 Fine의 대표
-    `JobExecution.status`)도 같은 이유로 호출자가 넘긴다 — worker 경로에서는
-    `view.representative_execution_status(..., "FINE_VERIFY")`가 만든다.
+    `executions`는 이 case job들의 JobExecution(`CaseStore.read_executions()` 결과)이다. `running_jobs`는 case가
+    정산 기록과 이것으로 계산하고(`view.derive_running_jobs`), Fine 실행 상태(`visual_verify_status`)는 가장 나중
+    `FINE_VERIFY` job의 대표 execution으로 고른다(`view.representative_execution_status`, 8-10). `notices`는
+    adapter가 아니라 호출자가 직접 안다(모듈 docstring 「여기 없는 것」과 동일한 이유).
 
     예외는 `derive_notices()` 하나 — 조립된 `CaseView` 값(과 adapter의 Fine 판정)만으로 발동
     조건이 정해지는 notice는 호출자가 알 필요가 없으므로 여기서 붙인다.
@@ -196,6 +199,8 @@ def build_view_from_adapter(
     선택 전(탐색 중 · 후보 0개)에는 adapter의 downstream 값을 조회하지 않는다(`_inputs_for()`).
     """
     snapshot = _inputs_for(case, adapter)
+    executions = executions or []
+    visual_verify_status = representative_execution_status(case.job_records, executions, "FINE_VERIFY")
     view = build_case_view(
         case,
         evidence_record=snapshot.evidence_record,
@@ -203,7 +208,7 @@ def build_view_from_adapter(
         requirement_report_package=snapshot.requirement_report_package,
         report_package=snapshot.report_package,
         plate_readouts=snapshot.plate_readouts,
-        job_executions=job_executions,
+        job_executions=executions,
         notices=notices,
         plate_read_status=snapshot.plate_read_status,
         visual_evidence_decision=snapshot.visual_evidence_decision,
@@ -382,8 +387,8 @@ def derive_notices(
     - `evidence.visual_event_not_observed` — evidence가 없고, adapter가 보고한 선택 후보의 Fine
       판정(`visual_evidence_decision`)이 `NOT_ASSEMBLED`일 때(#168 [A]). 음성 결과는 evidence가
       없어 CaseView 값만으로는 조립 전과 구분되지 않으므로 이 판정만 따로 받는다.
-    - `search.visual_verify_failed` — evidence가 없고, 호출자가 넘긴 선택 후보 Fine의 대표 실행 상태
-      (`visual_verify_status`)가 terminal 실패(`FAILED` · 재시도가 끝난 `STALE`)일 때(8-14). 진행 상태에
+    - `search.visual_verify_failed` — evidence가 없고, Fine의 대표 실행 상태(`visual_verify_status`, read port
+      조회 결과에서 `build_view_from_adapter()`가 고름)가 terminal 실패(`FAILED` · 재시도가 끝난 `STALE`)일 때(8-14). 진행 상태에
       Fine step이 없어 CaseView 값만으로는 조립 전과 구분되지 않는다.
     - `evidence.plate_abstained` — 번호판 값이 없고, `evidence_needs` 중 현재 EvidenceRecord를
       basis로 한 Needs에 `PLATE_REREAD`가 있을 때(#172 D-3: 일부 판독 / `NEEDS_REVIEW`, 1·2).
@@ -476,9 +481,7 @@ def get_view(
     case_id: str,
     *,
     store: CaseStore,
-    job_executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
-    visual_verify_status: str | None = None,
 ) -> dict[str, Any]:
     """`web → case.get_view() → CaseView`(`module-architecture.md` §5-1 ⑪, §6 모듈6
     ③)의 실제 진입점. 지금까지 스모크 테스트 안에만 있던 "case_id로 저장된 case를
@@ -488,12 +491,12 @@ def get_view(
     않는다. 여러 요청에 걸쳐 같은 store를 재사용하는 것(예: FastAPI app state)은
     호출자의 책임이다 — 그 배선 자체는 W5/W6 요청 문서가 이번 범위 밖으로 뺀
     "완성된 FastAPI/Worker 배선"에 해당한다.
+
+    실행 상태는 `store`에 꽂힌 JobExecution read port로 이 case의 job만 조회한다(8-10) — 호출자가 넘기지 않는다.
     """
     case = store.get_case(case_id)
     adapter = store.get_adapter(case_id, case)
-    return build_view_from_adapter(
-        case, adapter, job_executions=job_executions, notices=notices, visual_verify_status=visual_verify_status
-    )
+    return build_view_from_adapter(case, adapter, executions=store.read_executions(case), notices=notices)
 
 
 @dataclass(frozen=True)
