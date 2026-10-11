@@ -11,7 +11,7 @@ import { StatusBadge } from '../components/StatusBadge'
 // 다시 시도는 보여야 하므로, 요약은 항상 그리고 나머지는 있는 것만 그린다.
 // ponytail: 위치는 지도·검색어 복사 없이 초안 행만 둔다. 붙여넣을 칸이 아니라 직접 고른다.
 // 안전신문고 칸 중 붙여넣을 수 있는 것만 복사 버튼을 둔다. 나머지는 거기서 직접 고른다(core-user-flow §21).
-// 「제목」 칸은 report_fields에 아직 없다.
+// 제목·내용은 report_fields가 아니라 `package.report`(v1.7)로 온다. case가 만든 문장을 그대로 보여 주고 복사만 한다.
 const PASTE = new Set(['vehicle_number', 'violation_expression'])
 
 export function ResultScreen(props: {
@@ -109,6 +109,29 @@ export function ResultScreen(props: {
               </button>
             </div>
             <div className="kv kv-rows">
+              {/* 계약상 package가 있으면 report도 항상 있다(v1.7). 옛 판본 응답이 와도 화면이 깨지지 않게 행만 뺀다 */}
+              {(
+                [
+                  ['제목', pkg.report?.title],
+                  ['내용', pkg.report?.description],
+                ] as const
+              ).map(([label, text]) =>
+                text == null ? null : (
+                <div className="kv-row draft" key={label}>
+                  <span className="kv-k">{label}</span>
+                  <span className="kv-v">
+                    <span className="kv-val" style={{ whiteSpace: 'pre-wrap' }}>
+                      {text}
+                    </span>
+                  </span>
+                  <span className="draft-side">
+                    <button type="button" className="btn sm" onClick={() => navigator.clipboard?.writeText(text)}>
+                      복사
+                    </button>
+                  </span>
+                </div>
+                ),
+              )}
               {fields.map(([key, value]) => (
                 <div className="kv-row draft" key={key}>
                   <span className="kv-k">{reportFieldLabel(key)}</span>

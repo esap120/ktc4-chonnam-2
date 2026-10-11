@@ -43,6 +43,7 @@ function view(candidates: Candidate[]): CaseView {
     stage: 'EVIDENCE_REVIEW',
     user_reviewed: false,
     manifest_summary: { file_count: 1, ok_file_count: 1, failed_file_count: 0, duration_sec: 600, range: null },
+    description: null,
     hints: { time: '18시쯤', vehicle: '흰색 SUV', situation: null, location: null },
     progress: [],
     candidates,
@@ -115,6 +116,21 @@ describe('CandidatesScreen — 나란히 비교(A-1)', () => {
     expect(container.textContent).toContain('흰색 SUV가 백색 실선을 넘어 인접 차로로 이동')
     expect(container.textContent).toContain('사용자 확인됨')
     expect(container.textContent).toContain('파일명 시각')
+  })
+})
+
+describe('CandidatesScreen — rank 번호', () => {
+  it('case가 준 rank를 번호로 쓰고, 없으면 배열 순서를 센다', () => {
+    const withRank = view([
+      candidate({ candidate_id: 'c1', rank: 2 }),
+      candidate({ candidate_id: 'c2', rank: 5 }),
+    ])
+    const a = render(<CandidatesScreen view={withRank} />)
+    expect([...a.container.querySelectorAll('.cnum')].map((n) => n.textContent)).toEqual(['2', '5'])
+    cleanup()
+    const noRank = view([candidate({ candidate_id: 'c1' }), candidate({ candidate_id: 'c2' })])
+    const b = render(<CandidatesScreen view={noRank} />)
+    expect([...b.container.querySelectorAll('.cnum')].map((n) => n.textContent)).toEqual(['1', '2'])
   })
 })
 
