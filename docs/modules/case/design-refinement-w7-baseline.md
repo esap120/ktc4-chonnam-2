@@ -32,7 +32,7 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **참고:** `src/daesingo/case/real_e2e.py`, `docs/modules/case/decisions/orchestration-service-layer.md` §7, PR #116
 
-### 2순위 — situation_response / observation_facts 워크플로우
+### 2순위 — situation_response / observation_facts 워크플로우 — ✅ case 몫 종결(2026-10-02, #177)
 
 > **2026-09-30:** situation_response 기록·전달은 PR #177(evidence 테스트 반영 대기). *(2026-10-02 #177 머지.)* observation_facts(최종 영상 관찰, I4)는 producer가 없어 case 몫이 아니다(ADR-EVIDENCE-008 §6.2) — I4가 없는 동안 real 경로 FINAL은 `UNKNOWN`이다.
 
@@ -46,7 +46,7 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **참고:** `docs/modules/case/experiments/w6-real-e2e-happy-001.md` "알려진 단순화 2"
 
-### 3순위 — Intent LLM 통합
+### 3순위 — Intent LLM 통합 — ✅ 종결(2026-10-08)
 
 > **2026-09-30:** 1차 구현(09-24)은 case 모듈 경계 위반(프롬프트·provider 호출이 case 안)으로 머지 전 되돌렸다. 호출 창구 위치는 이슈 #210에서 search와 조율 중이고, 모델 선정·평가 체계는 멘토 피드백 후 확정(`미결 유지`). 아래 「API 키/모델 ID 확정이 유일한 외부 의존」은 더 이상 맞지 않는다.
 >
@@ -74,7 +74,11 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **참고:** `docs/modules/case/decisions/correction-log-reuse.md`, Issue #74, Issue #71(영상 자산 lifecycle — 경계 분리됨)
 
-### 4순위 — `real_e2e.py` 시나리오 확장 (1/7 → 7/7)
+### 4순위 — `real_e2e.py` 시나리오 확장 (1/7 → 5/7) — ✅ 2026-10-12
+
+> **2026-10-12:** happy · unknown_abstain · correction_rerun · plate_reread · empty 5개를 real로 돌리고 case fixture 마지막 CaseView와 대조한다. infra_failure는 비동기 E2E(RT-09 · RT-10) 몫, relative_rebase는 범위 밖(선택 전 rebase · recording rebase 공개 함수 없음). 결정 · 발견 사항 4건은 `decisions/real-e2e-scenarios.md`.
+>
+> **순서 기록:** 4 · 5순위는 번호와 달리 6 ~ 8순위 뒤에 했다. 미루는 결정을 남긴 적은 없다 — 1순위가 풀린 뒤(2026-09-20) 실영상 경로 수정 · transport(6 · 6.5) · 8순위(M5 선행)가 차례로 앞에 섰고, 4순위는 「기존 걸 넓게 검증하는 확장」이라 밀렸다. 5순위 lineage 선택은 8-6 2단계 `StoredObservationAdapter`가 다시 쓴다.
 
 **문제:** 지금 recording→search→readout→evidence real 연결은 `scenario_happy_001` 하나로만 검증됐다. correction rerun(supersede 체인), plate reread, unknown/abstain, infra failure(재시도), relative rebase, empty — Mock이 이미 커버하는 6개 시나리오는 Real 경로로 하나도 안 됐다.
 
@@ -82,7 +86,9 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **참고:** `src/daesingo/case/real_e2e.py`, `tests/case/test_real_e2e.py`
 
-### 5순위 — asset_refs 선택 로직
+### 5순위 — asset_refs 선택 로직 — ✅ 2026-10-12
+
+> **2026-10-12:** `real_e2e.select_case_assets()` — 선택 후보의 IncidentClip 자신과 lineage에 그 clip이 있는 asset만 넘긴다. 역할로는 거르지 않는다(evidence 규칙). 결정 `decisions/real-e2e-scenarios.md` §4-2.
 
 **문제:** `real_e2e.py`의 `asset_refs`도 recording fixture 객체가 이미 아는 목록을 그대로 재사용한다 — "이 case에 어떤 asset_facts가 관련 있는지"를 스스로 판단하는 로직이 없다.
 

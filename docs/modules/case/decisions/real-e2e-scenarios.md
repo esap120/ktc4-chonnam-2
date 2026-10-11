@@ -33,9 +33,9 @@ real 경로(`real_e2e.py` · `RealAdapter`)가 `scenario_happy_001` 하나에 �
 
 ## 4. 결정
 
-1. **happy 고정을 걷어낸다.** `observe_happy_001_candidate` · `build_happy_001_evidence_bundle`을 `observe_fixture_candidate` · `build_fixture_evidence_bundle(scenario_id=…)`로 바꾸고 `RealAdapter(scenario_id=…)`를 받는다(기본 happy — 기존 호출 그대로). `analysis_sources[0]`는 span에 맞는 AnalysisSource 선택으로 바꾼다. `time_source_candidates` 직접 읽기(알려진 단순화 1)는 그대로 두고 시나리오 파일만 바뀐다.
-2. **관련 asset은 lineage로 고른다(5순위).** 순수 함수 `select_case_assets(incident_clip_ref, asset_facts)` — `lineage`에 선택 후보의 IncidentClip ref가 있는 asset만 남긴다. **역할(`derived_role`)로는 거르지 않는다** — 어느 역할이 패키지에 쓰이는지는 evidence가 정한다(`_package_assets`). 후보 목록은 인자로 받는다: fixture 경로는 `fixture.asset_facts`, 8-6 2단계 `StoredObservationAdapter`는 recording 공개 조회 결과(`observation-storage.md`). 다른 clip · 다른 후보의 asset이 섞이면 지금은 막는 곳이 없고, 같은 역할이 둘이면 evidence가 오류를 낸다 — 이 규칙이 둘 다 막는다.
-3. **재판독은 `readout-native-hires`로 한다.** `RealAdapter`는 `PLATE_REREAD`로 발주된 `PLATE_READ` job(`force_rerun`)을 보면 같은 IncidentClip을 `readout-native-hires`로 다시 읽고 조립을 다시 한다. 프로파일은 readout 계약 §3 「abstain 뒤 재판독할 때 쓴다」를 따른다 — case가 새로 정하는 값이 아니다. 관찰 캐시 키에 재판독 횟수를 더한다. A→B→A 재사용 규칙(`reselect-observation-reuse.md`)은 그대로다.
+1. **happy 고정을 걷어낸다.** `observe_happy_001_candidate` · `build_happy_001_evidence_bundle`을 `observe_fixture_candidate` · `build_fixture_evidence_bundle(scenario_id=…)`로 바꾸고 `RealAdapter(scenario_id=…)`를 받는다(기본 happy — 기존 호출 그대로). fixture의 AnalysisSource가 하나일 때만 그 profile을 쓰고, 아니면 오류다(조용히 `[0]`을 쓰지 않는다 — 5개 시나리오는 모두 하나다). `time_source_candidates` 직접 읽기(알려진 단순화 1)는 그대로 두고 시나리오 파일만 바뀐다.
+2. **관련 asset은 lineage로 고른다(5순위).** 순수 함수 `select_case_assets(incident_clip_ref, asset_facts)` — 선택 후보의 IncidentClip 자신과, `lineage`에 그 clip ref가 있는 asset만 남긴다(clip 자신의 AssetFacts는 lineage에 자기가 없다). **역할(`derived_role`)로는 거르지 않는다** — 어느 역할이 패키지에 쓰이는지는 evidence가 정한다(`_package_assets`). 후보 목록은 인자로 받는다: fixture 경로는 `fixture.asset_facts`, 8-6 2단계 `StoredObservationAdapter`는 recording 공개 조회 결과(`observation-storage.md`). 다른 clip · 다른 후보의 asset이 섞이면 지금은 막는 곳이 없고, 같은 역할이 둘이면 evidence가 오류를 낸다 — 이 규칙이 둘 다 막는다.
+3. **재판독은 `readout-native-hires`로 한다.** `RealAdapter`는 `PLATE_REREAD`로 발주된 `PLATE_READ` job(`force_rerun`)을 보면 같은 IncidentClip을 `readout-native-hires`로 다시 읽고 조립을 다시 한다. 프로파일은 readout 계약 §3 「abstain 뒤 재판독할 때 쓴다」를 따른다 — case가 새로 정하는 값이 아니다. 관찰 캐시 키에 「그 후보의 재판독 수」를 더한다 — JobRecord에 후보가 없어(6.6순위) 지난 조립 뒤 새로 발주된 재판독을 그때 선택된 후보에 붙인다. 세대가 바뀌면 재판독 수도 버린다. A→B→A 재사용 규칙(`reselect-observation-reuse.md`)은 그대로다. **한계:** 발주와 다음 조립 사이에 선택을 바꾸면 재판독이 바뀐 후보에 붙는다 — 동기 adapter 한정이고, 8-6 2단계는 결과 객체의 `candidate_id`로 고른다(`observation-storage.md` §4-4).
 4. **판정은 case fixture의 마지막 CaseView와 핵심 사실을 대조한다.** 대조 원본은 `data/mock/case/<scenario>.json`의 `case_views` 마지막 항목(case 소유 fixture)이다. `data/mock/expected/*.expected.json`은 eval 채점 목표(`metric_targets`)라 CaseView 결론을 담지 않는다. real 경로는 id · 시각을 새로 만들어 통째로 같아질 수 없으므로 아래만 본다 — 값은 테스트에 다시 적지 않고 fixture에서 읽는다.
    - `stage` · notice `code` 집합 · `package` 유무 · `evidence.plate_display` · `evidence.event_time_display` · 후보 수
 5. **어긋나면 가른다.** case 버그는 고친다. fixture와 다른 모듈 real 함수가 서로 맞지 않는 것은 고치지 않고 §6 「발견 사항」에 남기고, 그 시나리오는 맞는 지점까지만 검증한다.
@@ -51,10 +51,16 @@ real 경로(`real_e2e.py` · `RealAdapter`)가 `scenario_happy_001` 하나에 �
 
 ## 6. 발견 사항
 
-(구현하며 채운다.)
+구현하며 찾은 것. case가 고칠 것이 아니라 고치지 않았고, `tests/case/test_real_e2e_scenarios.py`의 `UNDERIVED_NOTICES` · `KNOWN_GAPS`에 이름만 두었다 — 원인이 풀리면 테스트가 「차이가 사라졌다」로 실패한다.
+
+1. **Mock fixture에만 있는 notice 4종** — `evidence.time_post_stamp_required` · `evidence.time_conflict_needs_notice` · `evidence.visual_event_unconfirmed` · `case.report_video_not_generated`. `data/mock/case/`의 CaseView에는 있지만 이 code를 만드는 코드가 어디에도 없다. 어느 모듈이 어떤 근거로 붙일지는 notice 규칙을 새로 정하는 일이라 이번 범위 밖이다.
+2. **unknown_abstain_partial_001은 real에서 `READY`가 되지 않는다.** 「잘 모르겠어요」 응답 뒤에도 FINAL `package.time.post_stamp_applied`가 `UNKNOWN`(`time.post_stamp.not_observed`)이다 — `observation_facts`가 없다(I4, #280, `real_e2e.py` 알려진 단순화 2). 번호판 · 시각 · 상황 응답 · notice는 fixture와 같다.
+3. **판정 시각이 실제 현재 시각이다.** real 조립의 `evaluated_at`이 `datetime.now()`라 deadline check가 시나리오 날짜(2026-08) 기준 `EXCEEDED`(WARN)다. 5개 시나리오의 readiness는 바뀌지 않지만, 날짜에 따라 결과가 달라질 수 있는 입력이다.
+4. **domain `reselect_candidate()`만 부르면 `RealAdapter`가 다시 조립하지 않는다.** adapter 캐시는 `case_rev`로 판단하는데 재선택은 `correction.reselect_candidate()`(CorrectionRecord · `case_rev` +1)를 거쳐야 오른다. command 경로는 늘 그쪽이라 문제는 아니고, 테스트는 correction 경로를 쓴다.
 
 ## 7. 테스트
 
 - `tests/case/test_real_e2e_scenarios.py` — 5개 시나리오 parametrize, 마지막 CaseView 대조(§4-4).
-- `select_case_assets` 단위 — 다른 clip의 `REPORT_VIDEO`가 섞인 목록 · lineage 없는 asset · 빈 목록.
+- `tests/case/test_case_asset_selection.py` — 다른 clip의 `REPORT_VIDEO`가 섞인 목록 · clip 자신 · lineage 없는 asset · 빈 목록 · recording `AssetFacts` 모델.
+- `tests/case/test_real_plate_reread.py` — hires 재판독으로 번호판 · Need 해소, 재판독은 발주한 후보에만(A→B→A), 세대가 바뀌면 재판독 수를 버림.
 - 기존 `test_real_e2e.py` · `test_correction_partial_rerun.py` · `test_await_situation_response.py`는 새 이름으로 그대로 통과.
