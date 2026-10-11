@@ -1,0 +1,52 @@
+{
+  "jv-037": {
+    "A": "judge",
+    "B": "ai",
+    "group": "reading"
+  },
+  "jv-048": {
+    "A": "ai",
+    "B": "judge",
+    "group": "reading"
+  },
+  "jv-003": {
+    "A": "judge",
+    "B": "ai",
+    "group": "reading"
+  },
+  "jv-070": {
+    "A": "judge",
+    "B": "ai",
+    "group": "rule"
+  },
+  "jv-038": {
+    "A": "ai",
+    "B": "judge",
+    "group": "reading"
+  },
+  "jv-062": {
+    "A": "ai",
+    "B": "judge",
+    "group": "reading"
+  },
+  "jv-041": {
+    "A": "ai",
+    "B": "judge",
+    "group": "rule"
+  },
+  "jv-028": {
+    "A": "ai",
+    "B": "judge",
+    "group": "rule"
+  },
+  "jv-036": {
+    "A": "ai",
+    "B": "judge",
+    "group": "rule"
+  },
+  "jv-008": {
+    "A": "judge",
+    "B": "ai",
+    "group": "rule"
+  }
+}

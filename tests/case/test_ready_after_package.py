@@ -52,7 +52,13 @@ class _SnapshotAdapter:
     def get_plate_readouts(self) -> list[dict[str, Any]]:
         return []
 
+    def get_overlay_time_readouts(self) -> list[dict[str, Any]]:
+        return []
+
     def get_visual_evidence_decision(self) -> str | None:
+        return None
+
+    def get_independent_facts(self) -> dict | None:
         return None
 
 

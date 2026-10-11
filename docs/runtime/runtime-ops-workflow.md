@@ -315,6 +315,8 @@ Operational Threshold
 
 임의의 CPU 70%, Disk 80% 같은 운영 threshold는 만들지 않는다.
 
+현재 산출물: [Provisional Baseline v0.1](./provisional-baseline-v0.1.md).
+
 ---
 
 ## 7. Runtime Implementation Plan 작성 및 Task 분해
@@ -383,11 +385,15 @@ Documentation Issue
 
 Deployment automation은 실행 단위가 만들어진 뒤 별도 slice로 붙인다.
 
+현재 산출물: [Runtime Implementation Plan](./runtime-implementation-plan.md).
+
 ---
 
 ## 8. Baseline 기반 구현 + Test / CI / Observability
 
 이미 확정된 Architecture/Contract와 Provisional Baseline을 기준으로 구현한다.
+
+현재 실행 모델(구현 책임 · merge authority · Owner 확인 조건)은 [Runtime Implementation Plan](./runtime-implementation-plan.md) §12, 실제 구현 기록은 [Runtime Implementation Log](./runtime-implementation-log.md)다.
 
 ```text
 확정된 것

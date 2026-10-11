@@ -1,0 +1,3 @@
+prior_hints: {prior_hints_json}
+
+사용자 발화: "{input_sentence}"

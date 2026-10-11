@@ -26,6 +26,8 @@ JOB_KINDS = frozenset(
         "REPORT_VIDEO_EXPORT",
         # 신고용 번호판 이미지 생성 발주(#47). 실행 capability는 recording 구현 대기.
         "PLATE_IMAGE_EXPORT",
+        # 자연어 단서 구조화 발주(v1.7, #259). 발주 경로(`START_ANALYSIS`)는 case-command Draft §11 미결 뒤.
+        "HINT_EXTRACT",
     }
 )
 
@@ -61,11 +63,22 @@ def issue_job(
         "force_rerun": force_rerun,
         "requested_at": _now(),
     }
+    # 같은 kind · scope_ref의 기다리던 job은 이 job으로 대체된다 — 대표 job은 가장 나중 job이다(A§10-7).
+    for prior in case.waiting_job_records():
+        if prior["kind"] == kind and prior["scope_ref"] == scope_ref:
+            case.settle_job(prior["job_id"], "SUPERSEDED")
     case.record_job(job_record)
     return job_record
 
 
-def issue_coarse_search(case: CaseAggregate, *, scope_ref: str, input_fingerprint: str) -> dict[str, Any]:
+def issue_coarse_search(
+    case: CaseAggregate, *, scope_ref: str, input_fingerprint: str, scope: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """`scope`를 주면 aggregate에 남긴다(#246 S-4) — 주지 않는 기존 호출(fixture · 스크립트)은 그대로 둔다."""
+    if scope is not None:
+        if scope["scope_id"] != scope_ref:
+            raise ValueError(f"scope_ref와 scope_id가 다르다: {scope_ref!r} != {scope['scope_id']!r}")
+        case.record_analysis_scope(scope)
     return issue_job(case, "COARSE_SEARCH", scope_ref=scope_ref, input_fingerprint=input_fingerprint)
 
 
@@ -109,6 +122,12 @@ def issue_overlay_time_reread(case: CaseAggregate, *, input_fingerprint: str) ->
     return issue_job(case, "OVERLAY_TIME_READ", input_fingerprint=input_fingerprint, force_rerun=True)
 
 
+def latest_job_record(case: CaseAggregate, kind: str) -> dict[str, Any] | None:
+    """같은 kind로 가장 나중에 발주된 `JobRecord` — 재시도·재판독은 이 입력(`input_fingerprint`·
+    `scope_ref`)을 그대로 쓴다(case는 fingerprint를 계산하지 않는다). 없으면 None."""
+    return next((j for j in reversed(case.job_records) if j["kind"] == kind), None)
+
+
 _NEED_KIND_TO_SOURCE_JOB_KIND = {
     "PLATE_REREAD": "PLATE_READ",
     "OVERLAY_TIME_OCR": "OVERLAY_TIME_READ",
@@ -133,7 +152,7 @@ def issue_needed_jobs(case: CaseAggregate, evidence_needs: dict[str, Any]) -> li
         source_kind = _NEED_KIND_TO_SOURCE_JOB_KIND.get(kind)
         if source_kind is None:
             raise ValueError(f"알 수 없는 EvidenceNeeds item.kind: {kind!r}")
-        prior = next((j for j in reversed(case.job_records) if j["kind"] == source_kind), None)
+        prior = latest_job_record(case, source_kind)
         if prior is None:
             raise ValueError(
                 f"{kind!r} Need를 처리할 원본 {source_kind!r} JobRecord가 없다 (case_id={case.case_id!r})"

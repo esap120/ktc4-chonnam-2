@@ -5,6 +5,7 @@
 > **이 문서는 지표를 정의하지 않는다.** 정의의 소유자는 `architecture/module-architecture.md` §9-3 와
 > `modules/eval/initial-evaluation-plan.md` §2 이고, 계산 규칙의 실물은 `eval/scorers/*.py` 다.
 > 여기 적힌 식은 대조를 위한 **요약**이며, 어긋나면 위 문서와 코드가 이긴다.
+> **짝 문서:** 그 문헌에서 지표가 실제로 몇 점이 나왔는지는 `metric-benchmark-scores.md`(2026-10-03).
 
 ---
 
@@ -78,14 +79,15 @@ IoU 는 떨어지는데 제품 품질은 나빠지지 않는다. 그래서 **ons
 
 **차용.** Mesaros·Heittola·Virtanen, *Metrics for Polyphonic Sound Event Detection*(Applied Sciences 6(6):162, 2016)
 및 DCASE 의 event-based metrics — 검출 이벤트가 정답과 같은 이벤트인지를 **onset 에 collar(허용오차)를
-두고** 판정한다(DCASE 2016 기준 onset ±200 ms, offset 은 ±200 ms 또는 길이의 절반).
+두고** 판정한다. DCASE 2016 Task 3 공식 채점의 onset collar 는 **250 ms**(`t_collar=0.250`)다.
+흔히 인용되는 「±200 ms」는 Mesaros 2016 원문을 열지 못해 확인하지 못했다(2026-10-03, `metric-benchmark-scores.md` §6).
 
 **왜 이 전통인가.** 이 분야가 우리와 같은 문제를 먼저 풀었다 — 정답 구간의 **끝(offset)은 라벨러마다
 흔들리지만 시작(onset)은 비교적 단단하다.** 그래서 offset 에는 느슨한 규칙을 주거나 아예 빼고
 onset 중심으로 판정한다. 블랙박스 위반 사건도 똑같다: 「신호위반이 언제 끝났나」는 사람마다 다르고
 「정지선을 넘은 순간」은 거의 같다.
 
-**우리가 바꾼 것.** 허용오차를 ±200 ms 가 아니라 **2.0초**로 뒀다(`DEFAULT_TOLERANCE_SEC`).
+**우리가 바꾼 것.** 허용오차를 250 ms 가 아니라 **2.0초**로 뒀다(`DEFAULT_TOLERANCE_SEC`).
 음향 이벤트와 달리 우리 라벨 단위는 초 단위 사람 판독이고, 후보의 대표 시점은 창의 대표값이지
 검출 순간이 아니기 때문이다. **이 값은 문헌 근거가 없는 우리 선택이며, B tier 사건의 span 라벨
 폭 편차를 재서 정해야 한다**(F8).
@@ -137,6 +139,7 @@ A tier 단독(`a_aihub`)으로 채점하면 여전히 `NONE` 행·열이 0이다
 **차용.** Everingham 등, *The PASCAL Visual Object Classes (VOC) Challenge*(IJCV 88(2):303–338, 2010)의
 overlap criterion — 예측 bbox 와 정답 bbox 의 IoU ≥ 0.5 면 맞은 것으로 센다. **임계값 0.5까지
 그대로 가져왔다.**
+이 논문에는 클래스 평균(mAP) 열이 없고 클래스별 AP만 있다(VOC2007 최고 AP 9.4–43.2%, `metric-benchmark-scores.md` §2) — 「VOC mAP」를 이 논문 인용으로 적지 않는다.
 
 **왜 이 전통인가.** 우리 제품에서 「대상 차량을 옳게 짚었는가」는 신고 자료의 근간이다(엉뚱한 차를
 신고하면 자료 전체가 무의미하다). 픽셀 완전일치를 요구하면 실제 탐지기는 전부 0점을 받으므로,
@@ -240,7 +243,7 @@ Online Hard Example Mining*(CVPR 2016) 계열의 hard negative 개념 — 쉬운
 | 문헌 관행 | 우리 선택 | 근거 |
 | --- | --- | --- |
 | 시간 IoU 로 후보 매칭 (TALL 등) | onset 지점 오차 | `span` 이 「정답 주장」이 아니라 「더 볼 창」이다(계약 v1.1 §4-1) |
-| onset collar ±200 ms (DCASE) | ±2.0 s | 사람 초 단위 판독 + 창의 대표값. **잠정** |
+| onset collar 250 ms (DCASE 2016 공식 채점) | ±2.0 s | 사람 초 단위 판독 + 창의 대표값. **잠정** |
 | FP/hour | FP/clip | B tier 에 시간 분모가 설 negative 가 부족하다(§4-1) |
 | micro 평균 | macro 평균 | 유형 불균형 5배. 제품은 4종을 모두 약속했다 |
 | 부분 문자 점수(CER)를 대표 지표로 | 전체 일치를 대표, CER 은 진단 | 신고서에 부분 일치는 0점이다 |

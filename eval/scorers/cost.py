@@ -33,8 +33,12 @@ def _priced(usage_records):
     경우가 있다. 그 row 를 아예 안 넘겨 버리면 분자만 줄고 분모
     (processed_duration_sec)는 그대로라 시간당 비용이 조용히 낮아진다.
     그렇다고 0원으로 세면 「쌌다」가 된다 — 세지 않되 몇 건인지는 남긴다.
+
+    cost 객체는 있는데 amount 가 null 인 row 도 같은 「모른다」다. KRW 요율이
+    없거나 실패 호출의 과금을 확인하기 전에는 그렇게 기록된다 (#244 RD-18).
     """
-    return [r for r in usage_records if r.get("cost") is not None]
+    return [r for r in usage_records
+            if r.get("cost") is not None and r["cost"].get("amount") is not None]
 
 
 def _nearest_rank(values, q):

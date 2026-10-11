@@ -75,6 +75,21 @@ CANDIDATE_SYSTEM_PROMPT = """\
   않고 판단 과정을 설명한다.
 """
 
+# Q3 실험용 후보 프롬프트 변형(멘토 피드백 2026-10-04 Q3 — 「정정에 무관한 정보를 끼워 넣으면 confidence가
+# 낮게 나오는지 보고, 낮으면 서비스에서 재입력을 유도할 수 있다」). v1 규칙에 한 줄을 더한다. 기본 실험은 v1 그대로다.
+CANDIDATE_SYSTEM_PROMPT_V2 = CANDIDATE_SYSTEM_PROMPT + """\
+- prior_hints가 있을 때 정정 발화 안에 정정과 무관한 새 사실(다른 차량 · 다른 사건 등)이 섞여 있으면,
+  그 새 사실로 필드를 채우거나 기존 값을 덮어쓰지 말고 무시한다. 이렇게 무관한 사실이 섞였거나
+  정정 대상이 모호하면 confidence를 low로 표시한다.
+"""
+
+# v2는 Gemini 계열이 「명시적 새 사고」까지 무관 사실로 보고 무시 · low로 처리했다(Q3 실험 2026-10-05) — 예외를 더한다.
+CANDIDATE_SYSTEM_PROMPT_V3 = CANDIDATE_SYSTEM_PROMPT_V2 + """\
+- 단, "다른 건데요" · "그건 됐고" · "다 취소하고" · "또 다른 사고"처럼 명시적인 전환 신호가 있으면 정정이
+  아니라 새 사고다. 이때는 위 규칙을 적용하지 않는다 — 새 발화 기준으로 필드를 채우고(correction_target은
+  null), confidence는 진술이 분명한 정도대로 매긴다.
+"""
+
 CANDIDATE_USER_TEMPLATE = """\
 prior_hints: {prior_hints_json}
 
@@ -127,6 +142,12 @@ reason(한두 문장 근거)을 같이 남긴다.
 - expected_notes는 정답 문자열이 아니라 사람이 쓴 판정 기준이다. 문자열 완전일치를 요구하지 않는다.
 - hallucinated와 missed는 방향이 반대다 — 헷갈리면 "모델이 원문보다 더 많이 말했는가(hallucinated)
   아니면 더 적게 말했는가(missed)"로 구분한다.
+- **정정 케이스(prior_hints가 있음)에서 이번 발화가 언급하지 않은 필드는 null이 정답(correct)이다.**
+  prior_hints에 값이 있어도 "이전 값을 유지했어야 한다"며 missed나 hallucinated로 판정하지 않는다 —
+  이전 값과 합치는 것은 이 호출이 아니라 뒤의 병합 단계가 한다. 반대로 언급하지 않은 필드에 이전 값을
+  채웠으면 hallucinated다. 예: prior_hints={"vehicle_hint": "흰색 SUV"}, 발화 "시간 그거 말고 19시였어요"
+  → vehicle_hint=null은 correct, vehicle_hint="흰색 SUV"는 hallucinated(2026-10-04 judge 검증에서 이
+  규칙을 어긴 판정 11건이 확인돼 명시했다 — `results/judge-validation-robustness-v2.md`).
 - reason은 그 필드 하나에 대한 근거만 담는다(다른 필드 얘기를 섞지 않는다) — 나중에
   사람이 이 필드가 왜 이렇게 판정됐는지만 보고 이해할 수 있어야 한다.
 - **같은 필드가 같은 값이면 모델이 달라도 같은 verdict를 매긴다.** 그 필드의 verdict는

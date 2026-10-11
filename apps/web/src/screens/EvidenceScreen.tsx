@@ -18,7 +18,7 @@ function locationClue(view: CaseView, evidence: EvidenceView): string | null {
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-export function EvidenceScreen(props: { view: CaseView }): JSX.Element {
+export function EvidenceScreen(props: { view: CaseView; hideOthers?: boolean }): JSX.Element {
   const evidence = props.view.evidence
   if (!evidence) return <Panel title="증거 정리 전">아직 표시할 값이 없습니다.</Panel>
 
@@ -74,7 +74,7 @@ export function EvidenceScreen(props: { view: CaseView }): JSX.Element {
           </div>
         )}
       </Panel>
-      <OtherCandidates view={props.view} />
+      {!props.hideOthers && <OtherCandidates view={props.view} />}
     </div>
   )
 }

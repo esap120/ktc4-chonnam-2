@@ -12,9 +12,10 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from daesingo.case import jobs, real_e2e, service
+from daesingo.case import command, jobs, real_e2e, service
 from daesingo.case.adapters import MockFixtureAdapter, RealAdapter
 from daesingo.case.domain import Candidate, CaseAggregate
+from daesingo.case.store import CaseStore
 from daesingo.case.view import build_case_view
 
 MOCK_ROOT = Path(__file__).resolve().parents[2] / "data" / "mock"
@@ -103,3 +104,56 @@ def test_real_adapter_projects_readout_run_failure(monkeypatch):
     assert view["evidence"]["plate_display"]["info_state"] == "INFO_UNKNOWN"
     assert _plate_state(view) == "FAILED"
     assert FAILED_CODE in [n["code"] for n in view["notices"]]
+
+
+# --- 「다시 판독」 버튼은 발주 근거가 있을 때만 싣는다 -------------------------------------------
+# `RUN_NOTICE_ACTION`은 같은 kind의 가장 최근 JobRecord 입력을 그대로 쓰고, 없으면 `not_allowed`다
+# (case-command 계약 §10). 근거 없이 버튼을 실으면 화면의 버튼이 늘 거부된다(orchestration 지표 5차
+# ④-b). 「실행 경로가 없는 action은 싣지 않는다」(CaseView 계약 B절 `notices[].actions[]`)와 같은 원칙.
+
+
+def _real_plate_failed_case(monkeypatch, case_id: str):
+    monkeypatch.setattr(
+        real_e2e.readout_api, "read_plate", lambda request, **kwargs: (SimpleNamespace(outcome="FAILED"), None)
+    )
+    scope = MockFixtureAdapter(MOCK_ROOT, "happy_001").get_analysis_scopes()[0]
+    case = CaseAggregate.intake(case_id=case_id, hints={}, manifest_summary={})
+    real = RealAdapter(case_id=case_id, case=case, search_scope=scope, mock_root=MOCK_ROOT)
+    case.start_search()
+    jobs.issue_coarse_search(case, scope_ref="scope_h001", input_fingerprint="sha1:h001-coarse-search")
+    candidates = service.receive_search_candidates(case, real)
+    case.select_candidate(candidates[0].candidate_id)
+    return case, real
+
+
+def _failed_notice(view: dict) -> dict:
+    return next(n for n in view["notices"] if n["code"] == FAILED_CODE)
+
+
+def test_retry_plate_read_not_offered_without_prior_plate_read_job(monkeypatch):
+    """동기 real 경로는 판독을 Job 없이 직접 부른다 — 근거 `PLATE_READ` JobRecord가 없다."""
+    case, real = _real_plate_failed_case(monkeypatch, "case_plate_fail_no_job")
+
+    notice = _failed_notice(service.build_view_from_adapter(case, real))
+
+    assert notice["blocking"] is True  # 실패 알림 자체는 그대로
+    assert notice["actions"] == []
+
+
+def test_retry_plate_read_offered_when_plate_read_was_issued(monkeypatch):
+    case, real = _real_plate_failed_case(monkeypatch, "case_plate_fail_with_job")
+    jobs.issue_plate_read(case, input_fingerprint="sha1:h001-plate-read")
+
+    view = service.build_view_from_adapter(case, real)
+
+    assert _failed_notice(view)["actions"] == ["RETRY_PLATE_READ"]
+    # 화면에 뜬 버튼은 command가 받는다(case-command 계약 §5 「허용 조건 = 화면에 그 버튼」)
+    store = CaseStore()
+    store.register(case, real)
+    response = command.handle_command(
+        {"case_id": case.case_id, "expected_case_rev": case.case_rev, "kind": "RUN_NOTICE_ACTION",
+         "payload": {"notice_code": FAILED_CODE, "action": "RETRY_PLATE_READ"}},
+        store=store,
+    )
+    assert response["ok"] is True
+    assert store.get_case(case.case_id).job_records[-1]["kind"] == "PLATE_READ"

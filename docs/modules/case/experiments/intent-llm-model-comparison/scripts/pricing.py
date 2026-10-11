@@ -12,6 +12,13 @@ KRW_PER_1M_TOKENS: dict[str, dict[str, float]] = {
     "gpt-5-nano": {"input": 76, "output": 609},
     "gemini-3.1-flash-lite": {"input": 380, "output": 2283},
     "claude-haiku-4-5": {"input": 1522, "output": 7612},
+    # 2026-10-05 Elice 모델 카드 확인(유소연). 캐시 입력 ₩114는 위 방침대로 쓰지 않는다.
+    "gemini-3.8-flash": {"input": 1141, "output": 5709},
+    # #281 challenger(2026-10-06 Elice 모델 카드, 이슈 본문).
+    "gpt-6-luna": {"input": 152, "output": 761},
+    # judge 모델(2026-10-04 Elice 모델 카드 확인). 이전엔 표에 없어 judge 비용이 기록되지 않았다.
+    "anthropic/claude-sonnet-5": {"input": 3045, "output": 15225},
+    "anthropic/claude-opus-5": {"input": 7612, "output": 38062},
 }
 
 

@@ -38,6 +38,9 @@
 - [ ] secret이 image/repository/log에 bake되지 않는가
 - [ ] 필요한 runtime configuration key가 준비됐는가
 - [ ] `.env.example`과 실제 secret source의 역할을 혼동하지 않는가
+- [ ] secret이 Parameter Store `SecureString`에 있고, EC2 instance role이 그 경로를 읽을 수 있는가 (불가하면 Session Manager 수동 배치 fallback — [Ops Spec](./ops-spec.md) §4-1)
+- [ ] host의 보호된 config 파일이 container UID 소유 · 최소 권한이고, 값이 배포 log · stdout에 남지 않는가
+- [ ] 값 변경을 `docker compose up -d --force-recreate api worker`로 반영하는가 (`restart`로 보장하지 않음)
 
 ### Public endpoint가 있는 경우
 
@@ -64,7 +67,7 @@ GitHub Actions
 - artifact/image 전달 방식
 - SSM Run Command
 - Docker Compose pull/build/update command
-- migration command가 있다면 실행 순서
+- migration command가 있다면 실행 순서 — api · worker 시작 전 단일 단계이며 app startup에서 돌리지 않는다([Tech Spec](./runtime-tech-spec.md) §4.4)
 - old container 정리 방식
 
 ### 원칙
@@ -86,7 +89,7 @@ GitHub Actions
 ### Runtime Health
 
 - [ ] `GET /health/live`
-- [ ] `GET /health/ready`
+- [ ] `GET /health/ready` — 호출 쪽 timeout은 ready budget([Provisional Baseline v0.1](./provisional-baseline-v0.1.md) B-H3)보다 길게 둔다
 
 외부 AI provider 하나의 장애만으로 API liveness가 실패하도록 설계하지 않는다.
 
@@ -176,7 +179,7 @@ known_good_revision
 - [ ] artifact 전달 방식(S3/ECR 등)
 - [ ] immutable image tag/digest convention
 - [ ] SSM Run Command
-- [ ] runtime secret source / injection
+- [x] runtime secret source / injection — 경로는 [Ops Spec](./ops-spec.md) §4-1(RD-07)로 닫힘. exact fetch · render 명령은 SSM Run Command 구현 때 이 문서에 기록
 - [ ] public endpoint / Caddy 구성
 - [ ] external smoke endpoint
 - [ ] known-good revision 기록 방식

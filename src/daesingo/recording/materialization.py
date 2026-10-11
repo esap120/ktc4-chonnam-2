@@ -13,6 +13,7 @@ from .models import AssetSpan, TimeRange
 from .probe import LocalSource, _snapshot
 from .observability import observed_materialization, phase
 from .inspection import active_inspections
+from .analysis_tail import TailDecodeFailure, allowed, report, validate_tail
 
 
 class _FrameCoverageError(RecordingCapabilityError):
@@ -42,6 +43,11 @@ class MaterializedVideo:
     content: bytes
     duration_sec: float
     timeline_range: TimeRange
+    # 내부 연결 검증용 관측값. Canonical AnalysisSource에는 직렬화하지 않는다.
+    frames: tuple[tuple[Fraction, Fraction], ...] = ()
+    time_base: Fraction | None = None
+    video_size: tuple[int, int] | None = None
+    best_effort: bool = False
 
 
 def _millisecond_quantization(payload, base, frames):
@@ -82,6 +88,10 @@ class LocalAnalysisMaterializer:
         result = subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True,
                                 timeout=self._timeout, check=False)
         if result.returncode:
+            if ("-vf" in args and "-xerror" in args
+                    and b"No start code is found" in result.stderr
+                    and b"Error submitting packet to decoder" in result.stderr):
+                raise TailDecodeFailure()
             raise RecordingCapabilityError("TEMPORARY_FAILURE", "media 도구가 작업을 완료하지 못했습니다")
         return result.stdout
 
@@ -93,6 +103,31 @@ class LocalAnalysisMaterializer:
                  "format=format_name,duration:stream=codec_type,codec_name,width,height,pix_fmt,time_base,duration:frame=best_effort_timestamp,duration,pkt_duration",
                  "-of", "json", str(path)]
         return json.loads(self._run(args))
+
+    def _verify_tail(self, source, index, base, frames, audit):
+        # ordinal은 등록된 stream 목록의 실제 index로 검사한다. 역할을 추론하지 않는다.
+        videos = [s.index for s in source.streams if s.media_type == "VIDEO"]
+        if not videos or index != videos[0]:
+            raise ValueError("명시적 VIDEO ordinal 0만 허용합니다")
+        with source.path.open("rb") as file:
+            header = file.read(12)
+        if header[:4] != b"RIFF" or header[8:] != b"AVI ":
+            raise ValueError("AVI 후행 패턴만 지원합니다")
+        payload = json.loads(self._run([self._ffprobe, "-v", "error", "-protocol_whitelist", "file",
+            "-select_streams", str(index), "-show_frames", "-show_packets", "-show_entries",
+            "format=format_name:stream=codec_name,has_b_frames:frame=best_effort_timestamp,pkt_pos,pkt_size,decode_error_flags:packet=pos,size,pts,dts",
+            "-of", "json", str(source.path)]))
+        # 기존 inspection과 독립 조회가 모두 같은 PTS를 관측해야 한다.
+        ticks = [at / base for at, _ in frames]
+        if any(t.denominator != 1 for t in ticks):
+            raise ValueError("frame PTS 근거 부족")
+        return validate_tail(payload, int.from_bytes(header[4:8], "little") + 8,
+                             source.byte_size, [int(t) for t in ticks], audit=audit)
+
+    def _strict_decode(self, path):
+        self._run([self._ffmpeg, "-nostdin", "-v", "error", "-xerror",
+            "-protocol_whitelist", "file", "-i", str(path), "-map", "0:v:0",
+            "-an", "-sn", "-dn", "-f", "null", "-"])
 
     @staticmethod
     def _frames(payload, *, expected_coverage=None):
@@ -159,6 +194,8 @@ class LocalAnalysisMaterializer:
         inspections = active_inspections()
         inspection_key = None
         completed = False
+        fallback = False
+        audit = None
         try:
             with phase("source_snapshot"):
                 before = _snapshot(source.path)
@@ -188,20 +225,42 @@ class LocalAnalysisMaterializer:
             with TemporaryDirectory(prefix="recording-analysis-", dir=self._temp_root) as work:
                 output = Path(work) / "prepared.mp4"
                 with phase("encode"):
-                    self._run([self._ffmpeg, "-nostdin", "-v", "error", "-xerror", "-n",
+                    command = [self._ffmpeg, "-nostdin", "-v", "error", "-xerror", "-n",
                         "-protocol_whitelist", "file", "-noautorotate", "-i", str(source.path),
                         "-map", f"0:{index}", "-an", "-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
                         "-vf", f"trim=start_frame={first[0]}:end_frame={last[0]+1},setpts=PTS-STARTPTS,scale={width}:{profile.height}",
                         "-fps_mode", "passthrough", "-enc_time_base", str(base),
                         "-video_track_timescale", str(base.denominator),
                         "-c:v", "libx264", "-preset", profile.preset, "-crf", str(profile.crf),
-                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output)])
+                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output)]
+                    try:
+                        self._run(command)
+                    except TailDecodeFailure:
+                        if not allowed():
+                            raise
+                        audit = dict(best_effort=False, strict_failure_stage="encode",
+                            decode_error_flags_observed=False,
+                            tail_verified=False, coverage_verified=False, output_verified=None,
+                            output_strict_decode=None, source_unchanged=None, cleanup=False)
+                        if any(a + length != b for (a, length), (b, _) in zip(frames, frames[1:])):
+                            raise ValueError("연속 coverage가 필요합니다")
+                        audit["coverage_verified"] = True
+                        audit["tail_packets"] = self._verify_tail(source, index, base, frames, audit)
+                        audit["tail_verified"] = True
+                        if _snapshot(source.path) != before:
+                            raise RecordingCapabilityError("UNAVAILABLE", "변환 중 원본 변경을 감지했습니다")
+                        # 실패한 파생 파일만 제거한다. 원본 packet/시각은 수정하지 않는다.
+                        output.unlink(missing_ok=True)
+                        self._run([arg for arg in command if arg != "-xerror"])
+                        fallback = True
                 with phase("output_probe"):
                     probed = self._probe(output)
                 with phase("output_validate"):
+                    if audit is not None:
+                        audit["output_verified"] = False
                     expected = ([(at - actual_start, length) for _, at, length in selected]
-                        if base == Fraction(1, 1000)
-                        and "matroska" in raw.get("format", {}).get("format_name", "").split(",") else None)
+                        if fallback or (base == Fraction(1, 1000)
+                        and "matroska" in raw.get("format", {}).get("format_name", "").split(",")) else None)
                     output_base, output_frames = self._frames(probed, expected_coverage=expected)
                     stream = probed["streams"][0]
                     if (stream["codec_name"] != "h264" or stream["height"] != profile.height
@@ -209,7 +268,7 @@ class LocalAnalysisMaterializer:
                             or "mp4" not in probed["format"]["format_name"].split(",")
                             or len(output_frames) != len(selected)):
                         raise ValueError("출력 media 형식 불일치")
-                    tolerance = 2 * output_base
+                    tolerance = 0 if fallback else 2 * output_base
                     for (_, at, length), (out_at, out_length) in zip(selected, output_frames):
                         if abs(at - actual_start - out_at) > tolerance or abs(length - out_length) > tolerance:
                             raise ValueError("출력 frame timestamp 불일치")
@@ -218,6 +277,11 @@ class LocalAnalysisMaterializer:
                     if (not math.isfinite(duration) or duration <= 0
                             or abs(duration - float(actual_end - actual_start)) > 0.001 + float(tolerance)):
                         raise ValueError("출력 duration 불일치")
+                if fallback:
+                    audit["output_verified"] = True
+                    audit["output_strict_decode"] = False
+                    self._strict_decode(output)
+                    audit["output_strict_decode"] = True
                 with phase("bytes_read"):
                     content = output.read_bytes()
                 with phase("bytes_validate"):
@@ -235,9 +299,12 @@ class LocalAnalysisMaterializer:
                 with phase("source_verify"):
                     if _snapshot(source.path) != before:
                         raise RecordingCapabilityError("UNAVAILABLE", "변환 중 원본 변경을 감지했습니다")
+                if audit is not None:
+                    audit["source_unchanged"] = True
                 shift = Fraction(str(span.timeline_range.start_sec)) - start
                 result = MaterializedVideo(content, duration, TimeRange(
-                    start_sec=float(shift + actual_start), end_sec=float(shift + actual_end)))
+                    start_sec=float(shift + actual_start), end_sec=float(shift + actual_end)),
+                    tuple(output_frames), output_base, (width, profile.height), fallback)
             # 출력 검증·원본 재검사·cleanup까지 성공한 inspection만 공유한다.
             if inspections is not None:
                 inspections.put(inspection_key, inspected)
@@ -250,5 +317,15 @@ class LocalAnalysisMaterializer:
         except (ValueError, KeyError, TypeError, ZeroDivisionError, OverflowError):
             raise RecordingCapabilityError("UNSUPPORTED_MEDIA", "실제 media의 형식·frame coverage·시각을 검증할 수 없습니다") from None
         finally:
+            if audit is not None:
+                audit["cleanup"] = not output.parent.exists()
+                # 실패 경로에서도 변경/소실을 검사하며 원본/예외 원문은 기록하지 않는다.
+                if not completed:
+                    try:
+                        audit["source_unchanged"] = _snapshot(source.path) == before
+                    except (OSError, ValueError, RecordingCapabilityError):
+                        audit["source_unchanged"] = False
+                audit["best_effort"] = completed and fallback
+                report(audit)
             if inspections is not None and inspection_key is not None and not completed:
                 inspections.discard(inspection_key)

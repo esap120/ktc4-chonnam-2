@@ -49,6 +49,7 @@ MODEL_IDS = {
     "gemini-3.1-flash-lite": "gemini-3.1-flash-lite",  # 스트리밍 예제로 확인됨
     "claude-haiku-4-5": "claude-haiku-4-5",  # 사용자가 모델 카드에서 직접 확인한 값
     "gemini-3.8-flash": "gemini-3.8-flash",  # search 모듈이 이미 실사용 중(config.py) — Preview 아님
+    "gpt-6-luna": "openai/gpt-6-luna",  # #281 challenger(2026-10-06 Elice 추가, 유소연이 모델 카드에서 확인)
 }
 
 # 후보 4개의 model_name -> base_url을 담은 환경변수 이름. judge 모델(MODEL_IDS 밖)은
@@ -58,6 +59,7 @@ _MODEL_BASE_URL_ENV = {
     "gemini-3.1-flash-lite": "ELICE_URL_GEMINI_3_1_FLASH_LITE",
     "claude-haiku-4-5": "ELICE_URL_CLAUDE_HAIKU_4_5",
     "gemini-3.8-flash": "ELICE_URL_GEMINI_3_8_FLASH",
+    "gpt-6-luna": "ELICE_URL_GPT_6_LUNA",
 }
 
 
@@ -82,13 +84,22 @@ class CandidateResult:
     completion_tokens: int | None
     cost_krw: float | None
     error: str | None
+    # #281 smoke 확인용 — 추론 토큰(백엔드가 주지 않으면 None)과 종료 사유(`length`면 출력 한도에 걸림).
+    reasoning_tokens: int | None = None
+    finish_reason: str | None = None
 
 
 class CandidateAdapter:
     """세 후보 모두 이 클래스 하나로 처리한다 — `model_name`만 다르게 인스턴스화."""
 
-    def __init__(self, model_name: str):
+    def __init__(
+        self, model_name: str, system_prompt: str = CANDIDATE_SYSTEM_PROMPT, reasoning_effort: str | None = None
+    ):
         self.model_name = model_name
+        # 프롬프트 변형 실험(Q3)용. 기본값은 v1 — 기존 runner 동작은 그대로다.
+        self.system_prompt = system_prompt
+        # #281 — `None`이면 인자를 보내지 않는다(모델 기본값). 기존 실험은 모두 None이었다.
+        self.reasoning_effort = reasoning_effort
 
     def extract(self, input_sentence: str, prior_hints: dict | None) -> CandidateResult:
         user_prompt = CANDIDATE_USER_TEMPLATE.format(
@@ -98,12 +109,14 @@ class CandidateAdapter:
         start = time.monotonic()
         try:
             response = _client(self.model_name).chat.completions.parse(
-                model=self.model_name,
+                # 결과 폴더 · 단가표는 짧은 이름을 쓰고, 호출 ID가 다른 모델(`openai/…`)만 `MODEL_IDS`로 바꾼다.
+                model=MODEL_IDS.get(self.model_name, self.model_name),
                 messages=[
-                    {"role": "system", "content": CANDIDATE_SYSTEM_PROMPT},
+                    {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format=IntentHintExtraction,
+                **({"reasoning_effort": self.reasoning_effort} if self.reasoning_effort else {}),
             )
         except Exception as exc:  # noqa: BLE001 — 호출 실패도 결과로 기록해야 함
             return CandidateResult(
@@ -137,6 +150,8 @@ class CandidateAdapter:
                 if parsed_model is not None
                 else (getattr(message, "refusal", None) or "structured output 파싱 실패")
             ),
+            reasoning_tokens=getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None),
+            finish_reason=response.choices[0].finish_reason,
         )
 
 

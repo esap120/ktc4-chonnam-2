@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 
 CONTRACT_VERSION = "source-asset-media-stream/v1"
@@ -14,6 +14,65 @@ class ContractModel(BaseModel):
     """Canonical JSON 경계에서 공통으로 사용하는 모델 설정."""
 
     model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
+
+
+class _GPSModel(ContractModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, revalidate_instances="always")
+
+
+class GPSCoordinate(_GPSModel):
+    """현재 Mock/Evidence의 lon 철자를 보존한다. lng와의 합의는 미결이다."""
+    lat: FiniteFloat = Field(ge=-90, le=90)
+    lon: FiniteFloat = Field(ge=-180, le=180)
+
+
+class ObservationReference(_GPSModel):
+    kind: str = Field(min_length=1)
+    ref: str = Field(min_length=1)
+
+
+class GPSObservationSource(_GPSModel):
+    kind: Literal["recording.gps_stream"]
+    ref: ObservationReference | None = None
+
+
+class GPSObservationProducer(_GPSModel):
+    module: Literal["recording"]
+    # Recording logical run 계약이 없으므로 run_ref는 extra="forbid"로 거부한다.
+    impl_ref: str | None = Field(default=None, min_length=1)
+
+
+class ObservationConfidence(_GPSModel):
+    score: FiniteFloat = Field(ge=0.0, le=1.0)
+    metric: str = Field(min_length=1)
+
+
+class ObservationReason(_GPSModel):
+    code: str = Field(min_length=1)
+    note: str | None = None
+
+
+class GPSObservation(_GPSModel):
+    """기존 Mock GPS Observation의 typed view. 새로운 GPS를 생산하지 않는다."""
+    contract: Literal["Observation"]
+    contract_version: Literal["observation/v1"]
+    value: GPSCoordinate | None
+    status: Literal["OK", "NEEDS_REVIEW", "UNKNOWN", "ERROR", "NOT_APPLICABLE"]
+    source: GPSObservationSource
+    support_refs: list[ObservationReference]
+    produced_by: GPSObservationProducer
+    confidence: ObservationConfidence | None = None
+    reason: ObservationReason | None = None
+
+    @model_validator(mode="after")
+    def value_and_source_match_status(self):
+        if self.status == "OK" and (self.value is None or self.source.ref is None):
+            raise ValueError("OK GPS에는 좌표와 MediaStream ref가 필요합니다")
+        if self.status in {"UNKNOWN", "ERROR", "NOT_APPLICABLE"} and self.value is not None:
+            raise ValueError("해당 Observation 상태의 value는 null이어야 합니다")
+        if self.source.ref is not None and self.source.ref.kind != "media_stream":
+            raise ValueError("GPS source ref는 MediaStream이어야 합니다")
+        return self
 
 
 class ExternalSourceRef(ContractModel):

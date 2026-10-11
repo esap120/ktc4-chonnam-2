@@ -12,13 +12,18 @@ from pathlib import Path
 
 from daesingo.case import correction
 from daesingo.case.correction_log import export_learning_log
-from daesingo.case.domain import CaseAggregate
+from daesingo.case.domain import Candidate, CaseAggregate
 
 MOCK_ROOT = Path(__file__).resolve().parents[2] / "data" / "mock"
 
 
 def _make_case() -> CaseAggregate:
-    return CaseAggregate.intake(case_id="case_log001", hints={}, manifest_summary={})
+    """값 정정은 후보를 고른 뒤에만 받으므로(`correction.apply_correction()`) 선택까지 마친 case."""
+    case = CaseAggregate.intake(case_id="case_log001", hints={}, manifest_summary={})
+    case.start_search()
+    case.receive_candidates([Candidate(candidate_id="c1", at="t", at_provenance="p", observed="o", thumb_ref="f")])
+    case.select_candidate("c1")
+    return case
 
 
 def test_vehicle_number_correction_redacts_plate_keeps_length_and_diff_positions():

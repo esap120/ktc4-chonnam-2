@@ -82,6 +82,7 @@ Plan 단계에서는 다음을 하지 않는다.
 | 문서 | 상태 | 닫으려는 질문 |
 | --- | --- | --- |
 | [Elice Runtime Capacity Smoke Plan](./elice-runtime-capacity-smoke-plan.md) | Planned | #95 P0/P1 경로를 baseline EC2에서 실행할 때 CPU/RAM/disk/queue/reuse가 안전한가 |
+| [Pre-implementation Spike 2026-10-03](./pre-implementation-spike-2026-10-03.md) | Result | workflow §5 A Decision의 기술 semantics — claim lock(RR/RC) · conditional UPDATE 경합 · Compose secret file · shared volume rename. capacity 실험이 아니다 |
 
 P2 결과가 현재 가정을 크게 바꾸면 그 결과를 바탕으로 P3 30분~1시간 Runtime E2E plan을 별도로 만든다. P3 문서를 선작성해 가정을 고정하지 않는다.
 

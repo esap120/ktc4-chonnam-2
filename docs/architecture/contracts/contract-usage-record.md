@@ -27,7 +27,7 @@ v4 §4-모듈2 ⑥은 정규화 사용량·가격 맥락의 상위 요구다. �
 
 ## 2. Producer / Consumer
 
-**Producer**: `common/runtime` (김준영). 외부 호출을 실제로 수행하는 계층이 호출 1건당 1 row를 append한다.
+**Producer**: `common/runtime` (김준영). 외부 호출을 실제로 수행하는 계층이 호출 1건당 1 row를 append한다. **(2026-10-04 표기 정합, 버전 유지, [#244](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/244) RD-18)** provider 호출은 Search adapter가 수행하고 시도마다 Runtime usage tracker에 시작 · 완료 관측을 넘기며, Final row append는 common/runtime이 logical Run 연결이 확정된 뒤 호출 1건당 정확히 1번 한다. 필드 · 불변조건은 바뀌지 않는다. in-flight 추적 · 복구 방식은 Contract 밖 Runtime 구현이다([`runtime-tech-spec.md`](../../runtime/runtime-tech-spec.md) §11.1).
 
 **Consumer**
 

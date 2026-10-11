@@ -33,6 +33,7 @@
 
 ## 실제 원본 capability
 
+- [실제 영상 처리 Edge Case 목록](real-video-edge-cases.md)
 - [로컬 원본의 실제 FrameRef·PNG 조회](local-frame-access.md)
 - [등록 원본의 현재 AssetFacts 조회](local-asset-facts.md)
 - [실제 단일 원본의 SpanResolution 계산](local-span-resolution.md)

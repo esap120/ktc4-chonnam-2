@@ -107,7 +107,11 @@ const NOTICE_MESSAGES: Record<string, string> = {
   'notice.plate_read_failed_retry_exhausted': '번호판 판독에 실패했습니다.',
   'notice.plate_read_cancelled': '번호판 판독이 중단됐습니다.',
   'notice.search_no_candidates': '조건에 맞는 장면을 찾지 못했습니다.',
+  // #197 — 탐색 Run 실패. 「후보 없음」과 다른 시스템 실패다.
+  'notice.candidate_search_failed': '장면을 찾는 중에 문제가 생겼어요.',
   'notice.visual_event_unconfirmed': '어떤 상황인지 아직 확인되지 않았습니다.',
+  // #168 [A] — 가장 유력한 후보에서 위반이 관찰되지 않은 음성 결과.
+  'notice.visual_event_not_observed': '이 장면에서는 신고할 위반을 확인하지 못했어요.',
   'notice.report_video_not_generated': '신고용 영상이 아직 만들어지지 않았습니다.',
   // 이슈 #48 확정 — 문구 뜻은 계약이 정했다(「지도에 붙여넣을 검색어를 제공하지
   // 못한다, 기억나는 장소를 직접 검색해야 한다」). 발동 기준은 `location` 부재가
@@ -117,6 +121,12 @@ const NOTICE_MESSAGES: Record<string, string> = {
   // #171 C-2 — 상황 응답 전이라 Package가 나가지 않은 상태. 응답 버튼은 이
   // notice의 action이 아니라 #106 command로 연다.
   'notice.situation_response_pending': '신고 상황을 확인해 주시면 신고자료를 준비하겠습니다.',
+}
+
+// ISO 시각(`2026-08-24T18:05:12+09:00`)을 `2026-08-24 18:05:12`로 보여준다. 포맷만 web이
+// 한다(value-state-display.md §3-4) — 시각이 아닌 값은 그대로 돌려준다.
+export function formatValue(value: string): string {
+  return value.replace(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/, '$1 $2')
 }
 
 export const NOTICE_FALLBACK = '확인이 필요한 항목이 있습니다.'

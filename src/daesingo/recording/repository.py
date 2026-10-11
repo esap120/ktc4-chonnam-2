@@ -15,6 +15,7 @@ from .models import (
     ContractRef,
     DerivedAsset,
     FrameRef,
+    GPSObservation,
     MediaStream,
     IncidentClip,
     RecordingTimeline,
@@ -36,6 +37,7 @@ class InMemoryRecordingRepository:
         self._local_sources: dict[str, LocalSource] = {}
         self._local_stream_indices: dict[str, int] = {}
         self._media_streams: dict[str, MediaStream] = {}
+        self._gps_observations: list[GPSObservation] = []
         self._frames: dict[str, FrameRef] = {}
         self._frame_by_position: dict[tuple[str, Decimal], str] = {}
         self._frame_content: dict[str, bytes] = {}
@@ -79,6 +81,17 @@ class InMemoryRecordingRepository:
 
     def get_media_stream(self, stream_ref: str) -> MediaStream | None:
         return self._media_streams.get(stream_ref)
+
+    def add_gps_observation(self, observation: GPSObservation) -> None:
+        checked = GPSObservation.model_validate(observation)
+        if checked.source.ref is not None and checked.source.ref.ref not in self._media_streams:
+            raise ValueError("GPS source ref에 대응하는 MediaStream이 없습니다")
+        if checked in self._gps_observations:
+            raise ValueError("동일한 GPS Observation은 중복 등록할 수 없습니다")
+        self._gps_observations.append(checked.model_copy(deep=True))
+
+    def list_gps_observations(self) -> list[GPSObservation]:
+        return [observation.model_copy(deep=True) for observation in self._gps_observations]
 
     def add_frame(self, frame: FrameRef, *, content: bytes | None = None) -> None:
         self._frames[frame.frame_ref] = frame

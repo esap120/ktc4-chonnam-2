@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Final
 
 from .coarse import LinkedCoarseResult
+from .config import API_KEY_ENV_NAMES, api_key_from_env
 from .errors import (
     MissingCandidateError,
     UnknownCandidateError,
@@ -10,6 +11,13 @@ from .errors import (
 )
 from .factory import build_gemini_search_service
 from .fixtures import FixtureNotFoundError, FixtureSearchService
+from .intent import (
+    IntentFailureKind,
+    IntentHintExtractor,
+    IntentHintResult,
+    IntentHintStatus,
+    build_intent_hint_extractor,
+)
 from .runs import CandidateEvent, CandidateSearchResult, ContractRef
 from .scope import AnalysisScope, SearchHint, VisualEventType
 from .service import SearchService
@@ -90,6 +98,10 @@ __all__ = [
     "CandidateSourceLink",
     "ContractRef",
     "FixtureNotFoundError",
+    "IntentFailureKind",
+    "IntentHintExtractor",
+    "IntentHintResult",
+    "IntentHintStatus",
     "LinkedCoarseResult",
     "ResolvedAnalysisSource",
     "SelectedVideoStream",
@@ -101,7 +113,10 @@ __all__ = [
     "VisualEventType",
     "VisualVerificationExecution",
     "VisualVerificationResult",
+    "API_KEY_ENV_NAMES",
+    "api_key_from_env",
     "build_gemini_search_service",
+    "build_intent_hint_extractor",
     "search_candidates",
     "select_single_video_stream",
     "verify_visual",

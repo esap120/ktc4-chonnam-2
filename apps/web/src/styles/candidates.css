@@ -21,6 +21,11 @@
   .cands { grid-template-columns: 1fr; }
 }
 
+/* 카드 아래에 「이 장면으로 다시 준비」를 붙일 때의 칸. 카드가 남은 높이를 채워
+   버튼 줄이 나란히 맞는다. */
+.cand-col { display: flex; flex-direction: column; gap: 8px; }
+.cand-col > .cand { flex: 1; }
+
 /* 썸네일 자리. `thumb_ref`는 내려오지만 이를 이미지로 바꾸는 경로가 계약에
    없다(A-5). 자리를 접지 않고 「아직 없다」를 적는다 — 빈 칸으로 두면 값이
    없는 것인지 기능이 없는 것인지 화면에서 구분되지 않는다. 계약이 열리면

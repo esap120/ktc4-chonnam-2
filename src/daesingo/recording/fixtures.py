@@ -14,6 +14,7 @@ from .models import (
     ContractModel,
     DerivedAsset,
     FrameRef,
+    GPSObservation,
     MediaStream,
     IncidentClip,
     RecordingTimeline,
@@ -42,6 +43,7 @@ class RecordingFixture(ContractModel):
     remote_copies: list[RemoteCopy] = Field(default_factory=list)
     incident_clips: list[IncidentClip] = Field(default_factory=list)
     derived_assets: list[DerivedAsset] = Field(default_factory=list)
+    gps_observations: list[GPSObservation] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def source_stream_references_are_consistent(self) -> RecordingFixture:
@@ -61,6 +63,11 @@ class RecordingFixture(ContractModel):
             raise ValueError("frame_ref는 fixture 안에서 중복될 수 없습니다")
         if len(timelines) != len(self.recording_timelines):
             raise ValueError("timeline_id와 revision 조합은 중복될 수 없습니다")
+        for i, observation in enumerate(self.gps_observations):
+            if observation in self.gps_observations[:i]:
+                raise ValueError("동일한 GPS Observation은 중복 등록할 수 없습니다")
+            if observation.source.ref is not None and observation.source.ref.ref not in streams:
+                raise ValueError("GPS source ref에 대응하는 MediaStream이 없습니다")
 
         for asset in self.source_assets:
             if len(set(asset.media_stream_refs)) != len(asset.media_stream_refs):

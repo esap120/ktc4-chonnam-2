@@ -96,7 +96,7 @@ Group Timing과 Sub-decision Timing이 다를 때의 원칙은 Register 「읽�
 
 ### 2.4 Decision Gate
 
-Gate는 **늦어도 이 milestone 전에 닫혀 있어야 하는 지점**이다. 날짜가 아니다. M1~M4는 workflow §7 Implementation Plan 우선순위 순서이고, §7에서 순서가 바뀌면 Gate 이름은 그대로 두고 순서만 따라간다.
+Gate는 **늦어도 이 milestone 전에 닫혀 있어야 하는 지점**이다. 날짜가 아니다. M1~M4는 workflow §7 Implementation Plan 우선순위 순서이고, §7에서 순서가 바뀌면 Gate 이름은 그대로 두고 순서만 따라간다. M1~M5가 어느 Task 착수에 해당하는지는 [Runtime Implementation Plan](./runtime-implementation-plan.md) §3.1이다.
 
 | Gate | Milestone | 근거 |
 | --- | --- | --- |
@@ -222,6 +222,8 @@ Register 원문을 반복하지 않고 **분류를 그렇게 한 이유**만 적
 | RD-05 | M3 | API composition root · web 실연동 · RD-12 smoke endpoint |
 | RD-17 | M3 | RD-05e · Compose volume(RD-12) · 첫 비동기 Real E2E(M5) |
 | RD-07 | M4 | Compose 주입 경로 · RD-12 (RD-07c는 M6) |
+
+**§5 진행:** 2026-10-03에 9개 모두 Decision Issue로 연결했고, **2026-10-04에 9/9 CLOSED**다 — #244 ~ #250 ACCEPTED, 승격된 SoT와 Issue 링크는 Register [§5 진행 상태](./open-decision-register.md#5-진행-상태--timing-a)가 추적한다(Umbrella [#251](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/251), PR #253). 이 분류의 Type · 결정권 · Timing · Gate는 바꾸지 않았다.
 
 ### 4.2 B — Provisional 가능 (6)
 
@@ -459,3 +461,6 @@ RD-01은 Gate가 가장 이르면서(M1) dependency상 가장 늦다. Wave 1 · 
 | --- | --- | --- |
 | 2026-10-03 | 최초 작성 — 18 group 분류. Timing 변경 없음 · group 분할 없음 · 답 선택 없음 | `origin/develop` `10787d8` |
 | 2026-10-03 | 검토 반영 — §2.1 예외 목록에 RD-19 추가, RD-10 개인정보 법령 조사를 R3에서 EI-08로 이동, `Joint` 뜻(각 Owner가 자기 surface 승인) 명시 | `origin/develop` `10787d8` |
+| 2026-10-03 | §4.1에 workflow §5 진행 포인터 추가(Register §5 진행 상태 · #251). 분류 변경 없음 | `origin/develop` `43dd8ec` |
+| 2026-10-04 | §4.1 포인터를 Timing A 9/9 CLOSED로 갱신. 분류 변경 없음 | PR #253 |
+| 2026-10-06 | §2.4에 M1~M5 ↔ Implementation Plan Task 대응 pointer 추가. 분류 변경 없음 | PR #304 |

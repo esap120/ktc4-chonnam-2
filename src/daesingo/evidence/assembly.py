@@ -175,6 +175,111 @@ def _location(
     return location or None
 
 
+def _independent_facts(
+    *,
+    case_id: str,
+    time_resolution: Contract,
+    plate_readout: Contract | None,
+    location_hint: str | None,
+    gps_observation: Contract | None,
+    heads: dict[str, Contract],
+) -> Contract:
+    facts: Contract = {}
+    resolution_ref = time_resolution.get("resolution_ref")
+    require(isinstance(resolution_ref, dict), "TimeResolution.resolution_ref is required")
+    resolved = time_resolution.get("resolved")
+    if time_resolution.get("status") == "UNKNOWN":
+        require(resolved is None, "UNKNOWN TimeResolution cannot have resolved")
+    else:
+        require(isinstance(resolved, dict), "resolved TimeResolution is required")
+        source_kind = resolved["source"]["kind"]
+        facts["occurred_at"] = {
+            "value": resolved["value"],
+            "time_resolution_ref": deepcopy(resolution_ref),
+            "resolution_status": time_resolution["status"],
+            "user_corrected": resolved["user_corrected"],
+            "source": {"kind": source_kind, "label_key": _TIME_LABELS.get(source_kind)},
+        }
+
+    if plate_readout:
+        plate_ref = contract_ref("plate_readout", plate_readout["readout_id"])
+        observation = plate_readout.get("observation") or {}
+        value = observation.get("value")
+        if not plate_readout.get("abstained") and observation.get("status") == "OK" and value:
+            require(isinstance(value, str), "an accepted plate value must be a string")
+            facts["vehicle_number"] = _evidence_value(
+                value,
+                source_kind="readout.plate_ocr",
+                source_ref=plate_ref,
+                observability="OBSERVED",
+                label_key="plate.source.plate_ocr",
+                support_refs=[plate_ref],
+            )
+
+    location = _location(case_id=case_id, location_hint=location_hint, gps_observation=gps_observation)
+    if location:
+        facts["location"] = location
+
+    for target, correction in heads.items():
+        if target == "occurred_at":
+            selected = time_resolution.get("provenance", {}).get("selected_input_ref")
+            require(
+                selected == contract_ref("correction_record", correction["correction_id"]),
+                "occurred_at correction must be selected by TimeResolution",
+            )
+            continue
+        if target != "vehicle_number" and not target.startswith("location."):
+            continue
+        corrected_ref = contract_ref("correction_record", correction["correction_id"])
+        corrected = _evidence_value(
+            correction["new_value"],
+            source_kind="case.user_correction",
+            source_ref=corrected_ref,
+            observability="OBSERVED",
+            label_key=None,
+            support_refs=[corrected_ref],
+            user_corrected=True,
+        )
+        if target == "vehicle_number":
+            facts["vehicle_number"] = corrected
+        else:
+            facts.setdefault("location", {})[target.split(".", 1)[1]] = corrected
+    return facts
+
+
+def resolve_independent_facts(
+    *,
+    case_id: str,
+    selection_rev: int,
+    time_resolution: Contract,
+    plate_readout: Contract | None,
+    location_hint: str | None = None,
+    gps_observation: Contract | None = None,
+    correction_records: list[Contract] | None = None,
+) -> Contract:
+    """Resolve the situation-independent EvidenceRecord fields without assembling a Record.
+
+    Returns only `occurred_at` · `vehicle_number` · `location`, each in the exact
+    EvidenceRecord shape and omitted under the same rules.  `assemble_evidence()` fills
+    those three fields through this same resolution, so a caller that cannot assemble
+    yet (Fine `UNCERTAIN` awaiting the user's situation response, #239) can project them
+    without re-implementing plate/time/location adoption.
+
+    The result is not an EvidenceRecord: it carries no `record_ref`, `basis`, `event`,
+    `provenance` or `situation_response`, and nothing is stored, published or derived
+    from it here (ADR-EVIDENCE-009 §2.1 — no final Record before the user's response).
+    """
+    require(isinstance(selection_rev, int) and not isinstance(selection_rev, bool) and selection_rev >= 1, "selection_rev must be >= 1")
+    return _independent_facts(
+        case_id=case_id,
+        time_resolution=time_resolution,
+        plate_readout=plate_readout,
+        location_hint=location_hint,
+        gps_observation=gps_observation,
+        heads=correction_heads(correction_records or [], case_id=case_id, selection_rev=selection_rev),
+    )
+
+
 def assemble_evidence(
     *,
     case_id: str,
@@ -226,42 +331,24 @@ def assemble_evidence(
     if supersedes_id:
         record["supersedes_ref"] = contract_ref("evidence_record", supersedes_id)
 
-    resolved = time_resolution.get("resolved")
-    if time_resolution.get("status") == "UNKNOWN":
-        require(resolved is None, "UNKNOWN TimeResolution cannot have resolved")
-    else:
-        require(isinstance(resolved, dict), "resolved TimeResolution is required")
-        source_kind = resolved["source"]["kind"]
-        record["occurred_at"] = {
-            "value": resolved["value"],
-            "time_resolution_ref": deepcopy(resolution_ref),
-            "resolution_status": time_resolution["status"],
-            "user_corrected": resolved["user_corrected"],
-            "source": {"kind": source_kind, "label_key": _TIME_LABELS.get(source_kind)},
-        }
+    heads = correction_heads(correction_records or [], case_id=case_id, selection_rev=selection_rev)
+    # occurred_at · vehicle_number · location (with their corrections) come from the same
+    # resolution `resolve_independent_facts()` exposes for the pre-response projection.
+    record.update(
+        _independent_facts(
+            case_id=case_id,
+            time_resolution=time_resolution,
+            plate_readout=plate_readout,
+            location_hint=location_hint,
+            gps_observation=gps_observation,
+            heads=heads,
+        )
+    )
 
     input_refs = [visual_ref]
     if plate_readout:
-        plate_ref = contract_ref("plate_readout", plate_readout["readout_id"])
-        input_refs.append(plate_ref)
-        observation = plate_readout.get("observation") or {}
-        value = observation.get("value")
-        if not plate_readout.get("abstained") and observation.get("status") == "OK" and value:
-            require(isinstance(value, str), "an accepted plate value must be a string")
-            record["vehicle_number"] = _evidence_value(
-                value,
-                source_kind="readout.plate_ocr",
-                source_ref=plate_ref,
-                observability="OBSERVED",
-                label_key="plate.source.plate_ocr",
-                support_refs=[plate_ref],
-            )
+        input_refs.append(contract_ref("plate_readout", plate_readout["readout_id"]))
 
-    location = _location(case_id=case_id, location_hint=location_hint, gps_observation=gps_observation)
-    if location:
-        record["location"] = location
-
-    heads = correction_heads(correction_records or [], case_id=case_id, selection_rev=selection_rev)
     visual_correction = heads.get("event.visual_event_type")
     if visual_correction is not None:
         corrected_ref = contract_ref("correction_record", visual_correction["correction_id"])
@@ -296,49 +383,18 @@ def assemble_evidence(
                     )
 
     for target, correction in heads.items():
-        if target == "occurred_at":
-            selected = time_resolution.get("provenance", {}).get("selected_input_ref")
-            require(
-                selected == contract_ref("correction_record", correction["correction_id"]),
-                "occurred_at correction must be selected by TimeResolution",
-            )
+        if target == "event.visual_event_type" or not target.startswith("event."):
             continue
         corrected_ref = contract_ref("correction_record", correction["correction_id"])
-        if target == "event.visual_event_type":
-            continue
-        if target.startswith("event."):
-            field = target.split(".", 1)[1]
-            value = correction["new_value"]
-            record["event"][field] = _evidence_value(
-                value,
-                source_kind="case.user_correction",
-                source_ref=corrected_ref,
-                observability="OBSERVED",
-                label_key=None,
-                support_refs=[corrected_ref],
-                user_corrected=True,
-            )
-        elif target == "vehicle_number":
-            record["vehicle_number"] = _evidence_value(
-                correction["new_value"],
-                source_kind="case.user_correction",
-                source_ref=corrected_ref,
-                observability="OBSERVED",
-                label_key=None,
-                support_refs=[corrected_ref],
-                user_corrected=True,
-            )
-        elif target.startswith("location."):
-            field = target.split(".", 1)[1]
-            record.setdefault("location", {})[field] = _evidence_value(
-                correction["new_value"],
-                source_kind="case.user_correction",
-                source_ref=corrected_ref,
-                observability="OBSERVED",
-                label_key=None,
-                support_refs=[corrected_ref],
-                user_corrected=True,
-            )
+        record["event"][target.split(".", 1)[1]] = _evidence_value(
+            correction["new_value"],
+            source_kind="case.user_correction",
+            source_ref=corrected_ref,
+            observability="OBSERVED",
+            label_key=None,
+            support_refs=[corrected_ref],
+            user_corrected=True,
+        )
 
     if situation_response is not None:
         value = situation_response.get("value")

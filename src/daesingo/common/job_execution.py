@@ -73,6 +73,14 @@ class JobExecutionError(Exception):
         self.code = code
 
 
+def validate_transition(current: JobStatus, target: JobStatus) -> None:
+    """Validate against the single existing lifecycle table, without mutation."""
+    if target not in InMemoryJobExecutionStore._TRANSITIONS.get(current, set()):
+        raise JobExecutionError(
+            "INVALID_STATUS_TRANSITION", f"{current}에서 {target}(으)로 전이할 수 없습니다",
+        )
+
+
 class InMemoryJobExecutionStore:
     """Job별 attempt와 허용 상태 전이를 보존하는 실행 저장소."""
 
@@ -167,11 +175,7 @@ class InMemoryJobExecutionStore:
 
     def _transition(self, execution_id: str, status: JobStatus, **changes: Any) -> JobExecution:
         current = self.get(execution_id)
-        if status not in self._TRANSITIONS[current.status]:
-            raise JobExecutionError(
-                "INVALID_STATUS_TRANSITION",
-                f"{current.status}에서 {status}(으)로 전이할 수 없습니다",
-            )
+        validate_transition(current.status, status)
         updated = current.model_copy(update={"status": status, **changes})
         validated = JobExecution.model_validate(updated.model_dump())
         self._executions[execution_id] = validated

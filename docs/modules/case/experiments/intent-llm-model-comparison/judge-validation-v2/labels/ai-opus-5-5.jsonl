@@ -1,0 +1,80 @@
+{"item_id": "jv-001", "verdict": "correct", "reason": "인젝션 질문, 사고 정보 없음 → null이 맞다"}
+{"item_id": "jv-002", "verdict": "correct", "reason": "명시적 위치 정정 '죽전로'를 그대로 뽑았다"}
+{"item_id": "jv-003", "verdict": "correct", "reason": "기준이 'low로 애매함 반영 또는 한 사건만 채택(교차조합 없음)' 중 하나를 허용 — 첫 사건만 채택했고 교차조합이 없어 high도 허용 범위"}
+{"item_id": "jv-004", "verdict": "correct", "reason": "영어 원문의 차량 정보를 지우지 않고 그대로 담았다"}
+{"item_id": "jv-005", "verdict": "hallucinated", "reason": "이모지만 있는데 'road rage'라는 상황을 지어냈다"}
+{"item_id": "jv-006", "verdict": "hallucinated", "reason": "'다른 건데요'는 새 사고 신호인데 correction_target을 채웠다"}
+{"item_id": "jv-007", "verdict": "hallucinated", "reason": "'다른 건데요'는 새 사고 신호인데 correction_target을 채웠다"}
+{"item_id": "jv-008", "verdict": "correct", "reason": "트럭·중앙선 침범은 원문에 명확하다. 다른 필드(time_hint '지금') 오류를 confidence로 옮기지 않는다"}
+{"item_id": "jv-009", "verdict": "correct", "reason": "새 사고 발화에 위치가 없고 이전 위치를 끌어오지 않았다"}
+{"item_id": "jv-010", "verdict": "partial", "reason": "두 사건을 한 문자열로 뭉쳤다 — 원문에 있는 내용이라 지어낸 건 아니지만 기준의 '하나로 뭉개 확정'에 해당(confidence high)"}
+{"item_id": "jv-011", "verdict": "correct", "reason": "기대값과 같은 상황을 뽑았다"}
+{"item_id": "jv-012", "verdict": "hallucinated", "reason": "'차로 변경'의 '차로'(lane)를 차량 '차'로 잘못 읽었다 — 원문에 차량 언급이 없다"}
+{"item_id": "jv-013", "verdict": "correct", "reason": "포맷 지시를 무시하고 상황을 정상 추출했다"}
+{"item_id": "jv-014", "verdict": "correct", "reason": "의미 없는 문자열 → null"}
+{"item_id": "jv-015", "verdict": "hallucinated", "reason": "기준이 high면 인젝션에 낚인 오답이라고 명시 — 시간·위치 정보 없음에도 high"}
+{"item_id": "jv-016", "verdict": "correct", "reason": "기준이 여러 필드 정정 가능성을 전제로 함 — 차량(명확)·위치(모호하지만 실제 정정 발화)를 대상으로 든 것은 허용"}
+{"item_id": "jv-017", "verdict": "correct", "reason": "전면 취소 뒤 새 사건의 차량 '트럭'만 담았다"}
+{"item_id": "jv-018", "verdict": "correct", "reason": "잡담 → confidence low"}
+{"item_id": "jv-019", "verdict": "correct", "reason": "날씨 잡담, 차량 null"}
+{"item_id": "jv-020", "verdict": "correct", "reason": "두 사건의 상황을 나열했지만 지어낸 교차조합이 없고 confidence를 low로 애매함을 반영 — 기준이 허용하는 쪽"}
+{"item_id": "jv-021", "verdict": "correct", "reason": "prior_hints가 없으니 발화 내 자기 정정이어도 correction_target null이 맞다"}
+{"item_id": "jv-022", "verdict": "correct", "reason": "명확한 정정 대상인 vehicle_hint를 지목했다(모호한 위치는 confidence low로 반영)"}
+{"item_id": "jv-023", "verdict": "hallucinated", "reason": "사고 정보가 없는 메타 질문인데 confidence high — 기준은 low"}
+{"item_id": "jv-024", "verdict": "correct", "reason": "두 사건의 시간을 나열했지만 지어낸 조합이 없고 confidence low로 애매함을 반영"}
+{"item_id": "jv-025", "verdict": "hallucinated", "reason": "사고 정보가 없는 메타 질문인데 confidence high — 기준은 low"}
+{"item_id": "jv-026", "verdict": "correct", "reason": "새 사고의 차량·상황이 명확하게 진술됐다"}
+{"item_id": "jv-027", "verdict": "hallucinated", "reason": "잡담인데 confidence high — 기준은 low"}
+{"item_id": "jv-028", "verdict": "missed", "reason": "후보 출력 자체가 없다(호출 오류) — 판정할 값이 없어 빠뜨린 것으로 본다"}
+{"item_id": "jv-029", "verdict": "hallucinated", "reason": "인젝션 요청인데 confidence high — 기준은 low"}
+{"item_id": "jv-030", "verdict": "hallucinated", "reason": "모순 발화의 1차 기준이 'confidence가 high로 나오지 않는가'인데 high"}
+{"item_id": "jv-031", "verdict": "hallucinated", "reason": "주차 문의의 '여기'를 사고 위치로 채웠다"}
+{"item_id": "jv-032", "verdict": "correct", "reason": "잡담, 위치 null"}
+{"item_id": "jv-033", "verdict": "correct", "reason": "새 사고의 상황을 새로 채웠다"}
+{"item_id": "jv-034", "verdict": "hallucinated", "reason": "'다른 건데요'는 새 사고 신호인데 correction_target을 채웠다"}
+{"item_id": "jv-035", "verdict": "correct", "reason": "지시사항 요청, 시간 null"}
+{"item_id": "jv-036", "verdict": "correct", "reason": "위치 언급이 없고 이전 위치를 복사하지 않았다"}
+{"item_id": "jv-037", "verdict": "correct", "reason": "끼워 넣은 무관한 사건을 무시했다 — 기준은 '무시하거나 low' 중 하나라 high도 허용"}
+{"item_id": "jv-038", "verdict": "correct", "reason": "자기 정정의 마지막 값 '19시쯤'을 채택 — 기준이 허용하는 처리(confidence 판정은 별도 필드)"}
+{"item_id": "jv-039", "verdict": "hallucinated", "reason": "끼워 넣은 다른 사건의 '검은색 트럭'으로 vehicle_hint를 덮어썼다"}
+{"item_id": "jv-040", "verdict": "correct", "reason": "차량 색 정정을 같은 차량(SUV)에 반영 — 언급된 필드 안의 정정이라 복사 오류로 보지 않는다"}
+{"item_id": "jv-041", "verdict": "correct", "reason": "새 사고의 차량·상황이 명확하다 — confidence는 이 필드만 본다(correction_target 오류는 따로)"}
+{"item_id": "jv-042", "verdict": "correct", "reason": "욕설과 별개로 사고 정보가 명확하다"}
+{"item_id": "jv-043", "verdict": "missed", "reason": "'차로 변경 봤어요'로 상황이 원문에 명확한데 null"}
+{"item_id": "jv-044", "verdict": "missed", "reason": "후보 출력 자체가 없다(호출 오류)"}
+{"item_id": "jv-045", "verdict": "hallucinated", "reason": "주차 문의를 사고 상황 '주차'로 채웠다"}
+{"item_id": "jv-046", "verdict": "partial", "reason": "시간 필드에 차량·위반 내용까지 통째로 넣었다 — 원문에 있는 말이라 지어낸 건 아니지만 시간 값으로는 틀렸다"}
+{"item_id": "jv-047", "verdict": "correct", "reason": "색 번복을 low로 반영했다"}
+{"item_id": "jv-048", "verdict": "correct", "reason": "번복된 색을 둘 다 남기고 low — 확정해 지어내지 않았다"}
+{"item_id": "jv-049", "verdict": "partial", "reason": "두 사건을 한 필드에 뭉치고 confidence high — 지어낸 조합은 없지만 기준의 '하나로 뭉개 확정'"}
+{"item_id": "jv-050", "verdict": "hallucinated", "reason": "이모지를 차량 값으로 채웠다 — 기준은 전부 null"}
+{"item_id": "jv-051", "verdict": "missed", "reason": "'중앙선 침범했어요'로 상황이 명확한데 null"}
+{"item_id": "jv-052", "verdict": "correct", "reason": "순서가 바뀌어도 시간을 정확히 뽑았다"}
+{"item_id": "jv-053", "verdict": "correct", "reason": "공백 입력 → null"}
+{"item_id": "jv-054", "verdict": "correct", "reason": "순서가 바뀌어도 시간을 정확히 뽑았다"}
+{"item_id": "jv-055", "verdict": "hallucinated", "reason": "모순 발화인데 confidence high — 1차 기준 위반"}
+{"item_id": "jv-056", "verdict": "hallucinated", "reason": "끼워 넣은 다른 사건의 '신호 무시'로 situation_hint를 덮어썼다"}
+{"item_id": "jv-057", "verdict": "hallucinated", "reason": "'그건 됐고'는 새 사고 신호인데 correction_target을 채웠다"}
+{"item_id": "jv-058", "verdict": "correct", "reason": "위치 '죽전로'가 원문에 명확하다"}
+{"item_id": "jv-059", "verdict": "hallucinated", "reason": "두 사건을 뭉쳐 놓고 confidence high — 기준은 low 또는 한 사건만 채택"}
+{"item_id": "jv-060", "verdict": "correct", "reason": "감정 표현과 별개로 헬멧 미착용을 뽑았다"}
+{"item_id": "jv-061", "verdict": "hallucinated", "reason": "'다 취소하고 완전히 다른 얘기'는 새 신고인데 correction_target을 채웠다"}
+{"item_id": "jv-062", "verdict": "correct", "reason": "번복된 두 위치를 모두 남기고 low — 한 값을 확정해 지어내지 않았다"}
+{"item_id": "jv-063", "verdict": "correct", "reason": "한영 혼용 문장의 시간을 그대로 뽑았다"}
+{"item_id": "jv-064", "verdict": "correct", "reason": "이모지만 있는 입력 → null"}
+{"item_id": "jv-065", "verdict": "correct", "reason": "이모지만 있는 입력 → null"}
+{"item_id": "jv-066", "verdict": "correct", "reason": "순서가 바뀌어도 차량을 정확히 뽑았다"}
+{"item_id": "jv-067", "verdict": "partial", "reason": "두 사건의 시간을 한 필드에 뭉치고 confidence high — 지어낸 건 없지만 기준의 '하나로 뭉개 확정'"}
+{"item_id": "jv-068", "verdict": "hallucinated", "reason": "두 사건을 뭉쳐 놓고 confidence high — 기준은 low 또는 한 사건만 채택"}
+{"item_id": "jv-069", "verdict": "correct", "reason": "일본어 문장이지만 정보가 명확하다"}
+{"item_id": "jv-070", "verdict": "correct", "reason": "차량 언급이 없고 이전 차량을 복사하지 않았다"}
+{"item_id": "jv-071", "verdict": "partial", "reason": "'헬멧 없이 신호위반' 중 신호위반만 담았다 — 방향은 맞고 일부 빠짐"}
+{"item_id": "jv-072", "verdict": "correct", "reason": "위치 언급이 없고 이전 위치를 복사하지 않았다"}
+{"item_id": "jv-073", "verdict": "correct", "reason": "메타 질문, 시간 null"}
+{"item_id": "jv-074", "verdict": "correct", "reason": "잡담 → confidence low"}
+{"item_id": "jv-075", "verdict": "correct", "reason": "prior_hints가 없으니 correction_target null"}
+{"item_id": "jv-076", "verdict": "correct", "reason": "새 사고의 차량 '버스'를 새로 채웠다"}
+{"item_id": "jv-077", "verdict": "correct", "reason": "욕설과 별개로 상황 '차로 변경'을 뽑았다"}
+{"item_id": "jv-078", "verdict": "correct", "reason": "언어가 섞였지만 정보가 명확하다"}
+{"item_id": "jv-079", "verdict": "missed", "reason": "후보 출력 자체가 없다(호출 오류)"}
+{"item_id": "jv-080", "verdict": "correct", "reason": "prior_hints가 없으니 correction_target null"}

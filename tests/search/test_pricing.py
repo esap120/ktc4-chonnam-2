@@ -124,3 +124,8 @@ class TestCostWithRates:
     def test_result_is_decimal_not_float(self) -> None:
         cost = _usage(500_000, 200_000, 10_000).cost_with_rates(0.75, 3.75)
         assert isinstance(cost, Decimal)
+
+
+def test_unset_rates_are_unknown_cost_not_zero() -> None:
+    """기본 단가 0.0은 미설정이다 — 0원으로 쓰지 않는다(#153)."""
+    assert _usage(100, 50, 0).cost_with_rates(0.0, 0.0) is None

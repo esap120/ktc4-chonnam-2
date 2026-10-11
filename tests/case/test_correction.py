@@ -58,6 +58,101 @@ def test_edit_time_hint_with_no_actual_change_creates_nothing():
     assert case.correction_records == []
 
 
+def test_edit_time_hint_rejected_while_searching_leaves_case_unchanged():
+    """탐색 실패로 `SEARCHING`에 머문 case — 역행이 거부되면 기록·`hints`·`case_rev`가 남지 않는다
+    (#166과 같은 원칙, orchestration 지표 4차 측정)."""
+    case = CaseAggregate.intake(case_id="case_hint002", hints={"time": "18시쯤"}, manifest_summary={})
+    case.start_search()
+    rev_before = case.case_rev
+
+    with pytest.raises(InvalidTransition):
+        correction.edit_time_hint(case, {"time": "19시쯤"})
+
+    assert case.case_rev == rev_before
+    assert case.correction_records == []
+    assert case.hints == {"time": "18시쯤"}
+    assert case.stage == "SEARCHING"
+
+
+@pytest.mark.parametrize("candidates", [[], ["c1"]], ids=["no_candidates", "before_selection"])
+def test_value_correction_before_selection_is_rejected_without_change(candidates):
+    """번호판·시각 같은 값 정정은 후보를 고른 뒤(`EVIDENCE_REVIEW`·`READY`)에만 받는다 — 상태 기계
+    설계 초안 v1 §4(`CANDIDATE_REVIEW`: 「아직 선택 전」). 거부되면 기록·`case_rev`가 남지 않는다."""
+    case = CaseAggregate.intake(case_id="case_corr_pre", hints={}, manifest_summary={})
+    case.start_search()
+    case.receive_candidates([
+        Candidate(candidate_id=c, at="t", at_provenance="p", observed="o", thumb_ref="f") for c in candidates
+    ])
+    rev_before = case.case_rev
+
+    with pytest.raises(InvalidTransition):
+        correction.apply_correction(case, kind="PLATE_MANUAL_EDIT", target_field="vehicle_number",
+                                    previous_value=None, new_value="12가3456")
+
+    assert case.case_rev == rev_before
+    assert case.correction_records == []
+
+
+def test_value_correction_while_searching_is_rejected():
+    case = CaseAggregate.intake(case_id="case_corr_search", hints={}, manifest_summary={})
+    case.start_search()
+
+    with pytest.raises(InvalidTransition):
+        correction.apply_correction(case, kind="EVENT_TIME_MANUAL", target_field="occurred_at",
+                                    previous_value=None, new_value="2026-08-24T18:11:00+09:00")
+    assert case.correction_records == []
+
+
+def test_time_hint_edit_still_allowed_with_no_candidates():
+    """결과 없음(후보 0개)의 출구가 단서 수정이다(이슈 #31 W-1) — case 전체 값은 선택과 무관하다."""
+    case = CaseAggregate.intake(case_id="case_hint_empty", hints={"time": "18시쯤"}, manifest_summary={})
+    case.start_search()
+    case.receive_candidates([])
+
+    assert correction.edit_time_hint(case, {"time": "19시쯤"}) is not None
+    assert case.stage == "SEARCHING"
+
+
+def _reviewed_ready_case() -> CaseAggregate:
+    case = _case_at_evidence_review()
+    case.mark_ready(report_package={"package_ref": {"kind": "report_package", "ref": "pkg_test_001"}})
+    case.mark_reviewed()
+    return case
+
+
+def test_value_correction_in_ready_returns_to_evidence_review_keeping_user_reviewed():
+    """READY는 PACKAGE_READY 파생 gate다 — 다시 조립되는 값 정정이 오면 gate를 다시 봐야 하므로 내린다
+    (상태 기계 설계 초안 v1 §3, CaseView 계약 §10-9). `user_reviewed`는 필드 수정과 별개다(#173)."""
+    case = _reviewed_ready_case()
+    rev_before = case.case_rev
+
+    correction.apply_correction(case, kind="EVENT_TIME_MANUAL", target_field="occurred_at",
+                                previous_value="2026-08-24T18:05:12+09:00", new_value="2026-08-24T18:06:00+09:00")
+
+    assert case.stage == "EVIDENCE_REVIEW"
+    assert case.user_reviewed is True
+    assert case.case_rev == rev_before + 1
+
+
+def test_noop_correction_in_ready_changes_nothing():
+    case = _reviewed_ready_case()
+    rev_before = case.case_rev
+
+    assert correction.apply_correction(case, kind="EVENT_TIME_MANUAL", target_field="occurred_at",
+                                       previous_value="x", new_value="x") is None
+    assert case.stage == "READY"
+    assert case.case_rev == rev_before
+
+
+def test_situation_response_in_ready_returns_to_evidence_review():
+    case = _reviewed_ready_case()
+
+    case.record_situation_response("USER_UNSURE", responded_at="2026-10-02T17:00:00+09:00")
+
+    assert case.stage == "EVIDENCE_REVIEW"
+    assert case.user_reviewed is True
+
+
 def test_edit_time_hint_rejects_unknown_field():
     case = _case_at_evidence_review()
     import pytest

@@ -96,6 +96,7 @@
 - **Primary:** 김준영 — `ownership.md` §6의 주간 경계 점검과 같은 리듬에 붙인다.
 - **점검 범위:** 문서 간 포인터가 실제로 존재하는가 / 같은 결정이 두 곳에서 다르게 말하는가 / `CLAUDE.md`·`docs/README.md` 라우팅 표가 현재 폴더 구조와 맞는가(A-3 흡수).
 - **반영 위치:** `ownership.md` §6
+- **루트 README 사실 절 갱신(2026-10-06, 멘토 리뷰 PR #66):** `.claude/skills/update-readme/` skill과 PR 템플릿 체크 한 줄로 운영한다. 대조 범위 · 원천은 skill 파일이 소유한다.
 
 ### C-1. Product Validation Owner — 결과는 Notion 전용
 

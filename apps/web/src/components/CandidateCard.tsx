@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import type { Candidate } from '../contracts/caseView'
-import { SITUATION_LABELS, atProvenanceLabel, staleLabel } from '../contracts/labels'
+import { SITUATION_LABELS, atProvenanceLabel, formatValue, staleLabel } from '../contracts/labels'
 import '../styles/candidates.css'
 
 // 시각 출처는 `at_provenance_label_key`로만 고른다(case-view/v1.4 §7, PR #46
@@ -27,7 +27,7 @@ export function CandidateCard(props: { candidate: Candidate; ordinal: number }):
       <div className="cand-b">
         <div className="cand-h">
           <span className="cnum">{props.ordinal}</span>
-          <span className="cand-tc">{c.at ?? '시각 미확정'}</span>
+          <span className="cand-tc">{c.at === null ? '시각 미확정' : formatValue(c.at)}</span>
           {c.selected && <span className="cand-tag">지금 신고자료 기준</span>}
         </div>
         {c.stale_revision && stale && <span className="badge badge-unknown sm">{stale}</span>}

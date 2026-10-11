@@ -3,6 +3,8 @@
 from .fixtures import RecordingFixture, load_recording_fixture
 from .errors import RecordingCapabilityError
 from .models import (
+    GPSCoordinate,
+    GPSObservation,
     AnalysisSource,
     AssetFacts,
     AssetSpan,
@@ -29,6 +31,8 @@ from .time_sources import (AnchorApplication, LocalTimeSourceObserver, ObservedT
 from .service import OpenedAnalysisSource, RecordingService, RegisteredSource
 
 __all__ = [
+    "GPSCoordinate",
+    "GPSObservation",
     "AnchorApplication",
     "LocalTimeSourceObserver",
     "ObservedTimeSources",

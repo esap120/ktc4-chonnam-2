@@ -5,3 +5,4 @@
 ## 구현 기준
 
 - [recording 1차 Mock E2E Tech Spec](first-integration-tech-spec.md)
+- [GPS reverse geocoder provider 결정](gps-reverse-geocoder-provider.md) — MVP는 Kakao Local REST API 사용

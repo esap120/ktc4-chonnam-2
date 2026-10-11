@@ -52,4 +52,5 @@ ADR-005 §5.4는 「사용자 확인 단계(§8·§15)의 구성이 바뀌면 �
 ## 5. 후속 (이 ADR 범위 밖)
 
 - Fine `UNCERTAIN` + 무응답(`evidence=null`)에서 이미 관찰된 독립 값을 CaseView에 어떤 모양으로 투영할지 — CaseView 후속(#171 C-2 후속, case 소유)
+  - **진행 (2026-10-07, [#239](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/239)):** 모양은 case가 정했다(기존 `evidence` 객체, `record_id=null`). evidence는 상황 독립 세 필드만 계산하는 `resolve_independent_facts()`를 냈다(`src/daesingo/evidence/README.md`). 반환값은 EvidenceRecord가 아니다. 그래서 §2.1의 「응답 전 최종 Record 미완성」과 충돌하지 않는다.
 - web → case 상황 응답·`USER_REVIEWED` command 경로 — #106

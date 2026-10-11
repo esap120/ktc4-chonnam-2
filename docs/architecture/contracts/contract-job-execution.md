@@ -14,6 +14,8 @@
 
 > **2026-09-13 명확화 (ERD 리뷰 반영, case Owner 유소연).** 위 v1.1 노트가 case의 판단으로 남겨둔 "재개 시 job_id 재사용 여부"를 결정한다 — **"이어서 찾기"도 새 `job_id`(새 `JobRecord`)로 발주한다.** `RETRY_PLATE_READ`·`RETRY_SEARCH`(`contract-job-record-case-view.md` B절 §13)와 같은 원칙이다: `JobRecord`는 "작업 1건당 하나의 Intent 기록"(A절 §4)이고, 사용자가 버튼을 눌러 재개를 요청하는 순간 그 자체가 새 Intent이므로 새 `job_id`가 자연스럽다. 같은 `job_id`·새 `attempt`는 사용자 Intent 없이 벌어지는 자동 인프라 재시도(`STALE`)에 한정한다. "이미 찾은 후보를 버리지 않는다"(`core-user-flow.md` §4)는 이 결정과 무관하게 이미 만족된다 — `CandidateEvent`는 case에 종속된 독립 레코드라 어느 `job_id`가 만들었든 `CaseView.candidates[]`에서 계속 유지된다. 상세 근거 `docs/modules/case/decisions/job-resume-identity-policy.md`. 실제 데모 fixture는 여전히 없다(Should-1, 비차단, 다음 라운드 반영 예정).
 
+> **2026-10-04 표기 정합 (버전 유지 `job-execution/v1.1`, 필드 · enum · 전이 변경 없음).** Runtime/Ops workflow §5 Decision 반영. ① §2 case Consumer 행 · §9-8 — 늦은 결과 배제 기준을 「현재 `case_rev`와 맞는가」에서 **「case가 현재 context에 유효하다고 판단하는가」**(case가 들고 있는 중단된 `job_id` 집합 + 현재 선택 context)로 바로잡는다. 같은 `case_rev`에서 병렬 Job이 돌고 `case_rev`는 중단 외 command에서도 오르므로 revision 일치로 읽으면 지정하지 않은 병렬 Job의 유효한 결과까지 버려진다(case Owner 유소연 요청, [#245](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/245) C-1a). ② §5 `queued_at` — attempt ≥ 2에서는 계획된 backoff가 포함됨을 명시한다(eval 김대원 · case 유소연 확인, [#248](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/248)). 자동 retry 대상이 `STALE`뿐이라는 위 2026-09-13 문구는 [#244](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/244) R-1로 확정됐다.
+
 > **이 문서가 왜 지금 생겼나.** `JobRecord` ADR이 실행 상태(status/attempt/cost/produced/failure_kind)를 `JobRecord`에서 떼어내 별도 `JobExecution` 계약으로 이관하기로 확정했는데(부록-A §6·§10·§12), 그 계약 문서가 없었다. 목데이터 통합에서 queue 목 응답을 만들 근거가 없으므로 PM이 ADR의 기존 결정과 PM 소유 영역의 추가 결정을 모아 작성했다. 새로 정한 것은 §10에 따로 표시했고, 정하지 않은 것은 §11에 미결로 남겼다.
 
 ---
@@ -32,7 +34,7 @@
 
 | 소비자 | 무엇을 읽는가 |
 | --- | --- |
-| `case` (Runtime) | `status` · `produced` — 현재 `case_rev`와 맞는 결과만 domain state에 반영한다 |
+| `case` (Runtime) | `status` · `produced` — case가 현재 context에 유효하다고 판단한 결과만 domain state에 반영한다(§9-8) |
 | `web` | 직접 읽지 않는다. `CaseView.progress[].state`와 `running_jobs[].status`로 projection된 값만 본다 (v4 원칙 7) |
 | `eval` | 실행 성공률·재시도 횟수 집계. **`case`/`evidence`를 import하지 않는다** |
 
@@ -80,7 +82,7 @@
 | `job_id` | string | Y | 소속 `JobRecord.job_id` | ADR 부록-A §6 |
 | `status` | enum(6) | Y | 실행 상태. 값은 §6 (v1.1에서 `CANCELLED` 추가) | **ADR 부록-A §13-2 확정** · v1.1 |
 | `attempt` | int | Y | 이 `job_id`에 대한 몇 번째 시도인가. 1부터 시작 | ADR 부록-A §6 이관 목록 |
-| `queued_at` | ISO8601 | Y | queue에 들어간 시각 | 신규 (§10-2) |
+| `queued_at` | ISO8601 | Y | queue에 들어간 시각 = 이 execution이 생성된 시각. 자동 retry의 다음 attempt는 이전 attempt의 terminal 기록과 같은 시점에 생성되므로, **attempt ≥ 2의 `queued_at → started_at`은 계획된 backoff와 실제 queue 대기를 함께 포함한다**(2026-10-04 명확화) | 신규 (§10-2) |
 | `started_at` | ISO8601 \| null | Y(키) | `RUNNING` 진입 시각. `QUEUED`면 null | 신규 (§10-2) |
 | `ended_at` | ISO8601 \| null | Y(키) | 종료 시각. 종료 상태가 아니면 null | 신규 (§10-2) |
 | `produced` | ContractRef[] | Y(빈 배열 허용) | 이 실행이 만든 산출물 참조. 공통 모양은 `contract-observation.md` §3의 `ContractRef` | ADR 부록-A §6 이관 목록 |
@@ -168,7 +170,7 @@ QUEUED → CANCELLED        (실행 시작 전 사용자가 중단)
 5. `status=QUEUED`이면 `started_at`은 null이다.
 6. 캐시 재사용 조건은 `contract-job-record-case-view.md` A절 §7을 따른다. 실행 결과만의 fingerprint 비교로 범위를 넓히지 않는다(근거: `adr-job-record-case-view.md` A절 §7).
 7. 비용 금액의 authoritative 원천은 `UsageRecord`다. 본 계약은 `usage_refs`로 연결만 하고 금액을 자체 필드로 중복 보관하지 않는다.
-8. `case`는 현재 `case_rev`와 맞지 않는 실행의 `produced`를 domain state에 반영하지 않는다(v4 §4-모듈5 ④).
+8. `case`는 현재 context에 유효하다고 판단한 실행의 `produced`만 domain state에 반영한다(v4 §4-모듈5 ④). 판단 기준은 case 소유이며 사용자가 중단한 `job_id` 집합과 현재 선택 context를 쓴다 — `case_rev` 일치 여부를 늦은 결과 배제 기준으로 쓰지 않는다(2026-10-04 정합, [#245](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/245) C-1a). case가 반영하지 않은 `SUCCEEDED` 실행은 `SUCCEEDED` 그대로 남는다.
 9. **readout 계열 Job의 worker는 1 execution 안에서 readout public 함수(`read_plate` / `read_overlay_time`)를 정확히 1회 호출한다.** 그래야 `case`의 불변조건 「1 execution : `ReadoutRun` 1건」(`contract-job-record-case-view.md` A절 §10-5)이 성립한다 — `readout`은 `JobExecution`을 모르므로 이 규칙은 worker(Producer common/runtime) 구현 규칙이다. `produced`에는 그 run의 `{kind:"readout_run", ref:<run_id>}`가 정확히 1개 들어간다. 근거 `adr/adr-data-contract-call-closure-2026-09-07.md` §4.3 (신유민·유소연, 2026-09-07)    **예외(2026-09-10, 유소연·신유민, 이슈 #26 B-readout-3):** `status=STALE`로 종료된 execution은 worker가 readout public 함수 호출을 완료하지 못하고 소멸했을 수 있어 `produced=[]`(run 없음)를 허용한다 — 이 경우 §9 본문의 "정확히 1회 호출"은 성립하지 않은 채로 종료된 것이다.
 
 ## 10. PM이 새로 정한 것 (소비자 통보 대상)

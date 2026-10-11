@@ -33,6 +33,7 @@
 
 ## 남은 것
 
+- **정규화 층과 `amount=null` (2026-10-05, [#244](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/244) U-2 결정).** KRW 정규화는 cost를 계산하는 층(Search)에서 한다 — Runtime은 `cost.currency == "KRW"`만 검증하고 환산하지 않는다. KRW 요율이 설정되지 않았으면 `amount=null`이고 **0이 아니다.** 그래서 case budget guard는 `amount=null`을 「계산 불가」로 다룬다 — 0으로 더하면 예산이 남은 것처럼 보인다. 「계산 불가」일 때 발주를 막을지 계속할지는 guard 구현 때 정한다(#244 U-2 「case 확인 범위」). FX 출처는 RD-08이 닫을 때까지 placeholder `pricing_id`다.
 - 실제 환율/요율을 관리하는 versioned pricing artifact(현재는 `fx-krw-2026-09`라는 opaque id만 부여, 실제 조회 가능한 문서/서비스는 아직 없음) — common/runtime 구현 시점에 결정.
 - ~~`VISUAL_VERIFY`(Fine) run이 추가되면(P0-3) 그 `UsageRecord.cost`도 이 규칙(KRW 정규화)을 그대로 따라야 한다.~~ → **완료**: Fine run 추가 시점에 원장은 처음부터 KRW로 냈고(위 표), 2026-09-10에 search의 `usage_summary` snapshot도 맞췄다.
 - 이 문서는 fixture 정규화 기록이다 — `contract-analysis-run-candidate-event.md`의 `usage_summary.total_cost` 필드 정의 자체(허용 통화)는 아직 "정규화된 통화를 써야 한다"고 명문화하지 않았다. 계약 문서 정식 등재는 search 소유(서어진) 잔여 작업.

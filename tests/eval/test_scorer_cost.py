@@ -219,3 +219,24 @@ def test_no_unknown_cost_rows_means_no_reason_and_a_zero_counter():
 def test_no_usage_rows_keeps_the_unknown_cost_counter():
     out = cost.score([], processed_duration_sec=3600.0, scenarios=[])
     assert out["n_unknown_cost"] == 0
+
+
+# #244 (RD-18 U-2·U-4): KRW 요율이 없거나 실패 호출 과금을 모르면 cost 객체는
+# 있지만 amount 가 null 이다. cost=None 과 같은 「모른다」로 세야 한다.
+def test_null_amount_is_unknown_cost_not_a_crash():
+    rows = [_lrow("case_a", "100", 500), _row("case_b", None)]
+    out = cost.score(rows, processed_duration_sec=3600.0, scenarios=["s1"])
+
+    assert out["total"] == 100.0
+    assert out["n_unknown_cost"] == 1
+    assert "case_b" not in out["cost_per_case"]
+    assert "UNKNOWN_COST" in out["coverage"]
+
+
+def test_every_amount_null_leaves_cost_null_not_zero():
+    out = cost.score([_row("case_a", None), _row("case_b", None)],
+                     processed_duration_sec=3600.0, scenarios=["s1"])
+
+    assert out["total"] is None
+    assert out["cost_per_source_video_hour"] is None
+    assert out["n_unknown_cost"] == 2

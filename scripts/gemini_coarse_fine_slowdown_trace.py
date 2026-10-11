@@ -34,7 +34,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from daesingo.common import load_env_file
-from daesingo.search.config import GeminiSearchConfig
+from daesingo.search.config import GeminiSearchConfig, api_key_from_env
 from daesingo.search.decision_trace import DiagnosticCoarseResponse, DiagnosticFineResponse
 from daesingo.search.diagnostic import run_case
 from daesingo.search.diagnostic_call import DiagnosticDependencies
@@ -51,15 +51,24 @@ from daesingo.search.smoke_errors import ProviderApiError, ProviderPayloadError
 VID = "C:/Users/User/orca/ktc4-chonnam-2/src/daesingo/search/video"
 DEFAULT_ENV = "C:/Users/User/orca/ktc4-chonnam-2/.env"
 
-# 정답지.md: (case_id, file, duration, event, 기대, 정답 구간(원본 초) 또는 None)
+# 정답지.md: (case_id, file, duration, event, 기대, 정답 구간들(원본 초) 또는 None)
 CASES = [
     ("20260620_141628_EVT_1", "20260620_141628_EVT_1.avi", 20.023, "SOLID_LINE_LANE_CHANGE", "NOT_OBSERVED", None),
-    ("20260620_141927_EVT_1", "20260620_141927_EVT_1.avi", 20.025, "SOLID_LINE_LANE_CHANGE", "OBSERVED", (4.0, 10.0)),
+    ("20260620_141927_EVT_1", "20260620_141927_EVT_1.avi", 20.025, "SOLID_LINE_LANE_CHANGE", "OBSERVED", ((4.0, 10.0),)),
     ("20260620_141956_EVT_1", "20260620_141956_EVT_1.avi", 20.025, "SOLID_LINE_LANE_CHANGE", "NOT_OBSERVED", None),
     ("20260620_150504_EVT_1", "20260620_150504_EVT_1.avi", 20.025, "SOLID_LINE_LANE_CHANGE", "NOT_OBSERVED", None),
-    ("youtube_clip_01", "youtube_clip_01.mp4", 5.533, "SOLID_LINE_LANE_CHANGE", "OBSERVED", (0.0, 2.0)),
-    ("YT_0003_C05", "YT_0003_C05.mp4", 60.0, "SOLID_LINE_LANE_CHANGE", "OBSERVED", (10.0, 13.0)),
-    ("YT_0002_C00", "YT_0002_C00.mp4", 20.079, "CENTER_LINE_CROSSING", "OBSERVED", (11.0, 14.0)),
+    ("youtube_clip_01", "youtube_clip_01.mp4", 5.533, "SOLID_LINE_LANE_CHANGE", "OBSERVED", ((0.0, 2.0),)),
+    ("YT_0003_C05", "YT_0003_C05.mp4", 60.0, "SOLID_LINE_LANE_CHANGE", "OBSERVED", ((10.0, 12.0), (20.0, 22.0))),
+    ("YT_0002_C00", "YT_0002_C00.mp4", 20.079, "CENTER_LINE_CROSSING", "OBSERVED", ((10.0, 14.0),)),
+    # set1 g3 (2026-10-04). C47 은 onset 이 조각 경계 3초 이내(원래 채점 BOUNDARY_EXCLUDED).
+    ("YT_0001_C08", "YT_0001_C08.mp4", 60.0, "SIGNAL", "OBSERVED", ((15.0, 17.8),)),
+    ("YT_0001_C09", "YT_0001_C09.mp4", 60.0, "SOLID_LINE_LANE_CHANGE", "OBSERVED", ((9.0, 11.0),)),
+    ("YT_0001_C33", "YT_0001_C33.mp4", 60.0, "SIGNAL", "OBSERVED", ((50.0, 52.0),)),
+    ("YT_0001_C39", "YT_0001_C39.mp4", 60.0, "SOLID_LINE_LANE_CHANGE", "OBSERVED", ((52.0, 55.0),)),
+    ("YT_0001_C47", "YT_0001_C47.mp4", 60.0, "SOLID_LINE_LANE_CHANGE", "OBSERVED", ((0.5, 3.0),)),
+    ("YT_0003_C10", "YT_0003_C10.mp4", 60.0, "SOLID_LINE_LANE_CHANGE", "OBSERVED", ((7.0, 9.0),)),
+    ("YT_0003_C28", "YT_0003_C28.mp4", 60.0, "CENTER_LINE_CROSSING", "OBSERVED", ((9.0, 10.0),)),
+    ("YT_0003_C44", "YT_0003_C44.mp4", 60.0, "SOLID_LINE_LANE_CHANGE", "OBSERVED", ((28.0, 30.0),)),
 ]
 
 
@@ -188,8 +197,8 @@ class SlowVideoInvoker:
             )
 
 
-def _overlaps(span: tuple[float, float], truth: tuple[float, float] | None) -> bool:
-    return truth is not None and span[0] < truth[1] and truth[0] < span[1]
+def _overlaps(span: tuple[float, float], truth: tuple[tuple[float, float], ...] | None) -> bool:
+    return truth is not None and any(span[0] < t[1] and t[0] < span[1] for t in truth)
 
 
 def run_condition(client, base_cfg: GeminiSearchConfig, coarse_speed: float,
@@ -301,9 +310,9 @@ def main() -> None:
         _patch_fine_height(args.fine_height)
     env = load_env_file(args.env)
     base_cfg = GeminiSearchConfig.from_dotenv(env)
-    key = env.get("GEMINI_API_KEY", "").strip()
+    key = api_key_from_env(env)
     if not key:
-        raise SystemExit(f"no GEMINI_API_KEY in {args.env}")
+        raise SystemExit(f"no ELICE_ML_API_KEY in {args.env}")
     client = importlib.import_module("openai").OpenAI(
         base_url=base_cfg.base_url, api_key=key, max_retries=0, timeout=args.timeout_sec
     )
@@ -321,7 +330,9 @@ def main() -> None:
             r["reasoning_effort"] = effort
             r["wall_sec"] = round(time.monotonic() - started, 1)
             runs.append(r)
-            print(f"  -> [{effort}] {r['wall_sec']}s positives {r['positives_hit']}/4, negatives {r['negatives_correct']}/3, "
+            n_pos = sum(c["expected"] == "OBSERVED" for c in r["cases"])
+            print(f"  -> [{effort}] {r['wall_sec']}s positives {r['positives_hit']}/{n_pos}, "
+                  f"negatives {r['negatives_correct']}/{len(r['cases']) - n_pos}, "
                   f"fine {r['verification_counts']}, input_tok {r['reported_input_tokens']}, "
                   f"total_tok {r['reported_total_tokens']}")
             if args.out:  # 조건마다 저장해 중간에 끊겨도 남긴다

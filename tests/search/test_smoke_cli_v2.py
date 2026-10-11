@@ -207,7 +207,7 @@ def test_live_missing_api_key_not_executed(
     tmp_path: Path, capsys, monkeypatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    # No .env -> no GEMINI_API_KEY
+    # No .env -> no ELICE_ML_API_KEY (or legacy GEMINI_API_KEY)
     source = _write_source(tmp_path)
     manifest = _write_manifest(tmp_path, source)
 
@@ -216,7 +216,7 @@ def test_live_missing_api_key_not_executed(
     report = json.loads(capsys.readouterr().out)
     assert exit_code == 2
     assert report["status"] == "not_executed"
-    assert report["missing_prerequisite"] == "GEMINI_API_KEY"
+    assert report["missing_prerequisite"] == "ELICE_ML_API_KEY"
 
 
 def test_live_missing_pricing_not_executed(

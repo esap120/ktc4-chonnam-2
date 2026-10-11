@@ -25,6 +25,9 @@ Runtime 문서는 Architecture나 Final Contract schema를 다시 정의하지 �
 | [`ops-spec.md`](./ops-spec.md) | EC2/Docker Compose, logging, monitoring, health 운영, storage/cleanup/retention, capacity, CI/CD, rollback 원칙 |
 | [`deployment-runbook.md`](./deployment-runbook.md) | 배포 전 확인, revision 식별, health/smoke 검증, rollback, 장애 원인 축소 실행 체크리스트 |
 | [`runtime-ops-workflow.md`](./runtime-ops-workflow.md) | Runtime/Ops 작업 순서 — 정합성 검수 → 공식 제약 → Open Decision → 필요한 외부 조사 → 필수 결정 → Baseline → 구현·관측 → 실험 → 갱신. 결정은 담지 않음 |
+| [`provisional-baseline-v0.1.md`](./provisional-baseline-v0.1.md) | workflow §6 산출물 — Worker · polling · lease/heartbeat/STALE · retry · DB · upload · frame · cleanup · health · logging의 **Provisional 시작값의 canonical source**. 다른 문서는 ID(`B-xx`)만 가리킨다 |
+| [`runtime-implementation-plan.md`](./runtime-implementation-plan.md) | workflow §7 산출물 — 현재 구현 gap · critical path · Task/Issue 분해 · Decision Gate 위치 · integration test 배치 · 구현 책임 구조(§12 Single Implementer + Deferred Owner Review). 결정 · 값을 새로 만들지 않는다 |
+| [`runtime-implementation-log.md`](./runtime-implementation-log.md) | workflow §8 기록 — 실제로 구현된 것 · Plan 대비 변경과 이유 · 새 implementation detail · Owner 확인 포인트 · Milestone audit. Plan을 다시 쓰지 않고 차이를 여기에 남긴다 |
 | [`open-decision-register.md`](./open-decision-register.md) | 아직 닫히지 않은 Runtime/Ops 결정의 통합 추적표(workflow §2 산출물). 답을 정하지 않으며, 닫히면 Spec/Contract/ADR로 승격하고 CLOSED 처리 |
 | [`decision-classification.md`](./decision-classification.md) | Register의 각 결정을 유형 · 결정권 · Timing · Gate · Closure route · §4 조사 필요로 분류(workflow §3 산출물). 답을 정하지 않으며 Register 내용을 복제하지 않음 |
 | `research/` | workflow §4 외부 기술 조사. `prompts/NN-<topic>.md` = 실행용 self-contained prompt(decision-classification §6 R1 · R2 Queue), `NN-<topic>-<조사 기준일>.md` = 그 결과. 결과는 Decision 근거이며 결정이 아님 — Owner 검토 뒤 Spec · Contract · ADR로 옮긴다 |

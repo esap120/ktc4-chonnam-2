@@ -4,6 +4,7 @@
 > **담당:** 유소연(`case`) · **Consulted:** 신유민(`web`)
 > **2026-09-28 잠정값 기재** — 이슈 #72, `search` 실측 `docs/modules/search/experiments/latency-baseline-2026-09-28.md`(#182, 서어진)
 > **2026-09-29 클립 분할 범위 반영** — 이슈 #168 (c)
+> **2026-10-03 표기 정합** — `core-user-flow.md` #168 결정 3 · #170 F에 맞춰 「이어서 찾기 = 남은 클립만 새 Job」 문구 폐기 · 현재 범위의 부분 후보 미보존 명시. 새 결정 아님(Runtime §5 검토 중 발견, case Owner 확인 요청 — #245)
 
 ## 결정된 것
 
@@ -30,10 +31,10 @@
 
 ## timeout 시 유지/취소하는 Job 집합 (2026-09-28)
 
-- **완료된 클립·후보는 유지한다.** core-user-flow §7 「현재까지 얻은 결과를 버리지 않는다」 그대로.
+- **이미 끝난 탐색의 후보는 버리지 않는다.** core-user-flow §7 「현재까지 얻은 결과를 버리지 않는다」 그대로. 단 **현재 범위에서는 중단·timeout된 search run이 보존할 부분 Candidate를 남기지 않는다** — run 도중 timeout이면 그 run은 `FAILED`이고 후보가 없다(#72 search 답변). 구간 단위 부분 결과 보존은 그런 결과가 생긴 뒤의 동작이다(`core-user-flow.md` 「사용자가 분석을 중단한 경우」, #168 결정 3 · #170 F).
 - **진행 중인 Job은 강제 취소하지 않고, case가 기다리는 것만 멈춘다.** UI는 부분 결과로 먼저 넘긴다. 이미 비용이 나간 호출을 버리지 않는다.
 - **늦게 도착한 결과**는 결과물의 `candidate_id`가 현재 선택 후보와 맞을 때만 반영한다(#173 E-4 조건 2, `design-refinement-w7-baseline.md` 6.6순위).
-- **`이어서 찾기`는 남은 클립만 새 Job으로 발주한다.** search는 run 내부 부분 결과를 주지 않고(timeout이면 그 run은 `FAILED`, 후보 없음), 완료 단위는 case가 발주한 클립 Job이다(#72 search 답변). 완료된 클립 Job은 다시 부르지 않는다.
+- **timeout · 중단 뒤 `이어서 찾기`는 새 사용자 Intent다.** 새 `JobRecord` · 새 `job_id`로 발주하고([`job-resume-identity-policy.md`](./job-resume-identity-policy.md)), **영상 전체를 다시 보는 새 탐색**이다 — 안 본 구간만 이어 보는 동작이 아니다. 새 탐색의 후보는 이전 탐색의 후보와 섞지 않는다(`core-user-flow.md` 「사용자가 분석을 중단한 경우」 · §4-2, #168 결정 3 · #170 F). *(2026-10-03 표기 정합: 이전 문구 「남은 클립만 새 Job으로 발주 · 완료된 클립 Job은 다시 부르지 않는다」는 위 Product 결정과 맞지 않아 폐기.)*
 
 ## 남은 것
 

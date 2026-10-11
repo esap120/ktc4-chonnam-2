@@ -1,6 +1,6 @@
 import type { JSX, ReactNode } from 'react'
 import type { InfoState } from '../contracts/caseView'
-import { sourceLabel } from '../contracts/labels'
+import { formatValue, sourceLabel } from '../contracts/labels'
 import { StatusBadge } from './StatusBadge'
 
 // 값 상태 표시 규칙(docs/modules/web/ux/value-state-display.md)의 구현 지점.
@@ -33,7 +33,7 @@ export function DisplayRow(props: {
     <div className={rowClass}>
       <span className="kv-k">{props.label}</span>
       <span className="kv-v">
-        <span className={valueClass}>{props.value ?? '알 수 없음'}</span>
+        <span className={valueClass}>{props.value === null ? '알 수 없음' : formatValue(props.value)}</span>
         {source && <span className="kv-src">{source}</span>}
         {unknown && props.clue && <span className="kv-src">{props.clue}</span>}
       </span>

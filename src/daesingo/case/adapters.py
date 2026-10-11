@@ -45,7 +45,7 @@ W5/W6 마감(월요일 20:00 회의 — 대표 시나리오 1개가 E2E를 실�
 
 `get_job_executions()`(common/runtime)는 여전히 `NotImplementedError`다 — 다만
 `case/service.py`의 `fetch_case_view_inputs()`/`build_view_from_adapter()`는 애초에
-이 메서드를 부르지 않으므로(대신 호출자가 `running_jobs`를 직접 넘김), 오늘 목표인
+이 메서드를 부르지 않으므로(`running_jobs`는 case가 정산 기록으로 계산함), 오늘 목표인
 "CaseView까지 E2E 통과"에는 영향이 없다.
 
 시나리오는 `scenario_happy_001` 하나로 고정돼 있다 — `real_e2e.py` 모듈 docstring의
@@ -127,6 +127,11 @@ class ModuleAdapter(Protocol):
         현재 값의 근거 판독을 `readout_id`로 찾는 데 쓴다."""
         ...
 
+    def get_overlay_time_readouts(self) -> list[dict[str, Any]]:
+        """`OverlayTimeReadout` 목록(원판독·재판독). 시각을 얻지 못한 갈래의 notice(`readout.overlay_*`,
+        readout `failure-taxonomy.md`)가 현재 선택 후보의 가장 나중 판독을 근거로 쓴다."""
+        ...
+
     def get_plate_read_status(self) -> str | None:
         """번호판 판독 실행 상태(`JobExecution.status` 값 공간). 보고할 실행 상태가 없으면 None."""
         ...
@@ -135,6 +140,12 @@ class ModuleAdapter(Protocol):
         """선택된 후보 Fine 결과의 소비 판정(`VisualEvidenceDisposition.decision` 값 공간 —
         `ASSEMBLE`·`AWAIT_SITUATION_RESPONSE`·`NOT_ASSEMBLED`). 판정이 아직 없으면 None.
         음성 결과(`NOT_ASSEMBLED`)는 evidence가 없어 CaseView 값만으로 조립 전과 구분되지 않는다(#168 [A])."""
+        ...
+
+    def get_independent_facts(self) -> dict[str, Any] | None:
+        """상황 응답 대기(`AWAIT_SITUATION_RESPONSE`) 중 evidence `resolve_independent_facts()`가 만든 상황
+        독립 값(`occurred_at` · `vehicle_number` · `location`). CaseView `evidence` 부분 투영(`record_id=null`,
+        #239)의 원천이다. EvidenceRecord가 아니며, 응답 대기가 아니면 None."""
         ...
 
     def get_job_executions(self) -> list[dict[str, Any]]: ...
@@ -225,6 +236,9 @@ class MockFixtureAdapter:
     def get_plate_readouts(self) -> list[dict[str, Any]]:
         return self._load("readout").get("plate_readouts", [])
 
+    def get_overlay_time_readouts(self) -> list[dict[str, Any]]:
+        return self._load("readout").get("overlay_time_readouts", [])
+
     def get_plate_read_status(self) -> str | None:
         """mock fixture에는 이 case의 실행 상태 원장이 없다 — 시나리오 테스트가
         `plate_read_status`를 JobExecution fixture에서 직접 넘긴다(`scenario_infra_failure_001`)."""
@@ -232,6 +246,10 @@ class MockFixtureAdapter:
 
     def get_visual_evidence_decision(self) -> str | None:
         """공용 mock fixture에는 음성(`NOT_OBSERVED`) 시나리오가 없다 — 판정을 보고하지 않는다."""
+        return None
+
+    def get_independent_facts(self) -> dict[str, Any] | None:
+        """공용 mock fixture에는 상황 응답 대기 시나리오가 없다."""
         return None
 
     # ── common/runtime ──────────────────────────────────────────────────
@@ -284,6 +302,11 @@ class RealAdapter:
         # 마지막 `get_candidate_events()`의 CandidateEvent — evidence 조립이 선택된 것을 여기서 찾는다.
         self._candidates_by_id: dict[str, search_module.CandidateEvent] = {}
         self._clients = clients
+
+    def bind_case(self, case: CaseAggregate) -> None:
+        """요청마다 방금 로드한 aggregate를 붙인다(`store.AdapterRegistry`). 캐시는 객체 동일성이 아니라
+        `case_rev` · `candidate_generation` 값으로 판단하므로 그대로 동작한다."""
+        self._case = case
 
     def _not_ready(self, method: str, module: str, *, reason: str) -> None:
         raise NotImplementedError(
@@ -457,6 +480,10 @@ class RealAdapter:
         plate_readout = self._build_evidence_bundle().plate_readout
         return [plate_readout] if plate_readout else []
 
+    def get_overlay_time_readouts(self) -> list[dict[str, Any]]:
+        overlay_readout = self._build_evidence_bundle().overlay_readout
+        return [overlay_readout] if overlay_readout else []
+
     def get_plate_read_status(self) -> str | None:
         """동기 real 경로에는 JobExecution이 없어, 판독 호출 결과 `ReadoutRun.outcome=FAILED`를
         실행 실패로 보고한다(#172 [D] — 실행 실패를 「읽지 못함」과 가른다). 성공·부분 성공은
@@ -465,6 +492,9 @@ class RealAdapter:
 
     def get_visual_evidence_decision(self) -> str | None:
         return self._build_evidence_bundle().disposition.decision
+
+    def get_independent_facts(self) -> dict[str, Any] | None:
+        return self._build_evidence_bundle().independent_facts
 
     # ── common/runtime ──────────────────────────────────────────────────
     def get_job_executions(self) -> list[dict[str, Any]]:
@@ -514,6 +544,11 @@ class RealVideoAdapter:
         # 세대가 바뀌면(재탐색) 같은 candidate_id라도 버린다(정책 표 1행).
         self._observations_by_candidate: dict[str, real_e2e.ObservationBundle] = {}
         self._observations_generation: int | None = None
+
+    def bind_case(self, case: CaseAggregate) -> None:
+        """요청마다 방금 로드한 aggregate를 붙인다(`store.AdapterRegistry`). 캐시는 객체 동일성이 아니라
+        `case_rev` · `candidate_generation` 값으로 판단하므로 그대로 동작한다."""
+        self._case = case
 
     def _not_ready(self, method: str, module: str, *, reason: str) -> None:
         raise NotImplementedError(
@@ -650,6 +685,10 @@ class RealVideoAdapter:
         plate_readout = self._build_evidence_bundle().plate_readout
         return [plate_readout] if plate_readout else []
 
+    def get_overlay_time_readouts(self) -> list[dict[str, Any]]:
+        overlay_readout = self._build_evidence_bundle().overlay_readout
+        return [overlay_readout] if overlay_readout else []
+
     def get_plate_read_status(self) -> str | None:
         """동기 real 경로에는 JobExecution이 없어, 판독 호출 결과 `ReadoutRun.outcome=FAILED`를
         실행 실패로 보고한다(#172 [D] — 실행 실패를 「읽지 못함」과 가른다). 성공·부분 성공은
@@ -658,6 +697,9 @@ class RealVideoAdapter:
 
     def get_visual_evidence_decision(self) -> str | None:
         return self._build_evidence_bundle().disposition.decision
+
+    def get_independent_facts(self) -> dict[str, Any] | None:
+        return self._build_evidence_bundle().independent_facts
 
     # ── common/runtime ──────────────────────────────────────────────────
     def get_job_executions(self) -> list[dict[str, Any]]:

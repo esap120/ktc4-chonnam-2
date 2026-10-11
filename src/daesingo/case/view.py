@@ -1,7 +1,7 @@
 """`CaseView` projection — web의 유일한 read dependency.
 
 case가 이미 갖고 있는 상태(`CaseAggregate`)와 다른 모듈이 만든 Canonical Contract
-산출물(어댑터를 통해 읽는다)을 조합해서 `case-view/v1.6` 모양으로 안전하게 내보낸다.
+산출물(어댑터를 통해 읽는다)을 조합해서 `case-view/v1.8` 모양으로 안전하게 내보낸다.
 evidence/readout 값을 **복사해서 그대로 소유하지 않는다** — 매번 다시 조립한다
 (module-architecture.md §4-모듈5 ⑥). 신고 요건 판정(readiness/checks)이나 번호판 OCR
 같은 evidence/readout의 판단 자체는 여기서 재계산하지 않고 그대로 옮겨 담기만 한다.
@@ -28,7 +28,7 @@ from daesingo.case.labels import (
 )
 from daesingo.evidence import AWAIT_SITUATION_RESPONSE, NOT_ASSEMBLED
 
-CONTRACT_VERSION = "case-view/v1.6"
+CONTRACT_VERSION = "case-view/v1.8"
 
 _PROGRESS_STEPS = (
     "file_intake",
@@ -48,10 +48,10 @@ _REPORT_FIELDS = ("safety_report_type", "occurred_at", "location", "vehicle_numb
 # `contract-job-record-case-view.md` 헤더 ③ / §13 「JobExecution → CaseView 상태 projection」 —
 # QUEUED→PENDING, RUNNING→RUNNING, SUCCEEDED→DONE, FAILED/STALE→FAILED, CANCELLED→PARTIAL
 # (CANCELLED은 새 enum 값을 만들지 않고 기존 PARTIAL로 흡수, 이슈 #33 A-2). 이 다섯 매핑
-# 자체는 case-view 계약이 소유하는 projection 표라 case 코드가 그대로 옮긴다 — "지금
-# 이 job_id/kind의 최신 실행이 어떤 JobExecution.status인가"를 고르는 일(여러 attempt
-# 중 최신을 고르는 것, force_rerun 이후 새 job_id로 갈아타는 것)은 이 함수의 책임이
-# 아니다(그건 JobExecution을 소유한 common/runtime 쪽에서 이미 해석해 건네준다고 본다).
+# 자체는 case-view 계약이 소유하는 projection 표라 case 코드가 그대로 옮긴다. 「이 kind의
+# 대표 실행이 어떤 JobExecution.status인가」를 고르는 일(가장 나중 job · attempt 최댓값)은
+# `representative_execution_status()`가 한다 — JobExecution read port(#245 D-6)는 Contract
+# 모양을 그대로 돌려주므로 case가 고른다(A§10-6 · §10-7).
 _JOB_EXECUTION_STATUS_TO_PROGRESS_STATE: dict[str, str] = {
     "QUEUED": "PENDING",
     "RUNNING": "RUNNING",
@@ -62,6 +62,53 @@ _JOB_EXECUTION_STATUS_TO_PROGRESS_STATE: dict[str, str] = {
 }
 
 
+# `running_jobs[].label_key` — 계약 A§12 · B§12 등재 키. 미등록 kind와 `COARSE_SEARCH`는 fallback.
+JOB_LABEL_KEYS = {
+    "PLATE_READ": "job.plate_read",
+    "OVERLAY_TIME_READ": "job.overlay_time_read",
+    "FINE_VERIFY": "job.fine_verify",
+    "REPORT_VIDEO_EXPORT": "job.report_video_export",
+    "PLATE_IMAGE_EXPORT": "job.plate_image_export",
+    "HINT_EXTRACT": "job.hint_extract",  # v1.7 등재(#259, PR #286)
+}
+JOB_LABEL_FALLBACK = "job.generic_processing"
+
+
+def derive_running_jobs(
+    case: CaseAggregate, job_executions: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """case가 아직 결과를 기다리는 job(B§10 불변조건 5) = 정산되지 않은 JobRecord. status는 그 job의
+    대표 execution(`attempt` 최댓값, A§10-6)이 없거나 `QUEUED`면 `PENDING`, 그 밖은 `RUNNING`이다 —
+    terminal인데 아직 반영 전이거나 retry backoff 중이어도 case는 기다리는 중이다."""
+    running = []
+    for record in case.waiting_job_records():
+        attempts = [e for e in job_executions or [] if e["job_id"] == record["job_id"]]
+        status = max(attempts, key=lambda e: e["attempt"])["status"] if attempts else None
+        running.append(
+            {
+                "job_id": record["job_id"],
+                "kind": record["kind"],
+                "label_key": JOB_LABEL_KEYS.get(record["kind"], JOB_LABEL_FALLBACK),
+                "status": "PENDING" if status in (None, "QUEUED") else "RUNNING",
+            }
+        )
+    return running
+
+
+def representative_execution_status(
+    job_records: list[dict[str, Any]], job_executions: list[dict[str, Any]], kind: str
+) -> str | None:
+    """`kind`의 대표 `JobExecution.status`. 대표 job은 그 kind로 `job_records[]`에 가장 나중에
+    기록된 job이고(A§10-7 — `case_rev`는 정렬 키가 아니다), 그 안의 대표 execution은 `attempt`
+    최댓값이다(A§10-6 — 재시도 중 이전 attempt의 STALE을 보이지 않는다). 그 kind의 job이 없거나
+    대표 job에 아직 실행 보고가 없으면 `None` — 이전 job의 상태로 대신하지 않는다."""
+    job_id = next((j["job_id"] for j in reversed(job_records) if j["kind"] == kind), None)
+    attempts = [e for e in job_executions if e["job_id"] == job_id]
+    if not attempts:
+        return None
+    return max(attempts, key=lambda e: e["attempt"])["status"]
+
+
 def _job_execution_status_to_progress_state(status: str | None) -> str:
     """`status`가 `None`이면 "이 kind의 Job은 발주됐지만 아직 어떤 실행 결과도 case에
     보고되지 않았다"는 뜻이다(막 발주한 직후) — 낙관적으로 진행 중임을 보여준다(RUNNING).
@@ -69,6 +116,12 @@ def _job_execution_status_to_progress_state(status: str | None) -> str:
     if status is None:
         return "RUNNING"
     return _JOB_EXECUTION_STATUS_TO_PROGRESS_STATE[status]
+
+
+def execution_failed(status: str | None) -> bool:
+    """대표 실행이 terminal 실패인가 — B§13 매핑에서 `FAILED`가 되는 값(`FAILED` · 재시도가 끝난
+    `STALE`). 보고가 없으면(`None`) 실패가 아니다."""
+    return status is not None and _JOB_EXECUTION_STATUS_TO_PROGRESS_STATE[status] == "FAILED"
 
 
 def _observed_state(status: str | None) -> str:
@@ -86,6 +139,7 @@ def _build_progress(
     plate_read_status: str | None = None,
     overlay_time_read_status: str | None = None,
     visual_evidence_decision: str | None = None,
+    visual_verify_status: str | None = None,
 ) -> list[dict[str, str]]:
     # ⚠️ CANDIDATE_REVIEW 단계면 후보가 있든 없든(2026-09-14 확인 — 처음엔 "후보 0개"만의
     # 특수 케이스로 좁게 봤었는데, `scenario_relative_rebase_001`이 후보가 1개 있고 심지어
@@ -114,10 +168,15 @@ def _build_progress(
     # 아래 「조립 전」 분기 그대로다.
     # - 음성 결과(`NOT_ASSEMBLED`)는 IncidentClip~package를 시작하지 않는다(#168 [A]) — 뒤 단계는
     #   이 case 생애주기에서 일어날 계획이 없어 step 집합 규칙 3(`candidates=[]`와 같은 취급)으로 뺀다.
-    #   빼지 않으면 판독 실행 상태가 보고되지 않아 RUNNING으로 보인다.
+    #   빼지 않으면 판독 실행 상태가 보고되지 않아 RUNNING으로 보인다. Fine **실행 실패**(8-14)도
+    #   판정 없이 같은 이유로 뒤 단계를 시작하지 않아 같은 3단계다.
     # - 상황 응답 대기(`AWAIT_SITUATION_RESPONSE`)는 관찰(OCR·시간 source)을 마쳤고 조립만 응답을
     #   기다린다(#165). 응답 뒤 package까지 이어지므로 규칙 1대로 8단계를 싣고, 조립 이후는 PENDING이다.
-    if case.stage == "EVIDENCE_REVIEW" and evidence_record is None and visual_evidence_decision == NOT_ASSEMBLED:
+    if (
+        case.stage == "EVIDENCE_REVIEW"
+        and evidence_record is None
+        and (visual_evidence_decision == NOT_ASSEMBLED or execution_failed(visual_verify_status))
+    ):
         return [
             {"step": "file_intake", "state": "DONE"},
             {"step": "coarse_search", "state": "DONE"},
@@ -171,12 +230,13 @@ def _build_progress(
             return "RUNNING"
         return "PENDING"
 
-    # step_rank: file_intake=0(INTAKE 완료 즉시 DONE), coarse_search=1, candidate_review=2,
+    # step_rank: file_intake=0(분석 시작으로 INTAKE를 벗어나면 DONE — 원본은 파일마다 따로 들어와 「다 올렸다」는
+    # 분석 시작으로만 안다, `decisions/empty-case-and-manifest.md`), coarse_search=1, candidate_review=2,
     # plate_read/overlay_time_read/evidence_assembly=3(EVIDENCE_REVIEW 진행), requirement_check/
     # package_assembly=3.5(EVIDENCE_REVIEW 안에서도 evidence 이후 단계) — evidence_record/
     # report_package 존재 여부로 더 세분화한다.
     progress = {
-        "file_intake": "DONE" if stage_rank >= 0 else "PENDING",
+        "file_intake": "DONE" if stage_rank >= 1 else "PENDING",
         "coarse_search": state_for(1),
         "candidate_review": state_for(2),
     }
@@ -292,8 +352,12 @@ def _build_candidates_view(
 
 def _field_states(evidence_record: dict[str, Any]) -> dict[str, dict[str, str | None]]:
     """B절 §7-(1)/(2)/(3) 파생 규칙 — `report_fields`/`report_field_states`(§10 불변조건 13)와
-    `evidence.*_display`가 공유하는 5개 필드(case_type 제외)의 info_state를 여기서 만든다."""
-    event = evidence_record["event"]
+    `evidence.*_display`가 공유하는 5개 필드(case_type 제외)의 info_state를 여기서 만든다.
+
+    `evidence_record`는 EvidenceRecord이거나, 상황 응답 대기 중의 상황 독립 값(evidence
+    `resolve_independent_facts()` 결과 — `event` 없음, #239)이다. `event`가 없으면 상황 종속 두 필드는
+    `INFO_UNKNOWN`이다(값을 임의로 확정하지 않는다)."""
+    event = evidence_record.get("event")
     # ⚠️ occurred_at도 vehicle_number/location과 같은 이유로 키 자체가 없을 수 있다
     # (TimeResolution.status=UNKNOWN이면 assemble_evidence()가 occurred_at을 아예 안 만든다
     # — evidence/assembly.py:230-231). 실제 real 영상(시간 출처가 전혀 없는 화면녹화본)에서
@@ -304,8 +368,6 @@ def _field_states(evidence_record: dict[str, Any]) -> dict[str, dict[str, str | 
     # `scenario_plate_reread_001`의 `ev_p001`, 2026-09-14 확인된 결함. 과거엔
     # `evidence_record["vehicle_number"]`가 KeyError를 던졌다).
     vehicle_number = evidence_record.get("vehicle_number")
-    violation = event["violation_expression"]
-    report_type = event["safety_report_type"]
     # ⚠️ location은 EvidenceRecord에 키 자체가 없을 수 있다(예: scenario_unknown_abstain_partial_001의
     # ev_u001 — 위치를 확보하지 못한 사건). 이슈 #48 Q2 조사에서 확인된 실제 결함 — `.get()`으로
     # None-safe하게 처리한다(과거에는 `evidence_record["location"]`이 KeyError를 던졌다).
@@ -349,25 +411,34 @@ def _field_states(evidence_record: dict[str, Any]) -> dict[str, dict[str, str | 
             "info_state": location_info_state,
             "source_label_key": location_value["source"]["label_key"] if location_value is not None else None,
         },
-        "violation_expression": {
-            "info_state": evidence_value_info_state(
-                violation["value"],
-                needs_review=violation["needs_review"],
-                user_corrected=violation["user_corrected"],
-                observability=violation["source"].get("observability"),
-            ),
-            "source_label_key": violation["source"]["label_key"],
-        },
-        "safety_report_type": {
-            "info_state": evidence_value_info_state(
-                report_type["value"],
-                needs_review=report_type["needs_review"],
-                user_corrected=report_type["user_corrected"],
-                observability=report_type["source"].get("observability"),
-            ),
-            "source_label_key": report_type["source"]["label_key"],
-        },
+        "violation_expression": _event_field_state(event, "violation_expression"),
+        "safety_report_type": _event_field_state(event, "safety_report_type"),
     }
+
+
+def _event_field_state(event: dict[str, Any] | None, field: str) -> dict[str, str | None]:
+    if event is None:
+        return {"info_state": "INFO_UNKNOWN", "source_label_key": None}
+    value = event[field]
+    return {
+        "info_state": evidence_value_info_state(
+            value["value"],
+            needs_review=value["needs_review"],
+            user_corrected=value["user_corrected"],
+            observability=value["source"].get("observability"),
+        ),
+        "source_label_key": value["source"]["label_key"],
+    }
+
+
+# 상황 응답 전 부분 투영(#239)에서 상황 종속 세 필드의 모양 — 값 없음 + `INFO_UNKNOWN`. 새 enum 값은 만들지 않는다.
+_SITUATION_PENDING_DISPLAY: dict[str, Any] = {
+    "code": None,
+    "label": None,
+    "needs_review": False,
+    "info_state": "INFO_UNKNOWN",
+    "source_label_key": None,
+}
 
 
 def _build_evidence_view(
@@ -382,28 +453,57 @@ def _build_evidence_view(
     # 애초에 사용자가 준 값이라 "정정"이 아니다). 실제로는 case가 소유하는 CorrectionRecord가
     # 하나라도 있는지(`bool(case.correction_records)`)로 판정한다 — correction 전(false)/
     # 후(true) fixture와 정확히 일치한다. 호출부(`build_case_view`)에서 계산해 넘겨준다.
-    event = evidence_record["event"]
+    #
+    # 상황 응답 대기의 부분 투영(#239)이면 `evidence_record`는 상황 독립 값만 담은 evidence
+    # `resolve_independent_facts()` 결과다 — `record_ref` · `event`가 없다. 그때 `record_id=null`, 상황 종속
+    # 세 display는 `_SITUATION_PENDING_DISPLAY`이고, 나머지 값 · `review_needed`는 아래 같은 규칙으로 만든다.
+    event = evidence_record.get("event")
     states = _field_states(evidence_record)
     # ⚠️ location 키 자체가 없는 EvidenceRecord가 정상 케이스다(위치 미확보 — 이슈 #48).
     # 아래 location_display 구성도 이에 맞춰 None-safe해야 한다.
     location = evidence_record.get("location")
     location_value, _location_key = location_representative(location)
 
-    case_type = event["visual_event_type"]
-    report_type = event["safety_report_type"]
-    violation = event["violation_expression"]
     vehicle_number = evidence_record.get("vehicle_number")
     # ⚠️ occurred_at도 vehicle_number/location과 같은 이유로 키 자체가 없을 수 있다
     # (TimeResolution.status=UNKNOWN — evidence/assembly.py:230-231). 실제 real 영상(시간
     # 출처가 전혀 없는 화면녹화본)에서 처음 발생 확인, 2026-09-23.
     occurred_at = evidence_record.get("occurred_at")
 
-    case_type_info_state = evidence_value_info_state(
-        case_type["value"],
-        needs_review=case_type["needs_review"],
-        user_corrected=case_type["user_corrected"],
-        observability=case_type["source"].get("observability"),
-    )
+    if event is None:
+        case_type_display = dict(_SITUATION_PENDING_DISPLAY)
+        report_type_display = dict(_SITUATION_PENDING_DISPLAY)
+        violation_display = dict(_SITUATION_PENDING_DISPLAY)
+    else:
+        case_type = event["visual_event_type"]
+        report_type = event["safety_report_type"]
+        violation = event["violation_expression"]
+        case_type_display = {
+            "code": case_type["value"],
+            "label": event_type_label(case_type["value"]),
+            "needs_review": case_type["needs_review"],
+            "info_state": evidence_value_info_state(
+                case_type["value"],
+                needs_review=case_type["needs_review"],
+                user_corrected=case_type["user_corrected"],
+                observability=case_type["source"].get("observability"),
+            ),
+            "source_label_key": case_type["source"]["label_key"],
+        }
+        report_type_display = {
+            "code": report_type["value"],
+            "label": report_type_label(report_type["value"]),
+            "needs_review": report_type["needs_review"],
+            "info_state": states["safety_report_type"]["info_state"],
+            "source_label_key": report_type["source"]["label_key"],
+        }
+        violation_display = {
+            "code": None,
+            "label": violation["value"],
+            "needs_review": violation["needs_review"],
+            "info_state": states["violation_expression"]["info_state"],
+            "source_label_key": violation["source"]["label_key"],
+        }
     event_time_needs_review = (
         occurred_at.get("resolution_status") == "NEEDS_REVIEW" if occurred_at is not None else False
     )
@@ -414,9 +514,9 @@ def _build_evidence_view(
     # reason_code는 원인이 한 필드면 evidence.<field>_needs_review, 둘 이상이면
     # evidence.multiple_fields_need_review(원인이 없으면 null).
     review_fields: dict[str, tuple[bool, str]] = {
-        "case_type": (case_type["needs_review"], case_type_info_state),
-        "report_type": (report_type["needs_review"], states["safety_report_type"]["info_state"]),
-        "violation": (violation["needs_review"], states["violation_expression"]["info_state"]),
+        "case_type": (case_type_display["needs_review"], case_type_display["info_state"]),
+        "report_type": (report_type_display["needs_review"], report_type_display["info_state"]),
+        "violation": (violation_display["needs_review"], violation_display["info_state"]),
         "plate": (
             vehicle_number["needs_review"] if vehicle_number is not None else False,
             states["vehicle_number"]["info_state"],
@@ -434,28 +534,10 @@ def _build_evidence_view(
         reason_code = "evidence.multiple_fields_need_review"
 
     return {
-        "record_id": evidence_record["record_ref"]["ref"],
-        "case_type_display": {
-            "code": case_type["value"],
-            "label": event_type_label(case_type["value"]),
-            "needs_review": case_type["needs_review"],
-            "info_state": case_type_info_state,
-            "source_label_key": case_type["source"]["label_key"],
-        },
-        "report_type_display": {
-            "code": report_type["value"],
-            "label": report_type_label(report_type["value"]),
-            "needs_review": report_type["needs_review"],
-            "info_state": states["safety_report_type"]["info_state"],
-            "source_label_key": report_type["source"]["label_key"],
-        },
-        "violation_display": {
-            "code": None,
-            "label": violation["value"],
-            "needs_review": violation["needs_review"],
-            "info_state": states["violation_expression"]["info_state"],
-            "source_label_key": violation["source"]["label_key"],
-        },
+        "record_id": (evidence_record.get("record_ref") or {}).get("ref"),
+        "case_type_display": case_type_display,
+        "report_type_display": report_type_display,
+        "violation_display": violation_display,
         "plate_display": {
             "value": vehicle_number["value"] if vehicle_number is not None else None,
             "needs_review": vehicle_number["needs_review"] if vehicle_number is not None else False,
@@ -561,6 +643,12 @@ def _build_package_view(report_package: dict[str, Any] | None, evidence_record: 
         "capabilities": report_package["handoff"]["supported_actions"],
         "warnings": [],
         "unconfirmed_fields": unconfirmed,
+        # 최종 신고문(v1.7, #274) — evidence가 확정 값 + 고정 template로 만든 문장을 그대로 옮긴다.
+        # case는 고치지 않고, 내부 provenance인 `template_ref`는 내리지 않는다.
+        "report": {
+            "title": report_package["report"]["title"],
+            "description": report_package["report"]["description"],
+        },
     }
 
 
@@ -586,13 +674,15 @@ def build_case_view(
     requirement_report_evidence: dict[str, Any] | None = None,
     requirement_report_package: dict[str, Any] | None = None,
     report_package: dict[str, Any] | None = None,
-    running_jobs: list[dict[str, Any]] | None = None,
+    job_executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
     plate_read_status: str | None = None,
     overlay_time_read_status: str | None = None,
     current_timeline_revision: int | None = None,
     plate_readouts: list[dict[str, Any]] | None = None,
     visual_evidence_decision: str | None = None,
+    visual_verify_status: str | None = None,
+    independent_facts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     selected = next((c for c in case.candidates if c.selected), None)
     preview_ref = selected.thumb_ref if selected else None
@@ -608,6 +698,18 @@ def build_case_view(
         requirement_report_package = None
         report_package = None
 
+    # 상황 응답 대기 부분 투영(#239) — Fine `UNCERTAIN` + 응답 전이라 EvidenceRecord가 없어도, evidence가
+    # 계산한 상황 독립 값을 `evidence`에 `record_id=null`로 싣는다. requirements · package는 그대로 null이다.
+    # `independent_facts`는 adapter가 현재 선택의 응답 대기 판정과 같은 묶음에서 준 값이다.
+    evidence_source = evidence_record
+    if (
+        evidence_source is None
+        and visual_evidence_decision == AWAIT_SITUATION_RESPONSE
+        and independent_facts is not None
+        and selected is not None
+    ):
+        evidence_source = independent_facts
+
     return {
         "contract": "CaseView",
         "contract_version": CONTRACT_VERSION,
@@ -615,6 +717,8 @@ def build_case_view(
         "case_rev": case.case_rev,
         "stage": case.stage,
         "user_reviewed": case.user_reviewed,
+        # 분석 시작 때 사용자가 적은 설명 원문(v1.7, #259) — 받은 그대로. 분석 시작 전에는 `null`.
+        "description": case.description,
         "manifest_summary": case.manifest_summary,
         "hints": case.hints,
         "progress": _build_progress(
@@ -625,21 +729,22 @@ def build_case_view(
             plate_read_status=plate_read_status,
             overlay_time_read_status=overlay_time_read_status,
             visual_evidence_decision=visual_evidence_decision,
+            visual_verify_status=visual_verify_status,
         ),
         "candidates": _build_candidates_view(case, evidence_record, current_timeline_revision),
         "evidence": (
             _build_evidence_view(
-                evidence_record,
+                evidence_source,
                 preview_ref,
                 bool(case.correction_records),
-                _plate_preview_ref(evidence_record, plate_readouts),
+                _plate_preview_ref(evidence_source, plate_readouts),
             )
-            if evidence_record
+            if evidence_source is not None
             else None
         ),
         "requirements_evidence": _build_requirements_view(requirement_report_evidence),
         "requirements_package": _build_requirements_view(requirement_report_package),
         "package": _build_package_view(report_package, evidence_record),
-        "running_jobs": running_jobs or [],
+        "running_jobs": derive_running_jobs(case, job_executions),
         "notices": notices or [],
     }

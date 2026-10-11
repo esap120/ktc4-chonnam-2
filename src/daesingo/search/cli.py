@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from daesingo.common import load_env_file
 
 from . import build_gemini_search_service, search_candidates
+from .config import api_key_from_env
 from .errors import UnsafeGeminiBaseUrlError
 from .report import render_report
 from .runs import ContractRef
@@ -69,14 +70,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "smoke":
         return _run_smoke_command(args)
-    api_key = load_env_file().get("GEMINI_API_KEY", "").strip()
+    api_key = api_key_from_env(load_env_file())
     if args.command == "fine":
         print(
             "failure: fine requires an explicit candidate from coarse", file=sys.stderr
         )
         return 2
     if not api_key:
-        print("실패: GEMINI_API_KEY is not set", file=sys.stderr)
+        print("실패: ELICE_ML_API_KEY is not set", file=sys.stderr)
         return 2
     if not args.source.is_file():
         print(f"실패: source file does not exist ({args.source})", file=sys.stderr)
@@ -157,7 +158,7 @@ def _run_smoke_fixture(args: argparse.Namespace) -> int:
             )
             api_key = None
             if fixture is None:
-                api_key = load_env_file().get("GEMINI_API_KEY", "").strip() or None
+                api_key = api_key_from_env(load_env_file()) or None
             service, config = build_smoke_service(options, api_key, fixture)
             report = run_smoke(options, service, config)
     except MissingSmokeApiKeyError:
@@ -180,7 +181,7 @@ def _run_smoke_live(args: argparse.Namespace) -> int:
         return 2
 
     env = load_env_file()
-    api_key = env.get("GEMINI_API_KEY", "").strip() or None
+    api_key = api_key_from_env(env) or None
 
     try:
         config = GeminiSearchConfig.from_dotenv(env)

@@ -232,7 +232,33 @@ Runtime
 - Compose/Dockerfile에는 secret 값 자체보다 변수 이름과 주입 경계만 남긴다.
 - `.env.example`을 둘 경우 non-secret key 이름과 안전한 예시만 제공한다.
 - CI에 등록된 값이라도 build 단계에서 필요한 값인지 runtime 단계에서 필요한 값인지 구분한다.
-- exact secret source와 주입 방식은 실제 deployment workflow를 구현할 때 확정하되 repository/image/log에 secret을 남기지 않는 원칙은 유지한다.
+
+Runtime secret source와 전달 경로는 확정이다(RD-07, [#249](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/249), 2026-10-04). 앱이 파일을 읽는 규칙(값은 파일에서만 · `DAESINGO_ENV_FILE`은 composition root만 해석 · startup fail-fast · key 이름만 로그)은 [Tech Spec](./runtime-tech-spec.md) §15.2가 소유한다.
+
+```text
+SSM Parameter Store SecureString
+→ EC2 instance role로 fetch (EC2 쪽 배포 script)
+→ host의 보호된 파일 (container UID 소유 · 최소 권한, 예: 0400 · 값을 stdout/log에 남기지 않음)
+→ Compose secret / file mount → api · worker
+→ DAESINGO_ENV_FILE = mount된 파일 경로
+```
+
+- **GitHub Actions는 secret 값을 조회하거나 전달하지 않는다.** OIDC로 deploy role을 얻어 SSM Run Command로 「배포 절차를 실행하라」만 지시한다. Run Command 입력에 평문 secret을 싣지 않는다. 역할은 `deploy.yml`(배포 orchestration) · EC2 배포 script(Parameter Store fetch · 보호 파일 렌더 · migration · Compose 실행) · Compose 파일(secret file mount · 실행 구조)로 나뉜다. exact 단계 · 명령은 RD-12.
+- Compose는 file source secret의 `uid` · `gid` · `mode`를 적용하지 않으므로 **host 파일 권한이 접근 제어**다.
+- **rotation.** Parameter Store 재조회 → host 파일 갱신 → `docker compose up -d --force-recreate api worker`. `docker compose restart`를 rotation 보장 수단으로 쓰지 않는다.
+- **배포 전 확인(차단 아님).** 카테캠 guardrail에서 EC2 instance role이 해당 경로에 `ssm:GetParametersByPath`(필요 시 `kms:Decrypt`)를 할 수 있는지 M6 전에 확인한다. 불가하면 Session Manager 등으로 host 파일을 수동 배치하고, container 쪽 계약은 그대로다.
+- secret을 process environment로 넣지 않으므로 `docker inspect` · `/proc/<pid>/environ` · ffmpeg 같은 자식 process에 값이 노출되지 않는다([spike S3](./experiments/pre-implementation-spike-2026-10-03.md)).
+
+### 4-2. API ↔ Worker 공유 저장 경계
+
+확정(RD-17, [#246](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/246), 2026-10-04). recording metadata schema · ref 복원 · FrameRef durability 구현은 recording이 소유한다.
+
+- **bytes.** api와 worker는 같은 host의 **local filesystem mount 하나**를 공유한다. 그 안에 staging · source · derived 계열 경계를 둔다. api · worker는 같은 image 계열과 **같은 numeric UID**로 실행한다. baseline에 Object Storage를 두지 않는다(§13).
+- **publish 순서 — 파일 먼저, row 나중.** upload bytes를 같은 mount의 staging에 쓰고 → `fsync` → 같은 mount의 final 위치로 publish → recording 등록 · metadata commit. staging에 container `/tmp`나 다른 volume을 쓰지 않는다 — 다른 mount에서 오는 rename은 `EXDEV`다([spike S3](./experiments/pre-implementation-spike-2026-10-03.md)). 정상 순서에서 crash가 남기는 것은 row 없는 orphan · staging 파일뿐이고 dangling DB ref가 아니다. orphan · staging · temp 정리 나이와 scan 주기는 [Provisional Baseline v0.1](./provisional-baseline-v0.1.md) §2.9(B-C1 ~ B-C4), upload 한도 · 수신 timeout은 같은 문서 §2.6이다.
+- **metadata.** SourceAsset · MediaStream · local locator · case↔asset 연결처럼 process 사이에 공유해야 하는 recording metadata는 recording 소유 MySQL table에 둔다. Runtime은 recording schema를 소유하지 않는다.
+- **persistent 범위 원칙.** ref가 process 경계나 process 수명을 넘어 다시 역참조되면 persistent다 — SourceAsset · MediaStream · locator · case↔asset 연결 · restart 뒤 다시 필요한 timeline · span resolution · IncidentClip · DerivedAsset, 그리고 **CaseView에 노출된 FrameRef**(`thumb_ref` · `preview_ref` · `plate_preview_ref`). FrameRef를 bytes로 저장할지 locator · timestamp를 저장해 재생성할지는 recording 구현 선택이다. Worker 안에서만 쓰고 다시 만들 수 있는 AnalysisSource bytes · frame inspection cache는 process-local로 둘 수 있다(RD-09).
+- **restart.** ref는 등록 때 한 번 발급해 persist하고 restart 뒤에는 다시 등록하지 않고 복원한다. 같은 파일을 사용자가 새로 등록하면 새 logical asset이라는 현재 의미는 유지한다.
+- Compose 표기 · host 경로 값은 RD-12a. local disk working set이 P2에서 안전하지 않거나 multi-host 요구가 생기면 §13 기준으로 Object Storage를 다시 본다.
 
 ## 5. Python / Dependency Runtime
 
@@ -261,7 +287,7 @@ Python version의 executable SoT는 prose가 아니라 실제 config/workflow다
 
 ## 6. Structured Logging
 
-Runtime 운영 로그는 key-value structured log를 기본으로 한다.
+Runtime 운영 로그는 key-value structured log를 기본으로 한다. container local log rotation 상한과 application log level의 시작값은 [Provisional Baseline v0.1](./provisional-baseline-v0.1.md) §2.13(B-O1 · B-O2)이다 — log transport와 retention 기간은 그 값이 아니다(§23).
 
 권장 correlation:
 
@@ -315,7 +341,7 @@ HTTP request
 - `case_id`, `job_id`, `execution_id`가 생긴 시점부터는 같은 로그 event에 함께 남긴다.
 - `trace_id`는 observability용 상관관계 값이며 business identity나 Final Contract의 authoritative key를 대체하지 않는다.
 - provider가 안전한 metadata/correlation field를 지원하면 최소 식별자만 전달할 수 있고, 지원하지 않으면 local log에서 invocation과 execution의 관계를 남긴다.
-- exact persistence/queue metadata 방식은 첫 Runtime DB Queue/Worker 구현에서 정하되 Final Contract schema를 관측 편의를 위해 임의 확장하지 않는다.
+- `trace_id`는 `job_execution` row의 Runtime 내부 column이다. API request context에서 dispatch 때 기록하고 retry attempt에도 같은 trace lineage를 잇는다. Contract 필드로 공개하지 않는다(RD-01i, [Tech Spec](./runtime-tech-spec.md) §4.2). Final Contract schema를 관측 편의를 위해 임의 확장하지 않는다.
 
 ## 7. Logging / Privacy Guardrail
 
@@ -400,7 +426,7 @@ Runtime Tech Spec의 endpoint 의미:
 - 외부 AI provider 하나의 장애를 API 전체 liveness failure로 취급하지 않음
 - Worker는 Runtime DB의 heartbeat/lease 기반으로 별도 관측 가능
 
-실제 restart/alert threshold는 deployment 환경이 생긴 뒤 정한다.
+`/health/ready` probe 제한 시간은 [Provisional Baseline v0.1](./provisional-baseline-v0.1.md) §2.10(B-H1 ~ B-H3)이다. 실제 restart/alert threshold는 deployment 환경이 생긴 뒤 정한다.
 
 ## 10. Storage Lifecycle
 
@@ -459,7 +485,7 @@ OS working space
 - peak simultaneous disk
 - cleanup 이후 steady-state disk
 
-> **현재 구현 사실 (2026-10-02 `develop` 기준):** recording은 준비된 AnalysisSource · IncidentClip bytes를 `RecordingService` 인스턴스 메모리에 보관하고 `close()` 때 해제한다. 임시 디렉터리는 ffmpeg encode 동안만 쓴다. 따라서 지금 이 working set은 local disk보다 **Worker process memory(RSS)**에 먼저 쌓인다. 위 목록의 AnalysisSource · IncidentClip 항목은 저장 위치가 바뀔 경우의 후보로 읽는다. service 수명과 AnalysisSource 저장·재사용 범위는 아직 결정되지 않았다.
+> **현재 구현 사실 (2026-10-02 `develop` 기준):** recording은 준비된 AnalysisSource · IncidentClip bytes를 `RecordingService` 인스턴스 메모리에 보관하고 `close()` 때 해제한다. 임시 디렉터리는 ffmpeg encode 동안만 쓴다. 따라서 지금 이 working set은 local disk보다 **Worker process memory(RSS)**에 먼저 쌓인다. 위 목록의 AnalysisSource · IncidentClip 항목은 저장 위치가 바뀔 경우의 후보로 읽는다. service 수명과 AnalysisSource 저장·재사용 범위는 아직 결정되지 않았다(RD-09). API ↔ Worker가 공유하는 원본 · 파생물 bytes와 persistent ref의 위치는 §4-2(RD-17)가 정한다 — 그 파일도 이 disk의 working set에 들어간다.
 
 Issue #95 R3에서는 동일 AnalysisSource의 process-local reuse가 materialization 비용을 크게 줄일 가능성이 확인됐다. 그러나 현재 확인된 것은 **성능 최적화 후보**이지 durability guarantee가 아니다.
 
@@ -827,7 +853,7 @@ Prometheus/Grafana/OpenTelemetry full stack
 - [ ] P2 이후 필요 시 P3 30분~1시간 Runtime E2E 계획
 - [ ] OIDC + SSM deployment workflow 구현 — 인증/접속 방식은 §2-1로 결정, `AWS_ACCOUNT_ID` Variable 등록 → OIDC 연결 검증 → 실제 SSM 배포 명령은 후속 작업
 - [ ] 배포 artifact 전달 방식 필요 여부 및 방식(S3/ECR 등) — §13 기준으로 실측 후 결정
-- [ ] build-time / runtime configuration 주입 방식과 변수 ownership
+- [x] build-time / runtime configuration 주입 방식과 변수 ownership — §4-1 · Tech Spec §15.2 (RD-07)
 - [ ] immutable release 식별 + known-good revision 기록 + rollback exact command
 - [ ] post-deploy health/readiness + external smoke test 연결
 - [ ] public endpoint / domain / TLS — 외부 공개 demo 또는 OAuth 요구 발생 시 EIP 필요 여부 → DNS → HTTPS/reverse proxy → callback 구성, single-EC2 첫 구현 후보는 §2-2 기준으로 Caddy 검토

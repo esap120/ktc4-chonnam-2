@@ -4,6 +4,8 @@
 **Owner:** common/runtime — 김준영\
 **Collected at:** 2026-10-02 · `origin/develop` `9ebb55f` (PR #238 merge 직후)\
 **Revised:** 2026-10-03 · 같은 기준 SHA — Decision / External Input / Experiment / Follow-up 경계 정리 ([Change log](#change-log))\
+**§5 tracking:** 2026-10-03 · `origin/develop` `43dd8ec` — Timing A 9개 Decision Issue 연결 · RD-01 일부 CLOSED\
+**§5 closure:** 2026-10-04 — Timing A **9/9 CLOSED** (#244 ~ #250 ACCEPTED, PR #253) ([§5 진행 상태](#5-진행-상태--timing-a))\
 **Workflow step:** [`runtime-ops-workflow.md`](./runtime-ops-workflow.md) §2 Open Decision 전수 수집\
 **Input:** [§0 정합성 검수](./reviews/runtime-ops-consistency-audit-2026-10-02.md) D-01~D-17 · [Tech Spec](./runtime-tech-spec.md) §6·§7·§11·§18 · [Ops Spec](./ops-spec.md) §23 · [Runbook](./deployment-runbook.md) §8 · 관련 Contract/ADR/Owner 결정 · GitHub Issue 상태
 
@@ -41,7 +43,7 @@
 | --- | --- |
 | Open Decision Group | **18** — RD-01~RD-15 · RD-17~RD-19 (RD-16은 External Inputs로 해체, 번호 재사용 안 함) |
 | Sub-decisions | **85** |
-| Timing A 후보 (group 기준) | 9 — RD-01 · RD-02 · RD-03 · RD-05 · RD-06 · RD-07 · RD-17 · RD-18 · RD-19 |
+| Timing A 후보 (group 기준) | 9 — RD-01 · RD-02 · RD-03 · RD-05 · RD-06 · RD-07 · RD-17 · RD-18 · RD-19 — **workflow §5에서 9/9 CLOSED (2026-10-04)** |
 | Timing B 후보 | 6 — RD-04 · RD-08 · RD-09 · RD-11 · RD-12 · RD-13 |
 | Timing C 후보 | 1 — RD-15 |
 | Timing D 후보 | 2 — RD-10(단 pre-deploy 전 필수) · RD-14 |
@@ -55,7 +57,7 @@
 | [RD-02](#rd-02--retry-attempt-생성-시점과-queued_at-의미) | Retry attempt 생성 시점 · `queued_at` 의미 (B-02) | common/runtime | A | D-02 · B-02 |
 | [RD-03](#rd-03--retry-책임-층위--failure-lifecycle) | Retry 책임 층위 · Failure lifecycle | common/runtime | A | D-03 · D-17 일부 |
 | [RD-04](#rd-04--execution-timing-provisional-baseline의-축과-제약) | Execution timing Provisional Baseline의 축과 제약 | common/runtime | B | D-04 |
-| [RD-05](#rd-05--http-api-contract와-transport-담당) | HTTP API Contract와 transport 담당 | 확정 필요 (api ↔ web) | A | D-08 |
+| [RD-05](#rd-05--http-api-contract와-transport-담당) | HTTP API Contract와 transport 담당 | `api` composition root (Web Consumer) — [#247](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/247) | A | D-08 |
 | [RD-06](#rd-06--case--runtime-dispatch-port와-결과-반영-경로) | case → Runtime dispatch port와 결과 반영 경로 | case + common/runtime | A | D-09 |
 | [RD-07](#rd-07--runtime-configuration--secret-주입) | Runtime configuration / secret 주입 | common/runtime | A | D-10 |
 | [RD-08](#rd-08--pricing--fx-artifact) | Pricing / FX artifact | common/runtime + search | B | D-07 |
@@ -72,9 +74,53 @@
 
 ---
 
+## §5 진행 상태 — Timing A
+
+workflow §5(구현 전 필수 Decision 처리)의 추적표다. **결정의 선택지 · 근거 · Owner 의견은 각 Decision Issue가 담고, 확정 규칙은 아래 SoT에 있다. 여기에는 복제하지 않는다.** Umbrella: [#251](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/251). spike 근거: [`experiments/pre-implementation-spike-2026-10-03.md`](./experiments/pre-implementation-spike-2026-10-03.md).
+
+2026-10-04 기준 Timing A **9/9 CLOSED**다. 각 Issue의 마지막 결정자 댓글(Runtime/API Owner 최종 결정)이 authority이며, 그 결정을 아래 SoT로 승격했다(PR #253).
+
+| RD | §5 Status | Decision | 최종 결정 (한 줄) | 승격된 SoT | 다른 Owner 후속 (비차단) |
+| --- | --- | --- | --- | --- | --- |
+| RD-01 | **ACCEPTED / CLOSED** | [#250](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/250) | `job_execution` 단일 table = 실행 원장 + queue · RC + `(status, available_at, execution_id)` + `SKIP LOCKED` · `produced` JSON · `usage_refs` projection · durable usage in-flight · RUNNING row lease + 별도 heartbeat thread · `trace_id` 내부 column · PyMySQL + SQLAlchemy Core · Alembic forward-only | [Tech Spec](./runtime-tech-spec.md) §4.2 · §4.3 · §4.4 · §4.5 · §7.2 · §11.1 | `DECIMAL` precision/scale은 첫 migration(구현 세부) |
+| RD-02 | **ACCEPTED / CLOSED** | [#248](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/248) | 다음 attempt는 이전 attempt terminal과 같은 transaction에서 `QUEUED` 생성 · `queued_at` = 생성 시각(attempt ≥ 2는 backoff 포함) · `available_at`은 내부 | [Tech Spec](./runtime-tech-spec.md) §6.3 · [JobExecution Contract](../architecture/contracts/contract-job-execution.md) §5 | — |
+| RD-03 | **ACCEPTED / CLOSED** | [#244](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/244) | 일시 장애 = Search in-call retry · Runtime 자동 retry = `STALE`만 · `FAILED` terminal · 매핑표 · override 없음 · 사용자 재시도 = 새 `job_id` | [Tech Spec](./runtime-tech-spec.md) §6.2 | Search taxonomy에 계정 수준 실패 kind(search) |
+| RD-05 | **ACCEPTED / CLOSED** | [#247](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/247) | HTTP Contract Producer = `api` composition root · Web Consumer · 필수 surface(`/cases` · `/sources` · `/commands` · `/view` · `/frames` · `/assets` · `/health/*`) · 발주 있으면 202 / 없으면 200 · body = case-command 응답 · 1 request = 1 file | [Tech Spec](./runtime-tech-spec.md) §13 (방향) · [HTTP API Contract](../architecture/contracts/contract-http-api.md) (`http-api/v1` Final — Accepted) | HTTP route 구현 선행 조건(Contract §9.1) — 빈 case · 원본 연결 · 202 `running_jobs` · 시작 · 중단 command(case) · 원본 파일명 · 등록 실패 taxonomy · ref 소유 조회 · DerivedAsset read(recording) |
+| RD-06 | **ACCEPTED / CLOSED** | [#245](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/245) | Case · JobRecord · Runtime이 같은 MySQL · composition root가 transaction 소유(각 repository 독자 commit 금지) · 결과 반영 push(case 반영 함수 `execution_id` idempotent) · 단일 kind registry | [Tech Spec](./runtime-tech-spec.md) §12.1 ~ §12.4 · [JobExecution Contract](../architecture/contracts/contract-job-execution.md) §9-8 · [Architecture](../architecture/module-architecture.md) §4-모듈5 ④ · §8-2 | `CaseStore` MySQL · 반영 함수(case) |
+| RD-07 | **ACCEPTED / CLOSED** | [#249](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/249) | 값은 파일에서만 · `DAESINGO_ENV_FILE`은 composition root만 해석(`load_env_file()` 기본 = `cwd/.env`) · Parameter Store → EC2 role → host 보호 파일 → Compose secret · GitHub Actions는 OIDC → SSM 지시만 · recreate rotation · startup fail-fast(key 이름만 로그) | [Tech Spec](./runtime-tech-spec.md) §15.2 · [Ops Spec](./ops-spec.md) §4-1 · [Runbook](./deployment-runbook.md) §2 | Search 결정 5항 문구 정합(search) · M6 전 EC2 role 권한 확인 |
+| RD-17 | **ACCEPTED / CLOSED** | [#246](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/246) | single-host shared mount 1개 · 같은 numeric UID · staging → `fsync` → same-mount publish → metadata commit · recording MySQL metadata · process 경계를 넘는 ref는 persistent(CaseView FrameRef 포함) | [Ops Spec](./ops-spec.md) §4-2 | recording MySQL repository · FrameRef durability 방식 · persistent 목록 확정(recording) |
+| RD-18 | **ACCEPTED / CLOSED** | [#244](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/244) | provider HTTP 시도마다 usage identity 1개 · begin = durable in-flight(실패 시 HTTP 없음) · 완료 관측 durable 보존 · Run 관계 확정 뒤 Final 1건 · 실제 Run 미생성일 때만 `RUN_NOT_PRODUCED` · KRW 정규화 = Search, Runtime은 검증 · 보존 · 미확정 요율은 `amount=null` | [Tech Spec](./runtime-tech-spec.md) §11.1 · §11.3 · [UsageRecord Contract](../architecture/contracts/contract-usage-record.md) §2 | Search adapter tracker 호출 · 요율 기본값 0.0과 미확정 구분(search) · budget guard `amount=null`(case) |
+| RD-19 | **ACCEPTED / CLOSED** | [#245](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/245) | 중단 command → 같은 transaction에서 cancel · QUEUED 즉시 CANCELLED · RUNNING은 capability 사이 checkpoint에서 협력적 중단(capability 내부 retry는 반환까지 계속) · first commit wins · 늦은 결과 배제 = 중단된 `job_id` 집합 + context 유효성(`case_rev` 일치 아님) | [Tech Spec](./runtime-tech-spec.md) §12.5 · [JobExecution Contract](../architecture/contracts/contract-job-execution.md) §9-8 | 중단 command · `running_jobs` 정의 문구(case) |
+
+- 「다른 Owner 후속」은 각 Owner 문서 · 구현 범위이며 Runtime 구현을 막지 않는다. 결정 때문에 생긴 cross-module 문구 중 Runtime 소유 문서와 case Owner가 요청한 Contract · Architecture 문구는 PR #253에서 정합했고, 다른 모듈 문서는 그 Owner가 고친다.
+- ADR: 분류 §3이 RD-03 · RD-17을 Follow-up ADR로 두었다. 이번 closure는 Primary route(JOINT_ISSUE)로 닫았고 결정 원문 · 선택지 · 근거는 각 Issue에 있다. 별도 ADR 문서는 PR #253에서 만들지 않았다.
+- **다음 순서.** RD-05에서 HTTP API Contract를 Runtime/API planning의 선행 입력으로 정했으므로 이번 iteration은 `§5 closure → RD-05 HTTP API Contract SoT 작성 · Consumer review → §6 Provisional Baseline v0.1 → §7 Runtime Implementation Plan` 순으로 간다. 새 workflow 단계가 아니라 §5에서 결정된 Contract 승격 작업이다. HTTP API Contract는 2026-10-05 `http-api/v1` Final — Accepted로 끝났고 다음은 §6이다.
+- 기존 Issue: [#153](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/153) 합의는 Already fixed로 두고 남은 전달 모양 · 주입 경로만 #244 · #249에서 닫았다.
+
+### §5 → §6 Baseline 입력
+
+§5 결정이 필요로 하는 숫자다. **값은 여기서 정하지 않는다**(workflow §6). 축과 제약의 SoT는 [RD-04](#rd-04--execution-timing-provisional-baseline의-축과-제약)이며 아래는 §6 입력 목록이다. 2026-10-05에 [Provisional Baseline v0.1](./provisional-baseline-v0.1.md)가 시작값을 정했다 — 마지막 열은 그 문서의 ID이고 숫자는 복제하지 않는다.
+
+| Baseline parameter | Needed by | Allowed range / constraint | Evidence | Experiment | v0.1 |
+| --- | --- | --- | --- | --- | --- |
+| STALE 자동 retry 상한 | #244 R-1 · #248 | 0 이상 정수. 자동 retry는 STALE에만 적용(provider 일시 장애 재시도는 Search 소유 값) | JobExecution 머리말 · fixture `scenario_infra_failure_001` | P2 · Real E2E의 STALE 빈도 | B-R1 |
+| STALE retry backoff (`available_at` 계산) | #248 Q-1 | Worker가 sleep하지 않음 · attempt ≥ 2의 `queued_at → started_at`에 포함됨 | Tech Spec §6.3 | P2 | B-R2 · B-R3 |
+| lease duration · STALE threshold | RD-01h · RD-04b | 정상 실행 중 한 번의 sync provider 호출 · ffmpeg 구간보다 길거나 heartbeat가 그 구간에도 갱신돼야 함(별도 heartbeat thread) · case job wall(`max_latency_sec`)과의 관계는 RD-04b | Tech Spec §7 · `timeout-fallback.md` | P2 — 실제 호출 지연 분포 | B-L2 · B-L3 |
+| heartbeat interval | RD-01h · #245 C-3 | lease duration보다 충분히 짧음 · 중단 요청 관찰 지연의 하한을 정함 | #245 C-3 | P2 | B-L1 · B-X1 |
+| stale sweep interval · Worker polling interval | RD-04e | 독립 config 축 여부는 RD-04 | Tech Spec §7.3 | P2 | B-L4 · B-L5 · B-Q1 ~ B-Q3 |
+| Runtime session `innodb_lock_wait_timeout` | Tech Spec §4.3 | claim은 `SKIP LOCKED`라 대기하지 않음 · 전이 UPDATE의 대기 상한 | spike S1 · S2 | Runtime integration | B-D1 |
+| DB pool pre-ping · recycle | Tech Spec §4.4 | MySQL `wait_timeout`보다 짧은 recycle | Research 01 §4.10 | 구현 test(Research 01 Spike F) | B-D2 ~ B-D8 |
+| upload 전체 body 한도 | #247 H-5 · HTTP API Contract §5.2(`413`) | Starlette ≥ 1.6 middleware로 강제 · 단일 EC2 disk working set(Ops §11) 안 | Research 02 §4.7 | Research 02 Spike E · G · P2 | B-U1 ~ B-U5 |
+| frame 응답 `Cache-Control` `max-age` | HTTP API Contract §5.5 | `private` 고정 · 같은 `frame_ref`는 다른 frame을 가리키지 않음(SourceAsset Contract §5.2) | — | 구현 test | B-F1 · B-F2 |
+| `/health/ready` dependency 검사 제한 시간 | HTTP API Contract §5.7 · Tech Spec §14 | 외부 provider를 부르지 않음 · DB · 공유 저장소만 | Ops §9 | 배포 환경(RD-12h) | B-H1 ~ B-H3 |
+| staging 잔여 · orphan 파일 정리 나이 | #246 S-2 | 진행 중 upload를 지우지 않을 만큼 김 | Research 02 §4.4 · §5 | Research 02 Spike D · F | B-C1 ~ B-C4 |
+| UsageRecord `cost_amount` precision / scale | Tech Spec §4.5 | Contract 예시와 cost 생산자(#244 U-2) 출력 자릿수를 덮음 · 초과 자릿수는 거부 | UsageRecord Contract §4 · §6 | migration test — §6 값이 아니라 RD-01g 안의 구현 세부로 **첫 migration**에서 고정 | NOT_BASELINED — 첫 migration |
+
+---
+
 ## RD-01 — Runtime Persistence / Queue Physical Design
 
-**Status:** OPEN\
+**Status:** CLOSED — 2026-10-04 · Decision [#250](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/250) ACCEPTED → [Tech Spec](./runtime-tech-spec.md) §4.2 · §4.3 · §4.4 · §4.5 · §7.2 · §11.1 (01b 핵심 규칙 · 01c · 01d · 01g · 01j는 2026-10-03, 나머지는 upstream #244 · #245 · #248 결정 뒤 2026-10-04). `DECIMAL` precision/scale은 첫 migration\
 **Owner:** common/runtime — 김준영(결정) · 정철원(구현)\
 **Consult:** case — 유소연(JobRecord 저장 위치·조회) · eval — 김대원(execution/usage 집계) · search — 서어진(usage 노출 모양)\
 **Source candidates:** D-01 · D-05 · D-06 (+ Tech Spec §18의 heartbeat persistence · UsageRecord persistence shape)
@@ -103,16 +149,16 @@ Final Contract가 정한 JobExecution · UsageRecord의 논리 의미와 Runtime
 
 ### Sub-decisions
 
-- **RD-01a** — queue metadata · JobExecution · JobRecord의 table 분할과 관계(Queue row ↔ JobRecord ↔ JobExecution의 물리 연결)
-- **RD-01b** — claim transaction의 exact query · lock 범위 · ORDER BY/LIMIT · commit 시점, claim과 `JobExecution(RUNNING)` 생성의 transaction 경계
-- **RD-01c** — `JobExecution.produced` 물리 저장 — JSON vs `job_execution_products` (ADR D5)
-- **RD-01d** — `JobExecution.usage_refs` materialization — 별도 저장 vs `UsageRecord.execution_ref` projection (ADR D6)
-- **RD-01e** — UsageRecord persistence 시점 — invocation 시작 시 incomplete row 선기록 여부 · final append 시점 (ADR D4)
-- **RD-01f** — Worker 소멸 시 in-flight invocation의 UsageRecord 복구 방식과 호출 1건당 중복 append 방지(idempotency 키)
-- **RD-01g** — UsageRecord row 물리 shape — `pricing_context` · `token_usage` · `Money`(정밀도·column 분리/JSON, ERD §5.2 「Money 미정」). Search가 넘기는 모양은 RD-18
-- **RD-01h** — heartbeat / lease 기록 방식(어느 row에 어떤 주기로 갱신하는가의 구조. 주기 숫자는 RD-04)
-- **RD-01i** — correlation metadata(`trace_id`)를 queue/execution 쪽에 둘지와 위치 (Ops §6-1 「첫 DB Queue/Worker 구현에서 정함」)
-- **RD-01j** — DB 접근 계층과 migration 방식(driver · ORM 사용 여부 · migration tool). 현재 `pyproject.toml` 의존성에 DB 계층이 없다
+- **RD-01a** — *(CLOSED → Tech Spec §4.2 — `job_execution` 단일 table = 실행 원장 + queue, 별도 queue table 없음 · case table과 FK 없음)* queue metadata · JobExecution · JobRecord의 table 분할과 관계(Queue row ↔ JobRecord ↔ JobExecution의 물리 연결)
+- **RD-01b** — *(CLOSED → Tech Spec §4.3 — RC · INSERT 없는 짧은 claim · 조건부 전이 · `(status, available_at, execution_id)` index · `LIMIT 1 FOR UPDATE SKIP LOCKED`)* claim transaction의 exact query · lock 범위 · ORDER BY/LIMIT · commit 시점, claim과 `JobExecution(RUNNING)` 생성의 transaction 경계
+- **RD-01c** — *(CLOSED → Tech Spec §4.5 — JSON column)* `JobExecution.produced` 물리 저장 — JSON vs `job_execution_products` (ADR D5)
+- **RD-01d** — *(CLOSED → Tech Spec §4.5 — projection)* `JobExecution.usage_refs` materialization — 별도 저장 vs `UsageRecord.execution_ref` projection (ADR D6)
+- **RD-01e** — *(CLOSED → Tech Spec §11.1 — durable in-flight 먼저, Run 관계 확정 뒤 Final 1건 append)* UsageRecord persistence 시점 — invocation 시작 시 incomplete row 선기록 여부 · final append 시점 (ADR D4)
+- **RD-01f** — *(CLOSED → Tech Spec §11.1 — 관측값 보존 복구 · 실제 Run 미생성일 때만 `RUN_NOT_PRODUCED` · usage identity PK/UNIQUE)* Worker 소멸 시 in-flight invocation의 UsageRecord 복구 방식과 호출 1건당 중복 append 방지(idempotency 키)
+- **RD-01g** — *(물리 표현 CLOSED → Tech Spec §4.5 — typed column · exact numeric `DECIMAL` 계열 + currency column · `Decimal`/문자열 경계 · float 금지 · silent rounding 금지. `DECIMAL` precision/scale은 새 Decision이 아니라 첫 migration에서 cost 생산자 출력 범위와 Contract 예시 기준으로 고정)* UsageRecord row 물리 shape — `pricing_context` · `token_usage` · `Money`(정밀도·column 분리/JSON, ERD §5.2 「Money 미정」). Search가 넘기는 모양은 RD-18
+- **RD-01h** — *(CLOSED → Tech Spec §7.2 — RUNNING row lease · 별도 heartbeat thread · 0 rows면 소유 상실)* heartbeat / lease 기록 방식(어느 row에 어떤 주기로 갱신하는가의 구조. 주기 숫자는 RD-04)
+- **RD-01i** — *(CLOSED → Tech Spec §4.2 · Ops §6-1 — `job_execution` 내부 column)* correlation metadata(`trace_id`)를 queue/execution 쪽에 둘지와 위치 (Ops §6-1 「첫 DB Queue/Worker 구현에서 정함」)
+- **RD-01j** — *(CLOSED → Tech Spec §4.4 — sync DB access stack: PyMySQL + SQLAlchemy Core · ORM 미사용 · Alembic forward-only · startup migration 금지. FastAPI route `def`/`async def`는 이 항목이 정하지 않음 — HTTP/API 구현 범위)* DB 접근 계층과 migration 방식(driver · ORM 사용 여부 · migration tool). 현재 `pyproject.toml` 의존성에 DB 계층이 없다
 
 ### Dependencies
 
@@ -147,7 +193,7 @@ Final Contract가 정한 JobExecution · UsageRecord의 논리 의미와 Runtime
 
 ## RD-02 — Retry attempt 생성 시점과 `queued_at` 의미
 
-**Status:** OPEN\
+**Status:** CLOSED — 2026-10-04 · Decision [#248](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/248) ACCEPTED → [Tech Spec](./runtime-tech-spec.md) §6.3 · [JobExecution Contract](../architecture/contracts/contract-job-execution.md) §5\
 **Owner:** common/runtime — 김준영\
 **Consult:** case — 유소연(CaseView projection) · web — 신유민(진행 표시) · eval — 김대원(queue 대기·latency 집계)\
 **Source candidates:** D-02 · 검수 B-02
@@ -212,7 +258,7 @@ Final Contract가 정한 JobExecution · UsageRecord의 논리 의미와 Runtime
 
 ## RD-03 — Retry 책임 층위 · Failure lifecycle
 
-**Status:** OPEN\
+**Status:** CLOSED — 2026-10-04 · Decision [#244](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/244) ACCEPTED → [Tech Spec](./runtime-tech-spec.md) §6.2\
 **Owner:** common/runtime — 김준영\
 **Consult:** search — 서어진(provider in-call retry · failure taxonomy) · case — 유소연(timeout · 재개 정책) · readout — 신유민(1-call 불변조건)\
 **Source candidates:** D-03 · D-17 일부(크레딧 초과 시 Runtime 쪽 대응)
@@ -246,7 +292,7 @@ provider adapter 안의 재시도, Runtime의 execution 재시도, case의 timeo
 
 - **RD-03a** — provider in-call retry(Search adapter)와 Runtime execution retry의 책임 분담: 어떤 실패를 어느 층이 재시도하는가, 두 층이 겹칠 때의 상한
 - **RD-03b** — 자동 execution retry 대상 상태: STALE만인지 FAILED(일시 장애)도 포함하는지 — Contract 머리말 문구 해석 포함
-- **RD-03c** — case timeout(`RUN_DEADLINE_EXCEEDED` 등 deadline 계열 실패)을 Runtime이 retry 대상으로 보는지, 「이어서 찾기 = 남은 클립만 새 Job」 정책과의 경계
+- **RD-03c** — case timeout(`RUN_DEADLINE_EXCEEDED` 등 deadline 계열 실패)을 Runtime이 retry 대상으로 보는지, 「이어서 찾기 = 새 `job_id`로 영상 전체를 다시 보는 새 탐색」 정책(`core-user-flow.md` · #168 결정 3 · #170 F, 2026-10-03 `timeout-fallback.md` 표기 정합)과의 경계
 - **RD-03d** — readout 계열 job에서 retry와 「1 execution : public 호출 1회」 불변조건의 조합(provider in-call retry가 readout 경로에도 존재하는지 포함)
 - **RD-03e** — retryable mapping이 놓이는 곳: 모듈 taxonomy → Runtime policy 매핑 표의 위치와 Runtime override 허용 여부 (Tech Spec §6.4 「runtime override 여부」)
 - **RD-03f** — 계정 수준 provider 실패(크레딧 초과에 따른 Key 삭제 등)를 Runtime이 어떤 failure 분류 · 실행 정지 상태로 다루는가와 case budget guard와의 관계 *(이전 RD-16e의 Runtime 대응 부분. 이전 RD-03f는 RD-18d로 이동)*
@@ -286,7 +332,7 @@ provider adapter 안의 재시도, Runtime의 execution 재시도, case의 timeo
 
 ## RD-04 — Execution timing Provisional Baseline의 축과 제약
 
-**Status:** OPEN\
+**Status:** OPEN — Provisional v0.1 적용(2026-10-05 → [Provisional Baseline v0.1](./provisional-baseline-v0.1.md) §2.1 ~ §2.5 · §3 — RD-04b는 case 확인 완료(2026-10-06), 같은 문서 §8.1). 최종값은 P2(M8)\
 **Owner:** common/runtime — 김준영 · 정철원(구현)\
 **Consult:** case — 유소연(timeout 잠정값과의 호환)\
 **Source candidates:** D-04
@@ -349,9 +395,10 @@ retry max · backoff · jitter · lease duration · heartbeat interval · STALE 
 
 ## RD-05 — HTTP API Contract와 transport 담당
 
-**Status:** OPEN\
-**Owner:** 확정 필요 — `api` composition root Owner 김준영(`src/daesingo/api/README.md`) ↔ web 신유민(#106에서 transport 진행 합의)\
-**Consult:** case — 유소연(`get_view` · `handle_command` 진입점) · recording — 정철원(upload 입력)\
+**Status:** CLOSED — 2026-10-04 · Decision [#247](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/247) ACCEPTED → [Tech Spec](./runtime-tech-spec.md) §13 (방향 · surface). HTTP API Contract는 [`contract-http-api.md`](../architecture/contracts/contract-http-api.md) `http-api/v1` `Final — Accepted`(2026-10-05, Follow-up 완료)\
+**Owner:** HTTP API Contract Producer / Owner = `api` composition root — 김준영 ([#247](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/247) H-1, 2026-10-04). route 구현자는 Contract Owner와 같을 필요가 없다\
+**Consumer:** web — 신유민\
+**Consult:** case — 유소연(`get_view` · `handle_command` 진입점 · command 경계) · recording — 정철원(upload · frame · asset 경계) — boundary consult\
 **Source candidates:** D-08
 
 ### Question
@@ -378,7 +425,7 @@ Web ↔ Backend HTTP 경계의 **경로 · 응답 모양 · 비동기 작업 조
 
 ### Sub-decisions
 
-- **RD-05a** — HTTP API Contract와 transport 구현의 Owner 확정(`api/` composition root ↔ web 진행분의 관계)
+- **RD-05a** — *(CLOSED → [#247](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/247) H-1 — Producer / Owner = `api` composition root, web = Consumer)* HTTP API Contract와 transport 구현의 Owner 확정(`api/` composition root ↔ web 진행분의 관계)
 - **RD-05b** — endpoint 집합: CaseView 조회 · command 제출 · upload · 별도 job 상태 조회의 필요 여부
 - **RD-05c** — `202 Accepted` 응답 모양과 반환하는 조회 식별자(`case_id` · `case_rev` · `job_id` 중 무엇)
 - **RD-05d** — polling 계약(클라이언트가 무엇을 다시 부르는가). interval 숫자는 계약 밖
@@ -415,13 +462,13 @@ Web ↔ Backend HTTP 경계의 **경로 · 응답 모양 · 비동기 작업 조
 - **Pre-implementation spike:** 아니오
 - **Experiment:** 아니오
 - **ADR / Contract 후보:** 예 — HTTP API Contract
-- **Follow-up:** RD-05a가 닫히면 Owner가 HTTP API Contract 문서의 위치와 Status 경로(Draft → Final)를 정해 둔다 *(이전 RD-05g)*
+- **Follow-up:** *(완료 2026-10-05)* HTTP API Contract — 위치 `docs/architecture/contracts/contract-http-api.md`, Web 필수 Consumer review · case / recording boundary review(PR #265)를 거쳐 `http-api/v1` `Final — Accepted`(Contract §10, 짝 ADR Accepted). route 구현 선행 조건은 Contract §9.1 *(이전 RD-05g)*
 
 ---
 
 ## RD-06 — case → Runtime dispatch port와 결과 반영 경로
 
-**Status:** OPEN\
+**Status:** CLOSED — 2026-10-04 · Decision [#245](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/245) ACCEPTED → [Tech Spec](./runtime-tech-spec.md) §12.1 ~ §12.4 · [JobExecution Contract](../architecture/contracts/contract-job-execution.md) §9-8\
 **Owner:** case — 유소연 + common/runtime — 김준영\
 **Consult:** web — 신유민(재선택 가드 표시) · recording — 정철원(export kind dispatch)\
 **Source candidates:** D-09
@@ -441,7 +488,7 @@ case가 append한 JobRecord가 **어떤 port로 Runtime queue에 도달하고**,
 
 - case = orchestrator · common/runtime = executor (Architecture 원칙 6)
 - JobRecord Producer = case, append-only · 사용자 재실행 = 새 `job_id` (JobRecord Contract A§2·§3)
-- case는 현재 `case_rev`와 맞지 않는 execution의 `produced`를 반영하지 않는다 · old `case_rev` SUCCEEDED는 SUCCEEDED 유지 (JobExecution Contract §9-8, Tech Spec §7.1)
+- case가 반영하지 않은 SUCCEEDED는 SUCCEEDED 유지 (JobExecution Contract §9-8, Tech Spec §7.1). *(2026-10-04 정합: 반영 기준은 `case_rev` 일치가 아니라 case의 context 유효성 판단 — #245 C-1a, Contract §9-8)*
 - cache/reuse 판단 Owner는 case, Runtime은 fingerprint를 재계산하지 않는다 (Tech Spec §5)
 - `purge_case()`는 JobRecord로 발주하지 않는 관리 동작 (JobRecord Contract A§7)
 - `case`가 Worker 구현을 직접 import하지 않는다 · Worker는 orchestration 결정을 만들지 않는다 (Tech Spec §12)
@@ -492,7 +539,7 @@ case가 append한 JobRecord가 **어떤 port로 Runtime queue에 도달하고**,
 
 ## RD-07 — Runtime configuration / secret 주입
 
-**Status:** OPEN\
+**Status:** CLOSED — 2026-10-04 · Decision [#249](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/249) ACCEPTED → [Tech Spec](./runtime-tech-spec.md) §15.2 · [Ops Spec](./ops-spec.md) §4-1 · [Runbook](./deployment-runbook.md) §2\
 **Owner:** common/runtime — 김준영\
 **Consult:** search — 서어진(`.env` 단일 출처 결정의 Owner) · eval — 김대원(로컬 평가 실행)\
 **Source candidates:** D-10
@@ -744,7 +791,7 @@ Mock/합성 데이터 중심 개발에서는 구현을 막지 않는다. 실제 
 
 ## RD-11 — Ops retention / cleanup
 
-**Status:** OPEN\
+**Status:** OPEN — 11a의 container local rotation · 11b temp 회수 나이만 Provisional v0.1(2026-10-05 → [Provisional Baseline v0.1](./provisional-baseline-v0.1.md) §2.9 · §2.13). 11a log 보관 기간 · transport와 11c는 그대로 열림\
 **Owner:** common/runtime — 김준영\
 **Consult:** recording — 정철원(temp media 정리 · RemoteCopy cleanup 실행)\
 **Source candidates:** D-12b
@@ -1037,7 +1084,7 @@ P2/P3 결과를 근거로 **Worker concurrency 증가 · EC2 사양 상향 · di
 
 ## RD-17 — API ↔ Worker Recording / Source Persistence Boundary
 
-**Status:** OPEN\
+**Status:** CLOSED — 2026-10-04 · Decision [#246](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/246) ACCEPTED → [Ops Spec](./ops-spec.md) §4-2\
 **Owner:** recording — 정철원(recording 저장 경계) + common/runtime — 김준영(process topology · Compose)\
 **Consult:** case — 유소연(Case · JobRecord persistence와 같은 판단, RD-06b) · api/web — RD-05 Owner(upload endpoint)\
 **Source candidates:** 신규 — process 간 recording 상태(§0 후보 목록에 없던 항목, 이전 RD-09d)
@@ -1102,7 +1149,7 @@ API와 Worker가 별도 process/container일 때, **업로드된 원본 파일�
 
 ## RD-18 — Search → Runtime Usage / Pricing Handoff
 
-**Status:** OPEN\
+**Status:** CLOSED — 2026-10-04 · Decision [#244](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/244) ACCEPTED → [Tech Spec](./runtime-tech-spec.md) §11.1 · §11.3 · [UsageRecord Contract](../architecture/contracts/contract-usage-record.md) §2\
 **Owner:** search — 서어진(usage 노출 · adapter) + common/runtime — 김준영(UsageRecord Producer)\
 **Consult:** eval — 김대원(비용 분모) · case — 유소연(budget 판정 입력)\
 **Source candidates:** D-07 일부(이전 RD-08d) · D-03 일부(이전 RD-03f)
@@ -1170,7 +1217,7 @@ provider 호출은 Search adapter 안에서 일어나고 UsageRecord는 common/r
 
 ## RD-19 — 사용자 중단(Cancellation) 전달 경로와 실행 중단 semantics
 
-**Status:** OPEN\
+**Status:** CLOSED — 2026-10-04 · Decision [#245](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/245) ACCEPTED → [Tech Spec](./runtime-tech-spec.md) §12.5 · [JobExecution Contract](../architecture/contracts/contract-job-execution.md) §9-8\
 **Owner:** case — 유소연(중단 command · 결과 반영) + common/runtime — 김준영(실행 중단 semantics)\
 **Consult:** web — 신유민(중단 버튼 · 진행 표시) · search — 서어진(진행 중 provider 호출)\
 **Source candidates:** 신규 — cancel 전이 경로(§0 후보 목록에 없던 항목, 검수 A-08 Impact에서 언급. 이전 RD-03g · RD-03h)
@@ -1395,7 +1442,7 @@ RD-08 pricing artifact — 다른 Decision을 막지 않음 (EI-06만 입력)
 | KRW 정규화 (저장 전 KRW, `currency="KRW"`) | [`budget-krw-normalization.md`](../modules/case/decisions/budget-krw-normalization.md) (2026-09-09, #19 CLOSED). 남은 것은 RD-08 artifact · FX source와 정규화가 일어나는 층(RD-18b)뿐 |
 | Search rate 주입 유지 · 공용 catalog 미도입 · `pricing_id`(+`unit`) 추가 | #153 합의(2026-09-26), UsageRecord Contract §5 표기 정합(2026-10-02). #153 Issue가 OPEN이어도 정책은 닫혔다 |
 | provider config 의미 · validation = Search, `ELICE_ML_API_KEY` rename 방향 · alias 위치 | #153 합의, Tech Spec §15.1. 주입 경로(RD-07)와 별개 |
-| STALE = Worker 소멸 실행 상태, old `case_rev` SUCCEEDED는 SUCCEEDED 유지 | JobExecution Contract §6 · §9-8. Architecture §8-2 · `worker/README.md`는 §0 처리에서 정합화 |
+| STALE = Worker 소멸 실행 상태, case가 반영하지 않은 늦은 SUCCEEDED는 SUCCEEDED 유지 | JobExecution Contract §6 · §9-8. Architecture §8-2 · `worker/README.md`는 §0 처리에서 정합화(반영 기준 문구는 2026-10-04 #245 C-1a로 재정합) |
 | 사용자 재실행 = 새 `job_id`, 자동 retry = same `job_id` + new `execution_id` + attempt+1 | Contract · ADR D7 · PR #46 |
 | 같은 kind 대표 job = `requested_at` 최신, 대표 execution = attempt 최댓값 | JobRecord/CaseView Contract A§10-6·§10-7, ADR D3. RD-02는 이 규칙을 지키는 **구현 시점**의 문제이지 규칙 재검토가 아니다 |
 | FastAPI 1 + Worker 1 + MySQL 8.4 DB Queue | Architecture A3 |
@@ -1420,6 +1467,8 @@ RD-08 pricing artifact — 다른 Decision을 막지 않음 (EI-06만 입력)
 | Runtime boundary 규칙 · MySQL integration CI · dispatch registration test 없음 | 검수 C-10 |
 | Ruff · type checker · secret scan CI gate | Ops §19 목표 순서 · §23 — Implementation Plan의 CI 묶음. type checker 도구 선택도 그 안에서 다룬다 |
 
+위 Gap의 Task 배치와 각 Decision이 막는 Task는 [Runtime Implementation Plan](./runtime-implementation-plan.md) §6 · §7이 추적한다(구현 dependency pointer만 — 이 Register의 Timing · State는 바꾸지 않는다).
+
 ### External input / fact-finding
 
 provider · 운영진 정책처럼 우리가 고르지 않고 확인해야 하는 사실은 Decision에서 뺐다. 목록과 입력 대상 Decision은 [External Inputs](#external-inputs--decision이-아니라-확인할-사실) — EI-01~EI-08.
@@ -1441,7 +1490,7 @@ provider · 운영진 정책처럼 우리가 고르지 않고 확인해야 하�
 | --- | --- | --- | --- |
 | RD-02c | RD-02a 결과가 Contract 명확화를 요구하는지 · 개정 경로 | Follow-up | RD-02 Follow-up |
 | RD-04f | Provisional 값별 검증 실험 · 변경 조건 연결 | Follow-up | RD-04 Follow-up (workflow §6 형식) |
-| RD-05g | HTTP API Contract 문서 위치 · Status 경로 | Follow-up | RD-05 Follow-up |
+| RD-05g | HTTP API Contract 문서 위치 · Status 경로 | Follow-up | RD-05 Follow-up — 완료(2026-10-05 `http-api/v1` Final) |
 | RD-09e | Object Storage 검토를 여는 시점 | Trigger | RD-09 Trigger — 선택 자체는 RD-15d |
 | RD-14a | 외부 공개 endpoint 요구 발생 여부 · 시점 | Trigger | RD-14 Trigger |
 | RD-15e | P2 결과에 따라 P3 추가 수행 여부를 판단하는 조건 | Trigger | RD-15 Trigger — P2 · P3 측정값 자체는 RD-15 Experiment |
@@ -1482,6 +1531,14 @@ provider · 운영진 정책처럼 우리가 고르지 않고 확인해야 하�
 | 2026-10-02 | 최초 작성 — D-01~D-17 정규화, 16 group / 90 sub-decision | `origin/develop` `9ebb55f` |
 | 2026-10-03 | 분류 경계 정리 — Decision / External Input / Experiment / Follow-up 분리, group 경계 재조정. 18 group / 85 sub-decision / EI 7. 새 조사 · 답 확정 없음 | `origin/develop` `9ebb55f` |
 | 2026-10-03 | §3 분류 중 정합 — dependency graph에 RD-01 → RD-13 edge 추가, RD-12 「막는 것」에 RD-14 추가(본문 Dependencies와 graph 일치). 「읽는 법」에 §3 분류 문서 링크. EI-08(개인정보 법령 · 공식 가이드상 보관 · 파기 제약) 추가 — RD-10 입력. Timing · Owner · group 변경 없음 | `origin/develop` `10787d8` |
+| 2026-10-03 | workflow §5 — Timing A 9개에 Decision Issue(#244 ~ #250, Umbrella #251) 연결 · [§5 진행 상태](#5-진행-상태--timing-a) · 「§5 → §6 Baseline 입력」 추가. RD-01b 핵심 규칙 · 01c · 01d · 01g · 01j를 Tech Spec §4.3 · §4.4 · §4.5로 승격(Runtime 단독 · upstream 독립). 나머지 A는 `PROPOSED`. Timing · Owner · group · EI 변경 없음, 새 RD 없음 | `origin/develop` `43dd8ec` |
+| 2026-10-03 | §5 보정(Owner review 전) — RD-01g는 물리 표현만 CLOSED(`DECIMAL` precision/scale은 첫 migration) · RD-01j는 sync DB access stack만 CLOSED(FastAPI route `def`/`async def`는 정하지 않음) · RD-19 C-1a(중단 때 `case_rev` +1의 병렬 Job 영향) case Owner 확인 추가 · RD-03c 「이어서 찾기」 표기를 Product 결정에 정합. 새 RD 없음 | `origin/develop` `43dd8ec` |
+| 2026-10-04 | workflow §5 closure — #244 ~ #250 최종 결정(각 Issue 마지막 결정자 댓글)을 SoT로 승격하고 Timing A 9개를 `CLOSED`로 표시. Tech Spec §4.2 · §4.3 · §6.2 · §6.3 · §7.2 · §9 · §11.1 · §11.3 · §12.1 ~ §12.5 · §13 · §15.2 · §16, Ops §4-1 · §4-2 · §6-1, Runbook §2, JobExecution Contract §2 · §5 · §9-8, UsageRecord Contract §2, Architecture §4-모듈5 ④ · §8-2. HTTP API Contract 문서는 다음 단계. B · C · D는 OPEN 그대로, Timing · Owner · group · EI 변경 없음, 새 RD 없음 | PR #253 |
+| 2026-10-04 | RD-05 Follow-up — [HTTP API Contract](../architecture/contracts/contract-http-api.md) `http-api/v0` Draft 작성. RD-05 요약 · Status · Follow-up · RD-05g 위치를 Draft 링크로 정합, 「§5 → §6 Baseline 입력」에 frame cache 수명 · ready 검사 제한 시간 행 추가. 결정 · Timing · Owner 변경 없음 | PR #265 |
+| 2026-10-05 | RD-05 Follow-up 완료 — web Consumer review · case · recording boundary review 반영 뒤 [HTTP API Contract](../architecture/contracts/contract-http-api.md) `http-api/v1` `Final — Accepted` · 짝 ADR Accepted. RD-05 요약 · Status · Follow-up · RD-05g · 「다음 순서」를 Final로 정합. 결정 · Timing · Owner 변경 없음, 새 RD 없음 | PR #265 |
+| 2026-10-05 | workflow §6 — [Provisional Baseline v0.1](./provisional-baseline-v0.1.md) 작성. 「§5 → §6 Baseline 입력」에 v0.1 ID 열 추가, RD-04 · RD-11 Status에 Provisional 적용 표시. RD-04 · RD-11은 OPEN 유지(최종값 P2), 결정 · Timing · Owner 변경 없음, 새 RD 없음 | PR #276 |
+| 2026-10-06 | RD-04 Status — RD-04b case 확인 완료 표시(PR #276 review). 결정 · Timing · Owner 변경 없음, 새 RD 없음 | PR #276 |
+| 2026-10-06 | workflow §7 — 「Implementation Gap」 아래에 [Runtime Implementation Plan](./runtime-implementation-plan.md) Task · Gate 배치 pointer 추가. 결정 · Timing · State · Owner 변경 없음, 새 RD 없음 | PR #304 |
 
 2026-10-03 ID 대응표(이전 → 현재):
 

@@ -1,6 +1,6 @@
 # search/experiments
 
-재현 가능한 실험 기록을 둔다. 입력/설정/결과/실패/다음 learning을 남긴다. AI 원문과 원본 영상은 저장소에 두지 않는다.
+재현 가능한 실험 기록을 둔다. 입력/설정/결과/실패/다음 learning을 남긴다. AI 원문과 원본 영상은 저장소에 두지 않는다. 신규 실험 결과 원본(JSON·JSONL)은 로컬에만 보관하고, Git에는 설정·수치 요약·해석을 담은 Markdown 보고서를 남긴다.
 
 - [coarse-fine-probe-summary-2026-09-12.md](coarse-fine-probe-summary-2026-09-12.md) — 약 39분 주행 영상 Coarse·Fine 탐침 총정리
 - [decision-trace-guide.md](decision-trace-guide.md) — 로컬 진단 실행과 전체 관찰 출력 형식
@@ -25,4 +25,10 @@
 - [Fine 고정 구간 sol × AI-Hub 참고 예시](gpt-sol-fine-fewshot-2026-10-02.md) — 예시 3장 유무 각 24호출; 양성 10/12 같음·음성 11→12/12로 효과 구분 안 됨. 예시 없이도 sol은 720p 고정 구간에서 141927을 3/3(정답 차량·실선) ([JSON](gpt-sol-fine-fewshot-2026-10-02-results.json))
 - [Fine 고정 구간 sol 해상도·detail·구간 폭](gpt-sol-fine-resolution-window-2026-10-02.md) — 하나씩 바꾼 4조건 각 24호출; 141927은 720p 9/9 대 360p 3/6로 해상도가 원인, detail·구간 폭은 무관. 720p 토큰 약 3배 ([JSON](gpt-sol-fine-resolution-window-2026-10-02-results.json))
 - [sol 파이프라인 Fine 720p](search-v3-gpt-sol-fine720-2026-10-02.md) — Fine만 720p로 3회; 위반 3·3·2/4, 오탐 0, 141927 처음 통과(2/3). 남은 실패는 모두 Coarse 후보 없음. 토큰 360p의 1.7배 ([JSON](search-v3-gpt-sol-fine720-2026-10-02-results.json))
+- [sol 파이프라인 Fine 720p · set1 10클립](search-v3-gpt-sol-fine720-set1-2026-10-04.md) — 10/02 최고 조건을 새 정답 10클립(사건 11)에 3회; 위반 1·1·1/11, Coarse가 정답 구간에 후보를 낸 건 33번 중 4번. 신호위반 Fine이 합법 출발을 `OBSERVED`로 오판(3건). 토큰 1.9배
+- [Flash 운영 조건 set1 · 탐지 유형 1개 vs 4개](search-flash-set1-event-types-2026-10-09.md) — 스트리밍 A/B3회 완료(범위 오류 포함); A2·1·1/11 vs B0·0·0/11, Coarse14/33 vs7/33. 후보60→65·비용+7.4%, 이번 개발 표본에서 동시 입력 차이 관찰. 비교 비용₩1,433, 실패/probe 포함 확인 누적₩1,680(미확인 요청2개 별도).
+- [AI Hub Coarse + sol Fine · 15개 영상](aihub-coarse-sol-fine-2026-10-04.md) — 정답 없이 1fps 탐지·IoU 추적으로 후보 63개 생성, Fine 720p 4fps 1회; 사건 구간 포함 7/13(앞뒤 4초 포함 10/13), 최종 정답 중첩 판정 2/13·신규 0/8·정상 3/3 기각. 대상 연결 오류·녹색 신호 오판 확인, 같은 set1 최종 1/11로 개선 없음
+- [AI Hub LRCN 분류 + sol Fine · 15개 영상](aihub-lrcn-sol-fine-2026-10-04.md) — 분류 후보 51개·독립 3종 Fine 1회; 정답 구간·종류 중첩 4/13, 신규 1/8·정상 후보 오탐 0/3, 앞선 공간 후보 조합 2/13보다 증가·토큰 35.4% 감소. 조건 차이·1회 실험으로 우월성 미확정
+- [AI Hub + sol 토큰 분석](aihub-sol-token-analysis-2026-10-04.md) — 기존 51/63호출 분석; 최신 약 127만 토큰의 이미지 비중 추정 93.3%, 중복 이미지 22.3%·여유 구간 57.3%·정상 후보 입력 29.6%. 새 API 호출 없이 계산
+- [AI Hub + sol 새 실험 설계](aihub-sol-budgeted-design-2026-10-04.md) — 5초 본문·fps 비교 후 대표 차선 표시 × 프롬프트 2×2, 통과 조건 전체 재검증. 단계 예산·오탐·사건 유지 기준을 사전 정의, 아직 실행하지 않음
 - [p4-retired-2026-09-25/conditions.md](p4-retired-2026-09-25/conditions.md) — 종료한 p4의 구현 계획, 두 회차 조건·보고서·결과, 원문 프롬프트 보존

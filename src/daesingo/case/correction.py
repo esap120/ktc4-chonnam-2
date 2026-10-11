@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from daesingo.case.domain import CaseAggregate
+from daesingo.case.domain import CaseAggregate, InvalidTransition
 
 CONTRACT_VERSION = "correction-record/v1.1"
 
@@ -38,6 +38,12 @@ def apply_correction(
     previous_value: Any,
     new_value: Any,
 ) -> dict[str, Any] | None:
+    # 후보에 묶인 값(번호판·시각·신고 유형 등)은 후보를 고른 뒤에만 고칠 수 있다 — 상태 기계 설계
+    # 초안 v1 §4(`CANDIDATE_REVIEW`: 「아직 선택 전」, `SEARCHING`: 조회만). 선택 context가 없는
+    # 정정은 기록할 `selection_rev`도, 반영할 evidence도 없다. 거부는 아무것도 바꾸기 전에 한다(#166).
+    # case 전체 값(`hints`·`candidate.selected_id`)은 각 호출자가 자기 허용 stage를 검사한다.
+    if target_field not in _CASE_SCOPED_TARGETS and case.stage not in ("EVIDENCE_REVIEW", "READY"):
+        raise InvalidTransition(f"{case.stage}에서는 {target_field}를 정정할 수 없다(후보 선택 전)")
     # 값이 실제로 바뀌지 않았으면 기록하지 않는다(correction-record §8-7, `edit_time_hint()`와 같은
     # 원칙) — 반환값 `None`, `case_rev`도 그대로. 기록하면 evidence가 조립할 때 거부하고, 기록은
     # 되돌리지 않으므로(§8-9) 그 case는 이후 CaseView를 만들 수 없게 된다.
@@ -73,6 +79,8 @@ def apply_correction(
         "corrected_at": _now(),
     }
     case.correction_records.append(record)
+    if target_field not in _CASE_SCOPED_TARGETS:
+        case.leave_ready()  # 값이 다시 조립된다 — PACKAGE_READY gate를 다시 봐야 한다
     case.bump_revision()  # 정정 제출 = 새 요청 → case_rev 상승(§3-E)
     return record
 
@@ -110,6 +118,7 @@ def edit_time_hint(case: CaseAggregate, hints_patch: dict[str, str | None]) -> d
     if not changed_new:
         return None
 
+    case.check_regress_to_searching()  # 거부될 요청이면 아무것도 남기지 않는다(#166과 같은 원칙)
     record = apply_correction(
         case, kind="TIME_HINT_EDIT", target_field="hints",
         previous_value=changed_previous, new_value=changed_new,

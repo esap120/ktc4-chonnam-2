@@ -55,6 +55,16 @@ class InvalidTransition(Exception):
     pass
 
 
+class SourceNotAccepted(Exception):
+    """원본 연결은 `INTAKE`에서만 받는다(8-17 case 쪽) — 분석 시작 뒤 추가 업로드는 거부한다.
+    HTTP status · code는 HTTP API Contract가 정한다."""
+
+
+# 빈 case의 초기값(HTTP API Contract §5.1 예시) — `decisions/empty-case-and-manifest.md`.
+_EMPTY_HINTS = ("time", "vehicle", "situation", "location")
+_EMPTY_MANIFEST = {"file_count": 0, "ok_file_count": 0, "failed_file_count": 0, "duration_sec": 0, "range": None}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
@@ -79,6 +89,13 @@ class Candidate:
     # search `CandidateEvent.span.representative_ms`(그 후보 timeline revision 기준 상대 ms) 그대로.
     # CaseView `candidates[].marker_ms`의 원천이다(#184). case가 계산·보정하지 않는다.
     representative_ms: int | None = None
+    # 저장된 상태에 있었지만 이 코드가 모르는 키(새 코드가 쓴 필드). 다시 저장할 때 그대로 쓴다 —
+    # rollback한 옛 코드가 새 필드를 지우지 않게(`decisions/case-store-mysql.md` §4).
+    extra: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
+
+
+# JobRecord 정산 사유 — case가 그 job의 결과를 더 기다리지 않게 된 이유(`decisions/running-jobs-derivation.md`).
+JOB_SETTLE_REASONS = ("REFLECTED", "STOPPED_WAITING", "CANCELLED", "SUPERSEDED")
 
 
 @dataclass
@@ -115,9 +132,77 @@ class CaseAggregate:
     # (`decisions/reselect-observation-reuse.md`). `selection_rev`와 달리 재선택으로는 오르지 않는다. CaseView 비노출.
     candidate_generation: int = 0
 
+    # COARSE_SEARCH가 쓴 AnalysisScope(`scope_id` → scope). JobRecord는 `scope_ref`만 들고 있어, process가
+    # 바뀌어도 scope를 다시 읽을 수 있게 aggregate에 남긴다(#246 S-4). CaseView 비노출. scope는 불변.
+    analysis_scopes: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    # case가 더는 결과를 기다리지 않는 job(`job_id` → `JOB_SETTLE_REASONS` 중 하나). `running_jobs[]`는
+    # 여기 없는 JobRecord다(계약 B§10 불변조건 5). 처음 사유가 이긴다. CaseView 비노출.
+    settled_jobs: dict[str, str] = field(default_factory=dict)
+
+    # 분석 시작 때 사용자가 적은 설명 원문(case-command Draft §11). 받은 그대로 두고 CaseView `description`으로
+    # 내린다. 분석 시작 전에는 `None`.
+    description: str | None = None
+
+    # 처리 가능한 등록 원본(등록 순서) — `{source_asset_ref, video_stream_ref, duration_sec}`. 분석 시작이 타임라인을
+    # 만들 입력이다(`decisions/start-analysis.md` §3-1). `video_stream_ref`는 등록 때 VIDEO가 정확히 하나였을 때만
+    # 있다 — case가 여러 VIDEO 중 하나를 고르지 않는다. CaseView 비노출.
+    sources: list[dict[str, Any]] = field(default_factory=list)
+
+    # 저장된 상태의 모르는 최상위 키 — `Candidate.extra`와 같은 이유. CaseView 비노출.
+    extra_state: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
+
     @classmethod
     def intake(cls, case_id: str, hints: dict[str, Any], manifest_summary: dict[str, Any]) -> "CaseAggregate":
+        """hints · manifest를 한 번에 받는 진입점 — fixture · 테스트 경로용. 제품 진입점은 빈 case를 만드는
+        `service.create_case()`이고, 원본은 `record_source_registered()`로 하나씩 들어온다."""
         return cls(case_id=case_id, stage="INTAKE", hints=dict(hints), manifest_summary=dict(manifest_summary))
+
+    @classmethod
+    def empty(cls, case_id: str) -> "CaseAggregate":
+        return cls(
+            case_id=case_id,
+            stage="INTAKE",
+            hints={key: None for key in _EMPTY_HINTS},
+            manifest_summary=dict(_EMPTY_MANIFEST),
+        )
+
+    def record_source_registered(
+        self, source_asset: dict[str, Any], media_streams: list[dict[str, Any]] | None = None
+    ) -> None:
+        """recording이 등록 · 연결한 원본 1개를 `manifest_summary`에 센다.
+
+        `file_count` +1, `availability=AVAILABLE`이면 `ok_file_count` +1. `failed_file_count`(의미 미결) ·
+        `duration_sec`(「전체 구간 길이」 — 전방 · 후방이 같은 시간대를 찍으면 합산이 틀린다) · `range`는
+        recording timeline 몫이라 여기서 계산하지 않는다. `case_rev`는 올리지 않는다 — 이후 판단의 입력이
+        아니고, 동시 업로드 응답이 뒤섞여도 분석 시작이 `stale_revision`에 걸리지 않게.
+
+        처리 가능한 원본은 `sources`에도 남긴다 — VIDEO 스트림이 정확히 하나면 그 ref, 아니면 `None`
+        (`decisions/start-analysis.md` §3-1).
+        """
+        if self.stage != "INTAKE":
+            raise SourceNotAccepted(f"원본 연결은 INTAKE에서만 받는다: stage={self.stage}")
+        self.manifest_summary["file_count"] += 1
+        if source_asset.get("availability") == "AVAILABLE":
+            self.manifest_summary["ok_file_count"] += 1
+            videos = [s["media_stream_ref"] for s in media_streams or [] if s.get("media_type") == "VIDEO"]
+            self.sources.append(
+                {
+                    "source_asset_ref": source_asset["source_asset_ref"],
+                    "video_stream_ref": videos[0] if len(videos) == 1 else None,
+                    "duration_sec": source_asset.get("duration_sec"),
+                }
+            )
+
+    def record_analysis_scope(self, scope: dict[str, Any]) -> None:
+        """scope는 불변이다 — 같은 `scope_id`로 다른 내용이 오면 거부한다."""
+        scope_id = scope["scope_id"]
+        if not isinstance(scope_id, str) or not scope_id or len(scope_id) > 128 or not scope_id.isascii():
+            raise ValueError(f"scope_id는 1~128자 ASCII 문자열이어야 한다: {scope_id!r}")
+        existing = self.analysis_scopes.get(scope_id)
+        if existing is not None and existing != scope:
+            raise ValueError(f"AnalysisScope는 바꿀 수 없다: {scope_id!r}")
+        self.analysis_scopes[scope_id] = dict(scope)
 
     def _advance(self, expected_from: str, to: str, *, bump_case_rev: bool = True) -> None:
         if self.stage != expected_from:
@@ -134,6 +219,15 @@ class CaseAggregate:
         # case_rev를 올리지 않는다 — "요청 시점 케이스 리비전"은 아직 바뀔 내용이 없다.
         self._advance("INTAKE", "SEARCHING", bump_case_rev=False)
 
+    def record_extracted_hints(self, hints: dict[str, str | None]) -> None:
+        """단서 구조화(`HINT_EXTRACT`) 결과로 `hints`를 바꾼다. 결과는 분석 시작 직후 탐색 발주 전에만
+        들어오므로 `SEARCHING` 전용이다. 사용자 요청이 아니라 실행 결과라 `case_rev`를 올리지 않는다
+        (`record_candidate_search_failure()`와 같다). 어떤 값을 넣을지(매핑 · 실패 처리)는
+        `analysis_start.hints_from_result()`가 정한다."""
+        if self.stage != "SEARCHING":
+            raise InvalidTransition(f"{self.stage}에서는 단서 구조화 결과를 받을 수 없다(SEARCHING 전용)")
+        self.hints = dict(hints)
+
     def record_candidate_search_failure(self) -> None:
         """후보 탐색 Run이 `FAILED`로 끝났다. 계약 §7(`RESUME_SEARCH` 행): 실패 Run은 투영 대상을
         바꾸지 않는다 — 후보 목록을 교체하지 않고, `CANDIDATE_REVIEW`로 진행하지도 않는다(그러면
@@ -142,6 +236,7 @@ class CaseAggregate:
         if self.stage != "SEARCHING":
             raise InvalidTransition(f"{self.stage}에서는 후보 탐색 실패를 받을 수 없다(SEARCHING 전용)")
         self.candidate_search_failed = True
+        self._reflect_waiting("COARSE_SEARCH")
 
     def receive_candidates(self, candidates: list[Candidate]) -> None:
         """빈 배열(candidates=[])은 실패가 아니다 — `scenario_empty_001` 원칙(2026-09-14,
@@ -155,6 +250,7 @@ class CaseAggregate:
         self.candidate_generation += 1
         self.candidate_search_failed = False
         self._advance("SEARCHING", "CANDIDATE_REVIEW")
+        self._reflect_waiting("COARSE_SEARCH")
 
     def select_candidate(self, candidate_id: str) -> None:
         """후보 선택은 case 소유(ownership.md §6) — evidence는 참조만 하고 복사해 갖지 않는다.
@@ -216,6 +312,14 @@ class CaseAggregate:
         self.user_reviewed = True
         self.bump_revision()
 
+    def check_regress_to_searching(self) -> None:
+        """`TIME_HINT_EDIT` 역행을 받아도 되는지 **아무것도 바꾸지 않고** 검사한다(`check_reselect()`와
+        같은 원칙, #166). `correction.edit_time_hint()`가 CorrectionRecord를 남기기 전에 먼저 부른다 —
+        예전엔 기록·`hints`·`case_rev`를 먼저 바꾼 뒤 역행이 거부돼 그것들만 남았다(탐색 실패로
+        `SEARCHING`에 머문 case, orchestration 지표 4차 측정)."""
+        if self.stage not in ("CANDIDATE_REVIEW", "EVIDENCE_REVIEW", "READY"):
+            raise InvalidTransition(f"{self.stage}에서는 SEARCHING으로 역행할 수 없다")
+
     def regress_to_searching(self) -> None:
         """`TIME_HINT_EDIT` 역행 전이 — `CANDIDATE_REVIEW`/`EVIDENCE_REVIEW`/`READY` 중 어디서든
         `SEARCHING`으로 되돌아간다(`부분 재실행 정책 표 초안` 1행: "다시 도는 것=1차 탐색,
@@ -227,8 +331,7 @@ class CaseAggregate:
         `case_rev`는 여기서 올리지 않는다 — 이 메서드를 부르는 `correction.edit_time_hint()`가
         `apply_correction()`으로 이미 한 번 올린다(한 사용자 요청 = 한 case_rev 증가, §3-E).
         """
-        if self.stage not in ("CANDIDATE_REVIEW", "EVIDENCE_REVIEW", "READY"):
-            raise InvalidTransition(f"{self.stage}에서는 SEARCHING으로 역행할 수 없다")
+        self.check_regress_to_searching()
         self.stage = "SEARCHING"
         self.candidates = []
         self.candidate_generation += 1
@@ -292,8 +395,24 @@ class CaseAggregate:
             "responded_at": responded_at,
             "candidate_ref": {"kind": "candidate_event", "ref": selected.candidate_id},
         }
+        self.leave_ready()
         self.bump_revision()
         return dict(self.situation_response)
+
+    def leave_ready(self) -> None:
+        """다시 조립되는 변경(값 정정·상황 응답)이 오면 `READY`에서 `EVIDENCE_REVIEW`로 내린다.
+
+        `READY`는 `PACKAGE_READY` 파생 gate이고(CaseView 계약 §10-9: READY면 FINAL이 PASS/WARN),
+        재조립 뒤에도 성립하는지는 새 결과를 봐야 안다 — 내리지 않으면 Package가 사라져도
+        `READY`로 남는다(orchestration 지표 4차 측정 I1). 상태 기계 설계 초안 v1 §3 「READY에서
+        어떤 정정이 들어와도 package는 즉시 무효화」. 성립하면 command의 성공 뒤 재확인이 다시
+        올린다(case-command 계약 §5).
+
+        `user_reviewed`는 건드리지 않는다 — 필드 수정과 별개다(계약 B절 `user_reviewed` ·
+        #173 값별 경계표). 새 초안이 되는 다른 후보 선택만 되돌린다(`reselect_candidate()`).
+        `case_rev`도 따로 올리지 않는다 — 같은 요청의 결과다(재선택과 같다)."""
+        if self.stage == "READY":
+            self.stage = "EVIDENCE_REVIEW"
 
     def next_job_id(self, kind: str) -> str:
         """case가 발주하는 모든 JobRecord는 **항상 새 job_id**를 받는다.
@@ -304,3 +423,24 @@ class CaseAggregate:
 
     def record_job(self, job_record: dict[str, Any]) -> None:
         self.job_records.append(job_record)
+
+    def settle_job(self, job_id: str, reason: str) -> bool:
+        """case가 `job_id`의 결과를 더 기다리지 않는다고 기록한다. 이미 정산된 job이면 처음 사유를
+        유지하고 `False` — 같은 결과가 두 번 와도 같다(#245 D-5). `case_rev`는 올리지 않는다."""
+        if reason not in JOB_SETTLE_REASONS:
+            raise ValueError(f"알 수 없는 정산 사유: {reason!r} (등록된 사유: {JOB_SETTLE_REASONS})")
+        if not any(r["job_id"] == job_id for r in self.job_records):
+            raise ValueError(f"이 case가 발주하지 않은 job_id: {job_id!r}")
+        if job_id in self.settled_jobs:
+            return False
+        self.settled_jobs[job_id] = reason
+        return True
+
+    def waiting_job_records(self) -> list[dict[str, Any]]:
+        """아직 정산되지 않은 JobRecord — `running_jobs[]`의 원천. `job_records` 순서."""
+        return [r for r in self.job_records if r["job_id"] not in self.settled_jobs]
+
+    def _reflect_waiting(self, kind: str) -> None:
+        for record in self.waiting_job_records():
+            if record["kind"] == kind:
+                self.settle_job(record["job_id"], "REFLECTED")

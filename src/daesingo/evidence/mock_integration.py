@@ -50,7 +50,7 @@ _IMPLEMENTATION_FILES = (
     "src/daesingo/evidence/policy.py",
     "src/daesingo/evidence/policy_data.json",
     "src/daesingo/evidence/policy_catalog.py",
-    "src/daesingo/evidence/requirement_rules_v5.json",
+    "src/daesingo/evidence/requirement_rules_v6.json",
     "src/daesingo/evidence/requirements.py",
     "src/daesingo/evidence/safety_report_policy_v1_2.json",
     "src/daesingo/evidence/time_resolution.py",
@@ -543,7 +543,7 @@ def run_all(root: Path, output_dir: Path) -> Contract:
         "implementation_fingerprints": fingerprints,
         "scenarios": results,
         "readiness": "PARTIAL_READY",
-        "reason": "Shared upstream contracts and a consumer reader are executable; H/U Package assembly succeeds under requirement-rules-v5, while real case projection and the I4 plate/time observation wiring remain unconnected.",
+        "reason": "Shared upstream contracts and a consumer reader are executable; H/U Package assembly succeeds under requirement-rules-v6, which no longer requires the I4 final-video plate/time observations (ADR-EVIDENCE-010), while real case projection and the post-stamp fact wiring remain unconnected.",
     }
     _write(output_dir / "run-summary.json", summary)
     return summary

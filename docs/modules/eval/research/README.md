@@ -9,3 +9,5 @@
 - `eval-dataset-plan.md` — 평가 데이터셋 3-tier(A/B/C) 구성 계획 원문과 현행 대조 (결정 아님)
 - `blackbox-storage-survey.md` — 제조사별 블랙박스 저장 방식 메모. **출처 미검증(LLM 응답)** — 인용 금지
 - `metric-provenance.md` — 지표별 문헌 출처 사후 대조표. 무엇을 「차용했다」고 말해도 되고 무엇이 우리 정의인지를 가른다 (결정 아님)
+- `metric-benchmark-scores.md` — 그 지표로 문헌·유사 연구(긴 영상 탐색, 블랙박스·CCTV 사고·위반, 번호판)가 실제로 몇 점을 냈나. 본문 표에서 읽은 숫자만, 표 번호와 영상 종류(블랙박스/CCTV) 표기 (결정 아님)
+- `baselines-vs-literature.md` — 우리 베이스라인(Gemini Coarse·readout)을 문헌 방식(tIoU R@K·mIoU·전체 표본 정확 일치)으로 다시 재서 문헌 점수와 비교. 말할 수 있는 것/없는 것 구분 (결정 아님)

@@ -16,7 +16,7 @@ Elice 모델 카드에서 확인한 단가(KRW/1M 토큰, `scripts/pricing.py`):
 
 시드 7건 × 후보 3개 + judge 21건 기준으로 계산하면 **총 실행 비용은 ₩50 미만**(1 크레딧=₩1 가정 시 12만 크레딧의 0.05% 미만) — `search`와 예산을 나눠 써도 문제없는 수준이다. 10배 여유를 둬도 ₩500 이내.
 
-**실측 결과(2026-09-19):** 후보 3개 실제 비용 합계 44.93 KRW(claude-haiku-4-5 34.21 + gpt-5-nano 8.34 + gemini-3.1-flash-lite 2.38) — 위 어림값과 같은 자릿수. judge(claude-sonnet-5) 비용은 `pricing.py`의 `KRW_PER_1M_TOKENS`에 없는 모델이라 집계에서 `None`으로 빠졌다(조용히 0으로 세지 않는다는 정책대로).
+**실측 결과(2026-09-19):** 후보 3개 실제 비용 합계 44.93 KRW(claude-haiku-4-5 34.21 + gpt-5-nano 8.34 + gemini-3.1-flash-lite 2.38) — 위 어림값과 같은 자릿수. judge(claude-sonnet-5) 비용은 `pricing.py`의 `KRW_PER_1M_TOKENS`에 없는 모델이라 집계에서 `None`으로 빠졌다(조용히 0으로 세지 않는다는 정책대로). **2026-10-04: judge 단가(Sonnet 5 · Opus 5)를 `pricing.py`에 넣어 이후 judge run부터 비용이 기록된다** — 48케이스 1회 판정 실측 Sonnet 5 약 ₩3,400 · Opus 5 약 ₩8,200(`results/judge-validation-robustness-v2.md` §6).
 
 ## 채점 방식 — 1차 가설, 실측 전 잠정
 
@@ -54,6 +54,7 @@ Elice 모델 카드에서 확인한 단가(KRW/1M 토큰, `scripts/pricing.py`):
 - 어떤 모델/프롬프트를 실측하든 이 파일을 그대로 재사용한다. 비교 대상이 바뀔 때마다 케이스를 새로 쓰면 이전 실측과 비교가 깨진다.
 - 케이스를 추가/수정해야 하면 파일을 고치지 않고 `intent-hint-eval-v2.jsonl`을 새로 만든다. 이전 버전으로 만든 `predictions/`·`results/`는 그대로 보존한다.
 - 버전 변경 사유는 이 README에 짧게 추가한다.
+- **`intent-hint-robustness-v3.jsonl`(2026-10-05, 100케이스)** — 멘토 피드백 Q2(데이터 증강 · 지식 증류). 기존 55건을 seed로 Claude Opus 5.5(Claude Code)가 만들었다(지원금 소모 없음). robustness 10개 카테고리 × 8 + 정상 계열 20. 행마다 규칙 채점용 구조화 정답 `expected`(+ 여러 사건은 `events`)가 있다 — 형식 · 생성 규칙은 `datasets/intent-hint-robustness-v3.SPEC.md`, 검증 과정 · 한계는 `results/consistency-robustness-v3.md`. v1 · v2 파일은 그대로다.
 
 ### 카테고리 (최소 고정 — v1은 카테고리당 1케이스)
 
@@ -68,6 +69,10 @@ Elice 모델 카드에서 확인한 단가(KRW/1M 토큰, `scripts/pricing.py`):
 | 잘못 입력 후 correction | 1회 호출 제한 하에서 `correction_target`을 올바르게 잡는지, 언급 안 된 다른 필드까지 덩달아 채우지 않는지 확인 — `prior_hints`로 이전 상태를 프롬프트에 준다 |
 
 각 row의 `expected_notes`는 모델이 뱉어야 할 정확한 문자열이 아니라 judge가 채점할 때 참고하는 사람이 쓴 판정 기준이다(자유 텍스트 필드는 문자열 완전일치로 채점할 수 없음).
+
+## 실험 원본 저장 (2026-10-05~)
+
+모델 출력 · judge 판정 JSON은 레포에 두지 않는다(멘토 리뷰 #146 — 결과는 문서로, 큰 원본은 공용 저장소로). 실험마다 zip으로 묶어 [팀 공유 드라이브](https://drive.google.com/drive/folders/1Aeo_kkCzfJ9uhdMjb0GlLK2L3XqL80BR)에 두고, 결과 문서 첫머리 「원본」 줄에 파일 이름을 적는다. 폴더의 `.gitignore`가 원본이 다시 들어오는 것을 막는다. 이 정책 전에 커밋된 `predictions/` · `predictions-robustness/` · `predictions-robustness-v2/` 첫 실행분은 그대로 둔다.
 
 ## 하네스 구조
 

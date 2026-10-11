@@ -1,0 +1,8 @@
+# 실험 원본(모델 출력 · judge 판정 JSON)은 레포에 두지 않는다(멘토 리뷰 #146 — 결과는 문서로, 큰 원본은 공용 저장소로).
+# 원본은 팀 공유 드라이브에 zip으로 둔다 — 위치는 각 results 문서 「원본」 줄.
+# 2026-10-04 이전 predictions/ · predictions-robustness/ · predictions-robustness-v2/ 원본(첫 실행 · 판정)은 이 정책 전에 커밋된 것이라 그대로 둔다.
+predictions-q3/
+predictions-v3-consistency/
+predictions-robustness-v2/**/*.judge.20261004*.json
+predictions-robustness-v2/**/*.judge.20261005*.json
+predictions-luna/

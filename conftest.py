@@ -15,3 +15,9 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parent / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+# Load before collection, including Case importorskip and opt-in fixtures.
+TEST_SUPPORT = Path(__file__).resolve().parent / "tests"
+if str(TEST_SUPPORT) not in sys.path:
+    sys.path.insert(0, str(TEST_SUPPORT))
+pytest_plugins = ["mysql_harness"]

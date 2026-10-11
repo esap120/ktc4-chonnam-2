@@ -39,6 +39,7 @@
 | 2026-09-08 (주요 문서 동기화) | §5-3 안내 · §11-1 안내 · §11-4 포인터 | **규칙·계약 목록·enum은 바꾸지 않았다.** §5-3에 겹쳐 쌓인 과거 상태 안내 5개(「작성 예정」·「최소 schema 제공 전」·B06~B09 Pending·1차/2차 갱신)를 **2026-09-08 최종 상태 한 블록으로 합쳤다.** 위 행들의 당시 상태는 이 표가 역사 기록으로 보존한다 | 같은 ADR §4.7~§4.10 · §9 · §10.2 |
 | 2026-09-19 (maintenance) | 문서 머리말 · §9-5 · §10-3 · §11 안내 · §13-2·§13-3 | **Architecture 결정 변경 없음.** 계약·Mock·구현 이후 상태 드리프트를 정리했다. `CorrectionRecord`/EvidenceNeeds·cache 규칙 등 이미 닫힌 Data Contract 항목을 현재 미결에서 제거하고, §11·§13을 historical handoff로 명시했다. Web stack은 모듈 Decision으로 이미 확정됐으므로 Architecture 미결에서 제외했다 | Final Contract 16건 현재 상태 · `modules/web/decisions/web-stack.md` · `README.md` 현재 구현 상태 · `runtime/` · `erd-draft.md` |
 | 2026-10-02 (maintenance) | §4-모듈5 ④ · §5-13 · §6-2 · §8-2 · §10-2 | **Architecture 결정 변경 없음.** Final Contract와 어긋난 잔존 표현을 정합화했다. `JobExecution` status에 v1.1 `CANCELLED` 반영, §5-13의 `JobRecord` 실행 lifecycle을 `JobExecution`으로 이동, §6-2 결과 기록 대상을 `JobExecution`으로 정정, §8-2의 「case_rev mismatch → STALE」을 Contract 의미(STALE = Worker 소멸, old `case_rev` 결과는 SUCCEEDED 유지·case가 미반영)로 정정, §10-2 Search baseline을 #95 Elice 전환 이후 상태로 갱신 | `contracts/contract-job-execution.md` §6·§9 · `contracts/contract-job-record-case-view.md` A절 · `runtime/reviews/runtime-ops-consistency-audit-2026-10-02.md` A-05·A-06·B-01 |
+| 2026-10-04 (maintenance) | §4-모듈5 ④ · §8-2 | **Architecture 결정 변경 없음.** 늦은 결과 배제 기준을 「현재 `case_rev`와 맞는 결과만 반영」에서 「case가 현재 context에 유효하다고 판단한 결과만 반영」(중단된 `job_id` 집합 + 현재 선택 context)으로 정합화했다. 같은 `case_rev`에서 병렬 Job이 돌기 때문이다(case Owner 유소연 요청) | `contracts/contract-job-execution.md` §9-8 · Issue #245 C-1a · `runtime/runtime-tech-spec.md` §12.2 |
 
 ---
 
@@ -857,7 +858,8 @@ common/runtime
      lease · heartbeat · retry timing · available_at · execution error
       ↓ produced refs
 case
-  └─ 현재 case_rev와 맞는 결과만 domain state에 반영
+  └─ 현재 context에 유효하다고 판단한 결과만 domain state에 반영
+     (중단된 job_id 집합 + 현재 선택 context — case_rev 일치로 거르지 않음)
 ```
 
 즉 **발주 정책은 case**, **실행 lifecycle은 common/runtime**이다.
@@ -1548,10 +1550,11 @@ module result
   ↓
 SUCCEEDED / FAILED
   ↓
-case_rev mismatch이면 execution은 SUCCEEDED 그대로 두고, case가 produced를 반영하지 않아 현재 CaseView를 덮지 않음
+case가 현재 context에 유효하지 않다고 판단한 결과(중단된 job_id · 현재 선택과 맞지 않음)이면
+execution은 SUCCEEDED 그대로 두고, case가 produced를 반영하지 않아 현재 CaseView를 덮지 않음
 ```
 
-`STALE`은 old `case_rev` 결과가 아니라 **실행 중 Worker가 살아 있지 않다고 Runtime이 판정한 terminal 실행 상태**다. 상태 의미는 `contracts/contract-job-execution.md` §6 · §9-8이 소유한다. (2026-10-02 표기 정합 — 이전 문구 「case_rev mismatch이면 STALE로 처리」는 Final Contract와 충돌해 바로잡았다.)
+`STALE`은 old `case_rev` 결과가 아니라 **실행 중 Worker가 살아 있지 않다고 Runtime이 판정한 terminal 실행 상태**다. 상태 의미는 `contracts/contract-job-execution.md` §6 · §9-8이 소유한다. (2026-10-02 표기 정합 — 이전 문구 「case_rev mismatch이면 STALE로 처리」는 Final Contract와 충돌해 바로잡았다. 2026-10-04 — 반영 기준도 `case_rev` 일치가 아니라 case의 context 유효성 판단으로 정합, #245 C-1a.)
 
 같은 input fingerprint를 재사용할지, reread처럼 cache bypass할지는 **case rerun policy**가 결정한다.
 

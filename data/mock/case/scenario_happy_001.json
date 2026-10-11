@@ -71,6 +71,7 @@
       "case_rev": 1,
       "stage": "SEARCHING",
       "user_reviewed": false,
+      "description": null,
       "manifest_summary": {
         "file_count": 2,
         "ok_file_count": 2,
@@ -143,6 +144,7 @@
       "case_rev": 2,
       "stage": "EVIDENCE_REVIEW",
       "user_reviewed": false,
+      "description": null,
       "manifest_summary": {
         "file_count": 2,
         "ok_file_count": 2,
@@ -578,6 +580,7 @@
       "case_rev": 4,
       "stage": "READY",
       "user_reviewed": false,
+      "description": null,
       "manifest_summary": {
         "file_count": 2,
         "ok_file_count": 2,
@@ -1038,7 +1041,11 @@
           "safety_report_type",
           "location",
           "violation_expression"
-        ]
+        ],
+        "report": {
+          "title": "진로변경 위반 차량 신고",
+          "description": "2026-08-24 18:05:12경 상무중앙로 사거리 부근에서\n차량번호 12가3456 차량이\n백색 실선을 넘어 진로를 변경하는 것을 확인하여 신고합니다.\n첨부 영상에서 해당 위반 상황을 확인할 수 있습니다."
+        }
       },
       "running_jobs": [],
       "notices": [
@@ -1058,6 +1065,7 @@
       "case_rev": 5,
       "stage": "READY",
       "user_reviewed": true,
+      "description": null,
       "manifest_summary": {
         "file_count": 2,
         "ok_file_count": 2,
@@ -1518,7 +1526,11 @@
           "safety_report_type",
           "location",
           "violation_expression"
-        ]
+        ],
+        "report": {
+          "title": "진로변경 위반 차량 신고",
+          "description": "2026-08-24 18:05:12경 상무중앙로 사거리 부근에서\n차량번호 12가3456 차량이\n백색 실선을 넘어 진로를 변경하는 것을 확인하여 신고합니다.\n첨부 영상에서 해당 위반 상황을 확인할 수 있습니다."
+        }
       },
       "running_jobs": [],
       "notices": [

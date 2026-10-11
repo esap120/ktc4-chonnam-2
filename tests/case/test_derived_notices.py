@@ -97,7 +97,8 @@ def test_build_view_from_adapter_attaches_notice():
     view = service.build_view_from_adapter(case, adapter)
 
     assert view["evidence"]["location_display"]["search_keyword"] is None
-    assert [n["code"] for n in view["notices"]] == [CODE]
+    # overlay가 안 찍힌 영상이라 `readout.overlay_not_present`도 붙는다 — fixture 마지막 revision과 같은 순서다.
+    assert [n["code"] for n in view["notices"]] == ["readout.overlay_not_present", CODE]
 
 
 # ── case.situation_response_pending ─────────────────────────────────────

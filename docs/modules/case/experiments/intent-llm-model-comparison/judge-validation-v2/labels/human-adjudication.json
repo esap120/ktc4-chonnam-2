@@ -1,0 +1,72 @@
+[
+  {
+    "item_id": "jv-003",
+    "group": "reading",
+    "choice": "A",
+    "chose": "judge",
+    "verdict": "hallucinated"
+  },
+  {
+    "item_id": "jv-008",
+    "group": "rule",
+    "choice": "A",
+    "chose": "judge",
+    "verdict": "hallucinated"
+  },
+  {
+    "item_id": "jv-028",
+    "group": "rule",
+    "choice": "B",
+    "chose": "judge",
+    "verdict": "correct"
+  },
+  {
+    "item_id": "jv-036",
+    "group": "rule",
+    "choice": "A",
+    "chose": "ai",
+    "verdict": "correct"
+  },
+  {
+    "item_id": "jv-037",
+    "group": "reading",
+    "choice": "B",
+    "chose": "ai",
+    "verdict": "correct"
+  },
+  {
+    "item_id": "jv-038",
+    "group": "reading",
+    "choice": "A",
+    "chose": "ai",
+    "verdict": "correct"
+  },
+  {
+    "item_id": "jv-041",
+    "group": "rule",
+    "choice": "A",
+    "chose": "ai",
+    "verdict": "correct"
+  },
+  {
+    "item_id": "jv-048",
+    "group": "reading",
+    "choice": "A",
+    "chose": "ai",
+    "verdict": "correct"
+  },
+  {
+    "item_id": "jv-062",
+    "group": "reading",
+    "choice": "B",
+    "chose": "judge",
+    "verdict": "partial"
+  },
+  {
+    "item_id": "jv-070",
+    "group": "rule",
+    "choice": "B",
+    "chose": "ai",
+    "verdict": "correct"
+  }
+]
