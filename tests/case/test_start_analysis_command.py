@@ -39,6 +39,10 @@ def _start(case_id: str, description: str, rev: int = 1) -> dict:
     return {"case_id": case_id, "expected_case_rev": rev, "kind": "START_ANALYSIS", "payload": {"description": description}}
 
 
+def _hint_id(store: CaseStore, case_id: str) -> str:
+    return next(r["job_id"] for r in store.get_case(case_id).job_records if r["kind"] == "HINT_EXTRACT")
+
+
 def test_start_returns_hint_extract_as_appended_and_pending():
     store, case_id = _store_with_sources(1)
     result = command.execute_command(_start(case_id, "흰 SUV"), store=store, timelines=FakeTimelines())
@@ -114,7 +118,11 @@ def test_reflection_entrypoint_returns_appended_coarse_search():
     store, case_id = _store_with_sources(1)
     command.execute_command(_start(case_id, "흰 SUV"), store=store, timelines=FakeTimelines())
     result = service.receive_hint_extraction_result(
-        case_id, {"status": "OK", "vehicle_hint": "흰 SUV"}, store=store, timelines=FakeTimelines()
+        case_id,
+        {"status": "OK", "vehicle_hint": "흰 SUV"},
+        job_id=_hint_id(store, case_id),
+        store=store,
+        timelines=FakeTimelines(),
     )
     assert result.reflected is True
     assert [r["kind"] for r in result.appended_job_records] == ["COARSE_SEARCH"]
@@ -126,8 +134,11 @@ def test_reflection_entrypoint_returns_appended_coarse_search():
 def test_duplicate_reflection_returns_nothing():
     store, case_id = _store_with_sources(1)
     command.execute_command(_start(case_id, "x"), store=store, timelines=FakeTimelines())
-    service.receive_hint_extraction_result(case_id, {"status": "OK"}, store=store, timelines=FakeTimelines())
-    again = service.receive_hint_extraction_result(case_id, {"status": "OK"}, store=store, timelines=FakeTimelines())
+    job_id = _hint_id(store, case_id)
+    service.receive_hint_extraction_result(case_id, {"status": "OK"}, job_id=job_id, store=store, timelines=FakeTimelines())
+    again = service.receive_hint_extraction_result(
+        case_id, {"status": "OK"}, job_id=job_id, store=store, timelines=FakeTimelines()
+    )
     assert again.reflected is False
     assert again.appended_job_records == []
     assert len(store.get_case(case_id).job_records) == 2
@@ -137,7 +148,9 @@ def test_reflection_timeline_failure_saves_nothing():
     store, case_id = _store_with_sources(1)
     command.execute_command(_start(case_id, "x"), store=store, timelines=FakeTimelines())
     with pytest.raises(TimelineUnavailable):
-        service.receive_hint_extraction_result(case_id, {"status": "OK"}, store=store, timelines=FakeTimelines(fail=True))
+        service.receive_hint_extraction_result(
+            case_id, {"status": "OK"}, job_id=_hint_id(store, case_id), store=store, timelines=FakeTimelines(fail=True)
+        )
     saved = store.get_case(case_id)
     assert saved.settled_jobs == {}
     assert [r["kind"] for r in saved.job_records] == ["HINT_EXTRACT"]
@@ -176,7 +189,9 @@ def test_two_videos_end_to_end_with_recording(tmp_path):
         )
     timelines = RecordingSequentialTimelineSource(recording)
     command.execute_command(_start(case_id, "흰 SUV"), store=store, timelines=timelines)
-    result = service.receive_hint_extraction_result(case_id, {"status": "ABSTAINED"}, store=store, timelines=timelines)
+    result = service.receive_hint_extraction_result(
+        case_id, {"status": "ABSTAINED"}, job_id=_hint_id(store, case_id), store=store, timelines=timelines
+    )
     coarse = result.appended_job_records[0]
     scope = store.get_case(case_id).analysis_scopes[coarse["scope_ref"]]
     assert scope["time_ranges"][0]["end_ms"] == 20_000

@@ -109,16 +109,23 @@ def start_analysis(
 
 
 def reflect_hint_extraction(
-    case: CaseAggregate, result: dict[str, Any], *, timelines: CaseTimelineSource, budget: InitialSearchBudget
+    case: CaseAggregate,
+    result: dict[str, Any],
+    *,
+    job_id: str,
+    timelines: CaseTimelineSource,
+    budget: InitialSearchBudget,
 ) -> bool:
-    """기다리던 `HINT_EXTRACT`가 있을 때만 hints를 채우고 정산한 뒤 첫 탐색을 발주한다. 없으면(같은 결과의
-    두 번째 도착) 아무것도 바꾸지 않고 `False`. 결과 상태는 상태를 바꾸기 전에 검사한다."""
-    waiting = [r for r in case.waiting_job_records() if r["kind"] == "HINT_EXTRACT"]
-    if not waiting:
+    """`job_id`(`HINT_EXTRACT`)를 case가 아직 기다릴 때만 hints를 채우고 그 job을 정산한 뒤 첫 탐색을 발주한다.
+    중단(`CANCELLED`) · 이미 반영된 job의 결과면(늦은 결과 · 같은 결과의 두 번째 도착) 아무것도 바꾸지 않고
+    `False`(8-9, #245 C-4). 결과 상태는 상태를 바꾸기 전에 검사한다."""
+    record = next((r for r in case.job_records if r["job_id"] == job_id), None)
+    if record is not None and record["kind"] != "HINT_EXTRACT":
+        raise ValueError(f"HINT_EXTRACT job이 아니다: {job_id!r} ({record['kind']})")
+    if not case.awaits_result(job_id):
         return False
     hints = hints_from_result(result)
     case.record_extracted_hints(hints)
-    for record in waiting:
-        case.settle_job(record["job_id"], "REFLECTED")
+    case.settle_job(job_id, "REFLECTED")
     issue_initial_search(case, timelines=timelines, budget=budget)
     return True

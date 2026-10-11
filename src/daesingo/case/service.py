@@ -220,6 +220,7 @@ def build_view_from_adapter(
         evidence_needs=snapshot.evidence_needs,
         visual_evidence_decision=snapshot.visual_evidence_decision,
         plate_read_retry_basis=jobs.latest_job_record(case, "PLATE_READ") is not None,
+        search_retry_basis=jobs.latest_job_record(case, "COARSE_SEARCH") is not None,
         visual_verify_status=visual_verify_status,
         overlay_time_readouts=snapshot.overlay_time_readouts,
     )
@@ -307,6 +308,16 @@ VISUAL_VERIFY_FAILED_NOTICE: dict[str, Any] = {
 # `contract-job-record-case-view.md` B절 `notices[].code` 등재값(2026-09-30, #172 D-3 case 후속).
 # 모양은 `scenario_plate_reread_001` fixture 값이되, `MANUAL_PLATE_INPUT`은 입력형 command 판본(#106)
 # 전에는 보낼 경로가 없어 `actions`를 비운다.
+ANALYSIS_STOPPED_NOTICE: dict[str, Any] = {
+    # 사용자가 「분석 진행」을 중단했다(고도화 8-9, `decisions/stop-analysis.md`). 「이어서 찾기」는 영상 전체를 다시
+    # 보는 새 탐색 의도라(core-user-flow §7) `RETRY_SEARCH`와 같은 발주다 — 다시 낼 `COARSE_SEARCH` 근거가 없으면 뺀다.
+    "code": "case.analysis_stopped",
+    "severity": "INFO",
+    "blocking": False,
+    "message_key": "notice.analysis_stopped",
+    "actions": ["RETRY_SEARCH"],
+}
+
 PLATE_ABSTAINED_NOTICE: dict[str, Any] = {
     "code": "evidence.plate_abstained",
     "severity": "WARN",
@@ -365,11 +376,14 @@ def derive_notices(
     plate_read_retry_basis: bool = False,
     visual_verify_status: str | None = None,
     overlay_time_readouts: list[dict[str, Any]] | None = None,
+    search_retry_basis: bool = False,
 ) -> dict[str, Any]:
     """조립된 `CaseView` 값만으로 발동 조건이 정해지는 notice를 덧붙인다.
 
     - `search.candidate_search_failed` — 진행 상태 `coarse_search`가 `FAILED`일 때(PR #187 리뷰).
       evidence 유무와 무관하다.
+    - `case.analysis_stopped` — `stage=SEARCHING`이고 진행 상태 `coarse_search`가 `PARTIAL`일 때(사용자 중단, 8-9).
+      「이어서 찾기」(`RETRY_SEARCH`)는 다시 낼 `COARSE_SEARCH` 발주 근거(`search_retry_basis`)가 있을 때만 싣는다.
     - `search.no_candidates` — `stage=CANDIDATE_REVIEW`이고 `candidates`가 비었을 때. 탐색 실패는
       `SEARCHING`에 머물므로(PR #197) 이 조건에 들지 않는다.
     - `readout.plate_read_failed` — 진행 상태 `plate_read`가 `FAILED`일 때(#172 [D]). evidence
@@ -406,6 +420,10 @@ def derive_notices(
     # 후보 탐색 실패는 evidence 유무와 무관하게 알린다 — 실패를 「결과 없음」으로 보이지 않게 한다.
     if any(s["step"] == "coarse_search" and s["state"] == "FAILED" for s in view.get("progress", [])):
         derived.append(CANDIDATE_SEARCH_FAILED_NOTICE)
+    if view.get("stage") == "SEARCHING" and any(
+        s["step"] == "coarse_search" and s["state"] == "PARTIAL" for s in view.get("progress", [])
+    ):
+        derived.append(ANALYSIS_STOPPED_NOTICE if search_retry_basis else dict(ANALYSIS_STOPPED_NOTICE, actions=[]))
     if view.get("stage") == "CANDIDATE_REVIEW" and not view.get("candidates"):
         derived.append(NO_CANDIDATES_NOTICE)
     # 번호판 판독 실행 실패는 evidence 유무와 무관하게 알린다(#172 [D]) — 「읽지 못함」은 값
@@ -512,16 +530,21 @@ def receive_hint_extraction_result(
     case_id: str,
     result: dict[str, Any],
     *,
+    job_id: str,
     store: CaseStore,
     timelines: CaseTimelineSource,
     budget: InitialSearchBudget | None = None,
 ) -> ReflectionResult:
     """Worker가 단서 구조화 결과를 반영하는 진입점(`decisions/start-analysis.md` §3-6). `load_for_update` → 반영 →
-    성공했을 때만 `save`. 기다리던 `HINT_EXTRACT`가 없으면(중복 결과) 저장하지 않는다. 예외는 그대로 올라가고
-    저장되지 않는다 — transaction rollback은 호출자 몫이다(#245 D-2)."""
+    성공했을 때만 `save`. `job_id`는 그 결과를 낸 `HINT_EXTRACT` job이다 — case가 더 기다리지 않는 job(사용자 중단 ·
+    중복 결과)이면 저장하지 않는다(8-9). 예외는 그대로 올라가고 저장되지 않는다 — transaction rollback은 호출자
+    몫이다(#245 D-2)."""
     case = store.load_for_update(case_id)
     jobs_before = len(case.job_records)
-    if not reflect_hint_extraction(case, result, timelines=timelines, budget=budget or InitialSearchBudget()):
+    reflected = reflect_hint_extraction(
+        case, result, job_id=job_id, timelines=timelines, budget=budget or InitialSearchBudget()
+    )
+    if not reflected:
         return ReflectionResult(appended_job_records=[], reflected=False)
     store.save(case)
     return ReflectionResult(appended_job_records=copy.deepcopy(case.job_records[jobs_before:]), reflected=True)

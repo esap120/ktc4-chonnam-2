@@ -45,6 +45,7 @@ _PAYLOAD_KEYS = {
     "MARK_REVIEWED": frozenset(),
     "RUN_NOTICE_ACTION": frozenset({"notice_code", "action"}),
     "START_ANALYSIS": frozenset({"description"}),
+    "STOP_ANALYSIS": frozenset(),
 }
 
 
@@ -142,12 +143,21 @@ def _start_analysis(
         raise _Rejected("not_allowed") from None
 
 
+def _stop_analysis(case: CaseAggregate, payload: dict[str, Any], view: dict[str, Any]) -> None:
+    # 「분석 진행」(SEARCHING)만 받는다 — 「초안 준비 중」 중단은 product 미결(`decisions/stop-analysis.md`).
+    try:
+        case.stop_analysis()
+    except InvalidTransition:
+        raise _Rejected("not_allowed") from None
+
+
 _HANDLERS = {
     "SELECT_OTHER_CANDIDATE": _select_other_candidate,
     "RECORD_SITUATION_RESPONSE": _record_situation_response,
     "MARK_REVIEWED": _mark_reviewed,
     "RUN_NOTICE_ACTION": _run_notice_action,
     "START_ANALYSIS": _start_analysis,
+    "STOP_ANALYSIS": _stop_analysis,
 }
 
 
@@ -165,10 +175,13 @@ class CommandResult:
     """`execute_command()`의 결과. `response`는 web에 그대로 가는 §4 응답이고,
     `appended_job_records`는 이번 command로 append된 JobRecord(복사본)다 — composition root가
     enqueue와 HTTP 200/202 판단에 쓰며 응답 body에는 싣지 않는다(HTTP API Contract §5.3,
-    `decisions/command-appended-job-records.md`). 실패한 command는 늘 `[]`다."""
+    `decisions/command-appended-job-records.md`). `cancelled_job_ids`는 이번 command로 case가 `CANCELLED`로 정산한
+    job이다 — composition root가 같은 transaction에서 Runtime `request_cancel(conn, job_ids)`를 부른다(`STOP_ANALYSIS`,
+    `decisions/stop-analysis.md`). 둘 다 실패한 command는 늘 `[]`다."""
 
     response: dict[str, Any]
     appended_job_records: list[dict[str, Any]] = field(default_factory=list)
+    cancelled_job_ids: list[str] = field(default_factory=list)
 
 
 def handle_command(
@@ -232,6 +245,7 @@ def execute_command(
         return CommandResult(_response("stale_revision", view))
 
     jobs_before = len(case.job_records)
+    settled_before = dict(case.settled_jobs)
     handler = _HANDLERS[request["kind"]]
     if request["kind"] == "START_ANALYSIS":
         handler = functools.partial(_start_analysis, timelines=timelines, budget=budget or InitialSearchBudget())
@@ -245,4 +259,5 @@ def execute_command(
         mark_ready_if_package_ready(case, store.get_adapter(case_id, case))
     store.save(case)
     appended = copy.deepcopy(case.job_records[jobs_before:])
-    return CommandResult(_response(None, view_of(case)), appended)
+    cancelled = [j for j, reason in case.settled_jobs.items() if reason == "CANCELLED" and j not in settled_before]
+    return CommandResult(_response(None, view_of(case)), appended, cancelled)
