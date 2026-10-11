@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from daesingo.common.job_execution import RuntimeContractRef
 from daesingo.common.jobs.heartbeat import OwnershipFence
+from daesingo.common.jobs.cancel import CancelSignal
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,10 +18,12 @@ class ExecutionContext:
     kind: str
     attempt: int
     trace_id: str
-    # Reserved injection points. RT-05/07 own their protocols and behavior.
-    cancel_signal: object | None = None
+    cancel_signal: CancelSignal = field(default_factory=CancelSignal, compare=False, repr=False)
     usage_sink: object | None = None
     ownership: OwnershipFence = field(default_factory=OwnershipFence, compare=False, repr=False)
+
+    def checkpoint(self) -> None:
+        self.cancel_signal.checkpoint()
 
 
 class HandlerResult(BaseModel):

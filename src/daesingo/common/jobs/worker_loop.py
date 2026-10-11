@@ -1,6 +1,7 @@
 """Single-execution scheduling; only short claim/T1 callbacks touch the DB."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 import logging
 import sys
 from threading import Event
@@ -13,16 +14,23 @@ from daesingo.common.db.errors import TransactionRetryExhausted, db_reason
 from daesingo.common.jobs.execution import ExecutionContext, HandlerResult, runtime_failure, validated_terminal
 from daesingo.common.jobs.repository import ClaimedExecution, ClaimLostError
 from daesingo.common.jobs.heartbeat import OwnershipLost
+from daesingo.common.jobs.cancel import CancellationRequested, CancelledExecution
 from daesingo.common.logging import bind_context, log_event_best_effort, safe_correlation
 
 _DB_ERRORS = (DBAPIError, TimeoutError, TransactionRetryExhausted)
+
+
+@dataclass(frozen=True, slots=True)
+class TerminalCommit:
+    """Internal successful T1 receipt, frozen before sinks/pool cleanup."""
+    acknowledged_at: float | None
 
 
 class WorkerLoop:
     def __init__(
         self, *, claim: Callable[[], ClaimedExecution | None],
         dispatch: Callable[[ExecutionContext], HandlerResult],
-        record: Callable[[ExecutionContext, HandlerResult], bool],
+        record: Callable[[ExecutionContext, HandlerResult | CancelledExecution], bool | TerminalCommit],
         settings: WorkerSettings, stop: Event, logger: logging.Logger,
         reflect: Callable[[ExecutionContext, HandlerResult], object] | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -76,6 +84,8 @@ class WorkerLoop:
                             result = runtime_failure("RUNTIME_INVALID_RESULT")
                         else:
                             result = validated_terminal(result)
+                    except CancellationRequested:
+                        result = CancelledExecution()
                     except Exception:
                         result = runtime_failure("RUNTIME_HANDLER_ERROR")
                     # Preserve terminal facts across DB retries; every attempt,
@@ -92,6 +102,19 @@ class WorkerLoop:
                             if context.ownership.lost:
                                 break
                             self.sleep(self.settings.error_backoff_sec)
+                    if committed and result.status == "CANCELLED":
+                        # A production receipt retains the COMMIT endpoint even
+                        # if record's terminal metric sink was slow or failed.
+                        # Metrics run outside the terminal transaction retry path.
+                        try:
+                            ended = (committed.acknowledged_at if isinstance(committed, TerminalCommit)
+                                     else context.cancel_signal.clock())
+                            checkpoint_at = context.cancel_signal.checkpoint_at
+                            if ended is not None and checkpoint_at is not None:
+                                log_event_best_effort(self.logger, "runtime.cancel.checkpoint_to_terminal_ms",
+                                    status="CANCELLED", duration_ms=max(0, (ended - checkpoint_at) * 1000))
+                        except Exception:
+                            pass
                 finally:
                     if heartbeat is not None:
                         primary = sys.exc_info()[1]
@@ -103,7 +126,7 @@ class WorkerLoop:
                 if committed:
                     log_event_best_effort(self.logger, "runtime.execution.completed", status=result.status,
                               duration_ms=max(0, (self.clock() - started) * 1000))
-                    if self.reflect is not None:
+                    if self.reflect is not None and result.status != "CANCELLED":
                         try:
                             self.reflect(context, result)
                         except _DB_ERRORS as error:

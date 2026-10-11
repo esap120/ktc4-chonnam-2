@@ -48,6 +48,12 @@ LIFECYCLE_CHECKS = (
 )
 
 WORKER_CHECKS = (
+    ("cancel_worker", "terminal_ack"),
+    ("cancel_worker", "observe_commit"), ("cancel_worker", "queued_no_usage"),
+    *(("cancel", scenario) for scenario in (
+        "states", "transaction", "claim_race", "sweep_race", "finish_race", "lock_order", "validation", "sweep_pending")),
+    *(("cancel_worker", scenario) for scenario in (
+        "observe", "late_success", "ownership", "heartbeat_error", "cleanup", "db_clock", "observation_fault")),
     ("heartbeat_lifecycle", "owned_cleanup"),
     *(("heartbeat_lifecycle", scenario) for scenario in (
         "renewal", "zero_rows", "commit_race", "retry_fence", "cleanup", "slow_attempt", "error_isolation", "connection_fault", "zero_commit_failure")),
@@ -63,6 +69,21 @@ WORKER_CHECKS = (
 )
 
 WORKER_PARAMETERS = (
+    *(("cancel_worker", "terminal_ack", mode) for mode in
+      ("commit_delay", "slow_logger", "lock_wait", "unknown_commit", "retry",
+       "logger", "filter", "handler", "calculation", "zero_rows")),
+    *(("cancel", "states", state) for state in
+      ("QUEUED", "RUNNING", "STALE", "SUCCEEDED", "FAILED", "CANCELLED")),
+    *(("cancel", "transaction", mode) for mode in ("commit", "rollback")),
+    *(("cancel", "claim_race", mode) for mode in ("cancel", "claim", "concurrent")),
+    *(("cancel", "sweep_race", mode) for mode in ("sweep", "cancel")),
+    *(("cancel", "finish_race", mode) for mode in ("SUCCEEDED", "CANCELLED", "marker")),
+    *(("cancel_worker", "observe", sink) for sink in
+      ("healthy", "logger", "filter", "handler", "observer")),
+    *(("cancel_worker", "ownership", mode) for mode in ("ownership", "cancel")),
+    *(("cancel_worker", "cleanup", mode) for mode in
+      ("success", "failure", "exception", "interrupt", "exit", "cancel")),
+    *(("cancel_worker", "observation_fault", fault) for fault in ("read", "commit")),
     *(("heartbeat_lifecycle", "retry_fence", mode) for mode in ("transaction", "loop")),
     *(("heartbeat_lifecycle", "owned_cleanup", mode) for mode in
       ("success", "heartbeat_interrupt", "handler_interrupt")),
@@ -151,6 +172,7 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
         [sys.executable, "-B", "-X", "utf8", "-m", "pytest", "tests/common/db/integration", "tests/common/jobs",
          "tests/worker/test_worker_mysql.py", "tests/worker/test_reflection_mysql.py",
          "tests/worker/test_heartbeat_mysql.py",
+         "tests/worker/test_cancel_checkpoint_mysql.py",
          "tests/case/test_store_mysql.py", "tests/case/test_case_repository_contract.py",
          "--ignore=tests/common/db/integration/test_migration_gate.py", "-m", "mysql", "-q",
          "-p", "no:cacheprovider", f"--basetemp={tmp_path / 'child'}",
