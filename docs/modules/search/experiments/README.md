@@ -2,6 +2,8 @@
 
 재현 가능한 실험 기록을 둔다. 입력/설정/결과/실패/다음 learning을 남긴다. AI 원문과 원본 영상은 저장소에 두지 않는다. 신규 실험 결과 원본(JSON·JSONL)은 로컬에만 보관하고, Git에는 설정·수치 요약·해석을 담은 Markdown 보고서를 남긴다.
 
+- [Retrieval Coarse 사전검증 (#279 실험 B)](retrieval-coarse-preflight-2026-10-11.md) — SigLIP so400m 프레임·문장 유사도, set1 13클립 1,240프레임. 판단용 3유형 Recall@3 4/11(무작위 95백분위 3 초과·기준 5/11 미달) → 약한 신호. 적중 4건 중 2건이 신호위반, 차선 유형은 유형 구분 못 함
+- [Retrieval Coarse v2 — 선에 걸친 장면 문장·4fps·정상 대비](retrieval-coarse-v2-2026-10-11.md) — 사후 설계. 판단용 Recall@3 2/11(무작위 95백분위 4 이하) → 신호 부족. 차선 문장과 정상 주행 문장 유사도 상관 0.94–0.96. 차선 표시 프레임 점검도 AUC 0.44로 미통과
 - [차선·차량·Gemini 테스트 통합 기록](lane-violation-tests-summary-2026-10-10.md) — AI Hub→2fps→실선/점선→프롬프트 변경→전체 힌트와 CV 후속 결과
 - [표시본 + 사용자 전체 정답 힌트](gemini-overlay-full-user-hints-2026-10-10.md) — 6영상×3회 완료. 양성18/18과 실제 대상·이동 근거를 구분
 - [PP-LiteSeg 실선·점선 구분](pp-liteseg-solid-dashed-2026-10-10.md) — 2영상/80관측. dashed 출력 확인, 혼합·구조물 오탐, 정확도 미평가

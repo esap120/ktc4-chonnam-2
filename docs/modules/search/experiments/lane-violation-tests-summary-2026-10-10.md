@@ -103,6 +103,7 @@
 - [sol Fine 해상도·구간 폭](gpt-sol-fine-resolution-window-2026-10-02.md),[sol Fine720 파이프라인](search-v3-gpt-sol-fine720-2026-10-02.md),[set1 확장](search-v3-gpt-sol-fine720-set1-2026-10-04.md):고정 구간 결과와 전체 후보 검출 결과의 차이를 기록.
 - [Flash 유형1개vs4개](search-flash-set1-event-types-2026-10-09.md):A최종2·1·1/11,B0·0·0/11,반복한 개발 표본의 차이.[유형별B-split](search-flash-set1-split-coarse-2026-10-10.md)은1회top3 2/11·Coarse5/11,비용약2.5배.
 - [VideoChat3-4B RTX3060 사전검증](videochat3-window-preflight-2026-10-10.md):93창×3유형×2질문,판단용Recall@3 1/11,무작위95백분위 이하. 큰GPU실험은 미진행.
+- [Retrieval Coarse 사전검증](retrieval-coarse-preflight-2026-10-11.md)·[v2](retrieval-coarse-v2-2026-10-11.md):SigLIP 프레임·문장 유사도. v1 판단용Recall@3 4/11(약한 신호, 적중 절반이 신호위반), v2·차선 표시 프레임 점검은 신호 부족. 차선 위반의 「선 위에 걸친 차」를 정상 주행과 구분하지 못함.
 
 ## 8. 이번 문서화의 검증 범위
 
