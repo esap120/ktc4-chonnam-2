@@ -27,6 +27,7 @@
 | `MARK_REVIEWED` | 신고자료 최종 확인(`USER_REVIEWED`) | `module-architecture.md` §3-6 · CaseView 계약 B절 `user_reviewed` |
 | `RUN_NOTICE_ACTION` | notice에 붙은 발주형 버튼(`GENERATE_REPORT_VIDEO` · `RETRY_PLATE_READ` · `RETRY_SEARCH` · `GENERATE_PLATE_IMAGE`) | CaseView 계약 B절 §7 「`notices[].actions[]` → 발주 매핑」 |
 | `START_ANALYSIS` | 첫 화면에서 영상을 올리고(설명은 선택) 「영상에서 찾아보기」 | §11 · #247 H-2 · `decisions/start-analysis.md` |
+| `STOP_ANALYSIS` | 분석 진행 화면에서 `[분석 중단]`(2026-10-11, 고도화 8-9) | #245 C-1 · C-1a · `decisions/stop-analysis.md` · `core-user-flow.md` §7 |
 
 **이 판본에 넣지 않는 것**
 
@@ -34,7 +35,7 @@
 - **초기 후보 선택** — `rank=1` 자동 선택이라 사용자 명령이 아니다(#168 결정 1, #194). 후보 command는 결과 화면에서 다른 후보를 고를 때만 쓴다(#106 신유민 09-23).
 - **`rejected_candidate_ids`** — 받지 않는다(#106 결론). 개별 후보를 「아니다」로 지목하는 화면 신호가 생기면 다시 본다.
 - **시간 보정 버튼 4종**(조금 전·조금 후 등) — W7 밖(#106 결론).
-- **중단** — 다음 판본 후보. Runtime 결정(#245 C-1 · C-1a)은 났고, case 쪽 설계가 남았다(8-1 · 8-9). 분석 시작은 이 판본에 넣었다(§11).
+- **「초안 준비 중」의 중단** — 판독 · Fine job까지 멈추는지 product에 정해져 있지 않다(#245 C-1a 보류). 정해질 때까지 `STOP_ANALYSIS`는 `SEARCHING`에서만 받는다(§5).
 - **transport**(HTTP 경로 · status · 직렬화) — HTTP API Contract(`docs/architecture/contracts/contract-http-api.md`, `http-api/v1`)가 정한다(2026-10-08, 고도화 8-2). 이 문서의 요청은 `POST /cases/{case_id}/commands` body에 그대로 실리고, HTTP 층은 body를 검사하지 않고 `case.handle_command()`에 넘긴다(그 계약 §5.3). 이 문서는 transport와 무관한 요청 · 응답 모양만 정한다. 인증은 두 문서 모두 범위 밖이다(Architecture §1-7 A2).
 
 ## 3. 책임 경계
@@ -51,7 +52,7 @@
 {
   "case_id": "string",
   "expected_case_rev": "int",
-  "kind": "SELECT_OTHER_CANDIDATE | RECORD_SITUATION_RESPONSE | MARK_REVIEWED | RUN_NOTICE_ACTION",
+  "kind": "SELECT_OTHER_CANDIDATE | RECORD_SITUATION_RESPONSE | MARK_REVIEWED | RUN_NOTICE_ACTION | START_ANALYSIS | STOP_ANALYSIS",
   "payload": "object — kind별(§5)"
 }
 ```
@@ -69,6 +70,7 @@
 - `case_view`는 **성공·실패 모두** 싣는다. stale 실패일 때 web이 따로 다시 읽지 않고 최신 화면을 그리게 하기 위해서다.
 - `error.code`는 `notices[].code`와 같은 dotted-lowercase 규칙을 따른다(CaseView 계약 B절 §7). `message_key`는 web 문구 키다.
 - **응답 밖으로 돌려주는 것(2026-10-05, 8-7).** case는 응답과 함께 **이번 command로 append된 JobRecord 목록**을 composition root에 돌려준다(`case.execute_command()` → `CommandResult.appended_job_records`). composition root는 이 목록마다 Runtime enqueue를 하고 HTTP 200 / 202를 정한다(HTTP API Contract §5.3). 이 목록은 **위 응답 body에 싣지 않는다** — web이 받는 모양은 위 셋 그대로다. 실패한 command는 늘 빈 목록이다. 이유와 고르지 않은 안은 `../decisions/command-appended-job-records.md`.
+- **중단한 job 목록(2026-10-11, 8-9).** `STOP_ANALYSIS`가 성공하면 case는 이번 command로 `CANCELLED`로 정산한 `job_id` 목록도 돌려준다(`CommandResult.cancelled_job_ids`). composition root는 같은 transaction에서 Runtime `request_cancel(conn, job_ids)`를 부른다(Runtime Tech Spec §12.5 · #292). 새 발주가 없으므로 HTTP는 `200`이다. 이 목록도 응답 body에 싣지 않고, 실패한 command는 `[]`다.
 
 ## 5. `kind`별 payload와 규칙
 
@@ -78,6 +80,7 @@
 | `RECORD_SITUATION_RESPONSE` | `{ "value": "CONFIRMED \| USER_UNSURE" }` | 선택된 후보가 있을 때 | `situation_response` 기록(`candidate_ref`=현재 선택 후보, `responded_at`=case가 받은 시각), `case_rev` +1. `READY`였으면 `EVIDENCE_REVIEW`로 돌아간다(아래 「READY에서 다시 조립되는 변경」). 이 응답으로 Package가 준비되면 아래 「성공 뒤 `READY` 재확인」으로 `READY`가 되고 `case_rev`가 +1 더 오른다 |
 | `MARK_REVIEWED` | `{}` | `READY` | `user_reviewed=true`, `case_rev` +1 |
 | `RUN_NOTICE_ACTION` | `{ "notice_code": "string", "action": "GENERATE_REPORT_VIDEO \| RETRY_PLATE_READ \| RETRY_SEARCH \| GENERATE_PLATE_IMAGE" }` | 현재 CaseView의 `notices[]`에 **그 `code`를 가진 notice가 있고, 그 notice의 `actions[]`에 그 `action`이 있을 때** | CaseView 계약 B절 §7 매핑대로 새 `JobRecord` 1건 |
+| `STOP_ANALYSIS` | `{}` | `SEARCHING`이고 case가 기다리는 `HINT_EXTRACT` · `COARSE_SEARCH`가 있을 때 | 그 job들을 `CANCELLED`로 정산(다른 kind는 그대로), `case_rev` +1, stage는 `SEARCHING` 그대로. CaseView는 `coarse_search`=`PARTIAL` · notice `case.analysis_stopped`(CaseView 계약 B§7). 중단된 job의 늦은 결과는 반영하지 않는다(#245 C-4) |
 
 - **성공 뒤 `READY` 재확인(2026-09-30).** command가 성공하고 stage가 `EVIDENCE_REVIEW`면 case가 `PACKAGE_READY`(FINAL `PASS`/`WARN` + ReportPackage, #167 gate 그대로)를 다시 보고, 성립하면 같은 command 안에서 `READY`로 올린다. `READY` 전이도 `case_rev`를 올리므로 그때는 위 표의 증가분에 +1이 더해진다. transport·web이 따로 전이를 부르지 않는다 — 통로에 판단을 넣지 않는다(#106). 실패한 command 뒤에는 보지 않는다(§6).
 - **`READY`에서 다시 조립되는 변경(2026-10-02, orchestration 지표 4차 측정).** `READY`에서 상황 응답(과 입력형 판본의 값 정정)을 받으면 case가 먼저 `EVIDENCE_REVIEW`로 내리고, 위 재확인이 gate가 여전히 성립할 때만 다시 올린다. 내리지 않으면 재조립으로 Package가 사라져도 `READY`로 남아 CaseView 계약 §10-9(「`stage=READY`이면 `requirements_package`가 `PASS`/`WARN`」)를 어긴다. 내려가는 것은 같은 요청의 결과라 `case_rev`를 따로 올리지 않는다(`SELECT_OTHER_CANDIDATE`와 같다) — 그래서 gate가 그대로면 응답 +1, 다시 `READY` +1로 +2다. `user_reviewed`는 그대로 둔다(필드 수정과 별개 — CaseView 계약 B절 `user_reviewed` · #173 값별 경계표). 새 초안이 되는 `SELECT_OTHER_CANDIDATE`만 되돌린다.
