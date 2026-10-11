@@ -9,6 +9,7 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
 from daesingo.common.jobs.execution import ExecutionContext, HandlerResult, runtime_failure
+from daesingo.common.jobs.cancel import CancellationRequested
 
 Handler = Callable[[ExecutionContext], HandlerResult]
 
@@ -27,5 +28,7 @@ class KindRegistry:
                 return runtime_failure("RUNTIME_INVALID_RESULT")
             # Revalidate even a model constructed/copied without validation.
             return HandlerResult.model_validate(result.model_dump())
+        except CancellationRequested:
+            raise
         except Exception:
             return runtime_failure("RUNTIME_HANDLER_ERROR")

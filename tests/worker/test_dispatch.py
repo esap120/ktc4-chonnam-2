@@ -22,7 +22,8 @@ def test_registered_kind_dispatches_once_with_execution_context():
     ctx = context()
     assert registry.dispatch(ctx) == expected
     assert calls == [ctx]
-    assert ctx.cancel_signal is None and ctx.usage_sink is None
+    from daesingo.common.jobs.cancel import CancelSignal
+    assert isinstance(ctx.cancel_signal, CancelSignal) and ctx.usage_sink is None
     assert "claim_token" not in repr(ctx)
 
 

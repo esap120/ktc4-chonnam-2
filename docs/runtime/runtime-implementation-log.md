@@ -43,6 +43,7 @@ Plan §0.1이 Task PR로 넘긴 선택은 미리 행을 둔다. 그 밖의 선�
 | Worker invocation · T1 replay | 불변 kind registry · execution context/result · claim/handler/T1 분리 · 결과 보존 재시도 · durable terminal facts 재조회 | RT-04(a) · 로컬, PR 미생성 · `Refs #291` | 아래 RT-04 · `worker/composition.py` · `common/jobs/worker_loop.py` |
 | heartbeat lifecycle · commit fencing | 실행별 전용 thread/NullPool connection · monotonic fixed-rate/skip · 내부 ownership fence · B-D8 매 시도/COMMIT 직전 guard · BaseException 소유 thread 전파 | RT-05(a) · 로컬 미커밋 · `Refs #292` | 아래 RT-05 · `common/jobs/heartbeat.py` · `common/db/transactions.py` |
 | `DECIMAL` precision/scale (Plan P-10) | pending | RT-07 | — |
+| cancel 잠금 · signal · 지연 측정 | 전체 입력 검증 후 sorted job별 unique index 순회 잠금 · 최초 marker 유지 · heartbeat commit 후 signal 한 번 전달 · DB 요청→terminal/추가 monotonic checkpoint→commit 지연 | RT-05(b) · 로컬 미커밋 · `Refs #292` | 아래 RT-05(b) · `common/jobs/cancel.py` |
 | type checker 도구 (Plan RT-15) | pending | RT-15 | — |
 | secret scan 배치 — PR gate 편입 여부 (Plan RT-15) | pending | RT-15 | — |
 | Compose smoke의 CI 편입 여부 (Plan RT-13) | pending | RT-13 | — |
@@ -633,11 +634,14 @@ Status: **IN_PROGRESS** · PR 연결: **`Refs #291`** · PR 번호 **pending** �
 
 ## RT-05 — Lease · heartbeat · fencing · 협력적 중단
 
-Status: IN_PROGRESS · Issue: #292 · Audit: A · 연결 문구: `Refs #292`
+Status: DONE · Issue: #292 · Audit: A · 최종 PR 연결 문구: `Closes #292` · PR 번호 / Merge SHA: pending
 
 | PR | 내용 | Merge SHA |
 | --- | --- | --- |
-| 로컬 미커밋 | RT-05(a) heartbeat · lease · fencing (독립 재리뷰 준비) | — |
+| pending | RT-05(a) heartbeat · lease · fencing (독립 재리뷰 통과) | pending |
+| pending | RT-05(b) cancel · checkpoint (P2 해소·최종 독립 재리뷰 통과, `Closes #292`) | pending |
+
+아래 구현 단계의 IN_PROGRESS / `Refs #292` 및 미구현 범위 표기는 당시 이력으로 보존한다. RT-05의 현재 최종 상태와 검증 주체 구분은 이 절 마지막의 「최종 독립 재리뷰 통과」 기록을 따른다. DONE은 이번 최종 판정이며 PR 생성·merge·Issue close가 이미 실행됐다는 의미는 아니다.
 
 ### 구현 결과
 
@@ -720,6 +724,139 @@ Status: IN_PROGRESS · Issue: #292 · Audit: A · 연결 문구: `Refs #292`
 - **900초 변경 범위:** 전체 실제 MySQL 하위 suite를 실행하는 test harness의 subprocess timeout에만 적용된다. production timeout이나 gate의 통과 조건을 완화하지 않는다.
 - **비차단 후보:** `Heartbeat.start()` 중복 호출 방지, tick 경계 및 COMMIT 성공 직후 ownership 상실 회귀 보강, 원격 CI 실행 시간 확인을 후속 검토 후보로 남긴다.
 - **남은 범위:** RT-05(b) cancel이 남아 있으므로 RT-05 상태는 **IN_PROGRESS**, RT-05(a) 연결은 **`Refs #292`**를 유지한다. PR 번호와 merge SHA는 **pending**이다.
+
+---
+
+### RT-05(b) cancel · checkpoint — 독립 재리뷰 준비 (2026-10-11)
+
+**Status: IN_PROGRESS · Issue: #292 · 연결: `Refs #292` · PR / Merge SHA: pending.** 이번 범위가 RT-05의 마지막 구현 PR에 해당하지만 독립 재리뷰 이전에는 DONE이나 Issue close를 기록하지 않는다. 커밋·푸시·PR 생성 없이 로컬 변경으로 남긴다.
+
+**구현 결과**
+
+- 공개 port는 승인된 `request_cancel(conn: Connection, job_ids: Iterable[str]) -> None`이다. Case caller transaction에 참여하며 commit·rollback·retry·물리 상태 반환이 없다. 전체 iterable의 안전한 ID 검증과 중복 제거를 모든 SQL보다 먼저 수행한다. 미등록 job/terminal은 no-op이다.
+- job_id를 정렬하고 `uq_job_execution_job_attempt` index를 강제한 `ORDER BY job_id, attempt, execution_id FOR UPDATE`로 해당 job의 모든 attempt를 먼저 잠근다. 모든 대상 잠금을 확보한 뒤 QUEUED는 NOW(6) marker/ended_at과 빈 produced로 CANCELLED, RUNNING/STALE은 최초 marker만 기록한다. 미래 available_at도 제외하지 않는다. MySQL EXPLAIN으로 filesort 없는 unique index 접근을 검증한다.
+- thread-safe CancelSignal은 첫 request만 true를 반환하며 최초 취소 checkpoint monotonic 시각을 보존한다. ExecutionContext에 구체 타입과 checkpoint를 연결하고 KindRegistry는 CancellationRequested를 재전파한다. WorkerLoop는 기존 ownership fence/owner 조건부 finish와 retry 경계에서 내부 CANCELLED 결과를 기록한다. 일반 handler taxonomy와 KeyboardInterrupt/SystemExit 정책은 유지한다. 마지막 checkpoint 뒤 정상 완료를 취소로 덮지 않는다.
+- 전용 heartbeat transaction은 lease UPDATE와 owner/status가 일치하는 marker SELECT를 수행한다. 성공한 commit 이후 signal을 설정하고 DB `TIMESTAMPDIFF(MICROSECOND, cancel_requested_at, NOW(6))` marker 나이에 SELECT 시작부터 signal 전달까지 monotonic 경과를 더해 `runtime.cancel.observe_latency_ms`로 한 번 기록한다. host wall-clock과 DB 시각을 빼지 않으며 읽기·COMMIT 대기를 포함한다. DB SELECT의 server 시작과 client 시작 차이만큼 보수적으로 측정될 수 있다.
+- Baseline §9의 `runtime.cancel.terminal_latency_ms`는 DB `TIMESTAMPDIFF(MICROSECOND, cancel_requested_at, ended_at)`이다. 성공한 T1 commit acknowledgement 뒤에만 로그를 내고 unknown-COMMIT receipt 복구에서도 같은 DB facts를 사용한다. 요청된 checkpoint부터 T1 commit acknowledgement까지의 monotonic 지연은 **별도 `runtime.cancel.checkpoint_to_terminal_ms`**로 기록하여 Baseline metric 의미를 유지한다. 이 추가 지표는 DB retry 대기를 포함하고 heartbeat join은 제외한다. 일반 logger/filter/handler/observer 장애는 signal/terminal을 바꾸지 않는다. DB 읽기·commit 오류는 signal 전달 없이 다음 tick으로 넘긴다. 0행 ownership loss는 별도 fence다.
+
+**Plan 대비 변경 / 새 implementation detail**
+
+- 갱신 UPDATE 뒤 같은 transaction의 marker SELECT를 사용한다. MySQL UPDATE RETURNING을 전제하지 않고 UPDATE row lock 아래 상태·marker·DB 시간을 읽기 위한 내부 구현 선택이다. transaction이나 B-L1/B-D9 값은 바꾸지 않는다.
+- `HandlerResult`와 기존 Case `ReflectionInput`은 성공/실패 전용 surface를 유지한다. checkpoint 취소는 별도 내부 `CancelledExecution`으로 T1에만 전달한다. Case가 같은 transaction에서 이미 CANCELLED 정산한 job에 새 reflector 의무를 만들지 않기 위해 CANCELLED는 기존 T2 reflector에 전달하지 않는다. QUEUED 즉시 취소도 Worker/T2를 거치지 않는다. RT-06은 이 경계를 재전달 설계에 반영해야 한다.
+- production sweep이 아직 없으므로 MySQL 테스트의 `sweep_boundary`만 STALE row 잠금 → marker 재확인 → attempt 2 INSERT 경계를 재현한다. RT-06 production scheduler나 retry 정책을 이번에 구현하지 않는다.
+- RT-07 Usage ledger table도 아직 없다. QUEUED 취소 후 claim 불가/started_at 없음과 handler/provider 진입 불가를 검증한다. 영속 UsageRecord table에서 0건을 직접 조회했다고 주장하지 않는다.
+- 요청문의 checkpoint 구간을 기존 terminal metric 전체 의미로 해석하지 않고 별도 내부 진단 지표로 보완한다. Baseline이 정의한 요청→CANCELLED metric은 DB facts 그대로 유지한다. Baseline 변경이나 새 Owner 의무가 없는 implementation detail이다.
+- Contract 변경: 없음. Accepted Decision 변경: 없음. Baseline 값/의미 변경: 없음. Case 코드/Contract/HTTP command 변경: 없음. Plan 수정: 없음.
+
+**Owner 확인 포인트**
+
+- [Case Owner 승인 댓글](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/292#issuecomment-6107446434)의 None 반환·Case 먼저/Runtime 나중 잠금·caller-owned transaction·모든 비terminal attempt 취소 요구를 실제 issue/comments에서 확인했다. 기존 Case repository를 소비해 CANCELLED 정산과 Runtime 전이가 함께 commit/rollback되는 것을 검증한다.
+- Runtime/Ops Audit A: ordered index 잠금, claim/sweep/finish commit 경합, ownership/cancel 구분, DB 기반 observe/terminal 지연 및 추가 checkpoint 구간, Case 성공/실패 T2 surface 유지, RT-06 marker 재확인 경계.
+
+**Verification**
+
+- RED: signal/checkpoint/port 부재로 unit **14 failed** (`.codex-scratch/rt05b-red-unit.txt`). heartbeat 연결 전 실제 MySQL **14 failed / 1 passed** (`rt05b-red-heartbeat.txt`, `cancel_observe` 연결 부재). 새 gate 필수 증거 제거를 기존 gate가 허용해 **40 failed / 1199 passed** (`rt05b-gate-red.txt`). 구현 뒤 초기 targeted **146 passed**, 확장 gate unit **1257 passed**, checkpoint→commit metric unit 포함 cancel unit **15 passed**.
+- 초기 MySQL 서버 라이브러리 경로 누락, sandbox 접속 실패, 테스트 파일명 충돌, 미구현 Usage table 조회, SQLAlchemy event listener 실행 중 제거 오류는 원출력에 보존한다. 해당 실행을 최종 통과 증거로 사용하지 않는다.
+- 읽기 전용 source 사전 검토는 지표 2건을 P2로 지적했다. checkpoint 구간으로 terminal metric 의미가 달라진 문제와 성공 COMMIT 대기를 observe metric에서 빠뜨린 문제를 **3 RED**로 재현했다(`rt05b-latency-red.txt`). 초기 보정 targeted는 **128 passed / 1 failed**로, 남은 실패는 DB Decimal→float와 Python timedelta float 표현의 미세 오차였다. DB microsecond 정밀도보다 작은 0.000001 ms 절대 오차만 테스트에서 허용한다. 실제 경쟁 connection/schema의 `performance_schema.data_lock_waits` 확인을 추가한 경합 테스트 **19 passed**. 이 사전 검토는 최종 독립 재리뷰/acceptance가 아니다.
+- 보정 전 전체 MySQL require는 **271 passed / MySQL skip 0 / xfail 0**, 하위 inventory **270 passed**, 7단계 parameter 누락 **1113/1113 거부**(cancel **217/217**). 전체 명령의 비-MySQL 수집 skip 4개는 typer 부재다. 이후 지표 수정/테스트 보강이 있어 이 실행을 최종 소스 전체 검증으로 주장하지 않는다.
+- 최종 보정 targeted **129 passed** (`rt05b-corrected-green.{json,xml}`), gate unit **1259 passed**, cancel 단위 **15 passed**. 앞선 넓은 jobs/Worker targeted **346 passed**는 지표 보정 전 결과이며 보정 후 subset/전체 검증과 구분한다.
+- 최종 MySQL 8.4.7 require: **272 passed / MySQL skip 0 / xfail 0**, setup/call/teardown **816 phases passed**, JSON/JUnit gate PASS. 명령: `.venv/Scripts/python.exe -B -X utf8 -m pytest -m mysql --ignore=tests/common/db/integration/test_migration_gate.py -q -p no:cacheprovider --basetemp=.codex-scratch/rt05b-require-final --tb=short --mysql-report=.codex-scratch/rt05b-require-final.json --junitxml=.codex-scratch/rt05b-require-final.xml`。`DAESINGO_REQUIRE_MYSQL=1`을 사용했다. 전체 명령의 skip 4개는 typer 부재의 비-MySQL 수집 항목이다. inventory 재실행/7단계 mutation 테스트 자체는 다음 전체 pytest에서 실행하여 acceptance suite를 이 단계에서 중첩 반복하지 않는다.
+- 실제 최종 require JSON에서 모든 role/scenario 제거와 각 필수 parameter mark의 role/scenario/parameter 필드 일부 제거 **593/593 거부** (`rt05b-require-final-partial-mutations.json`). 모든 기존 Case acceptance inventory를 유지한다.
+- Boundary **PASS — 위반 0**, Contract fixture **구조 62 / JSON 26 / 의미 104 PASS**, workflow **Actionlint 5 files / 오류 0 + YAML policy / bash -n / ShellCheck 5 run steps PASS**(pyflakes 비활성), `git diff --check` PASS. workflow source/의존성은 변경하지 않았다.
+- 최종 전체 pytest: **exit 0 / 3771 passed / 26 skipped**, **696.60초**. 명령: `.venv/Scripts/python.exe -B -X utf8 -m pytest -q -p no:cacheprovider --basetemp=.codex-scratch/rt05b-full --tb=short --mysql-report=.codex-scratch/rt05b-full.json --junitxml=.codex-scratch/rt05b-full.xml`。실제 MySQL require 환경이며 26 skip은 비-MySQL optional dependency/로컬 원본 영상 opt-in 항목이다. 실제 MySQL **273 tests / 819 phases passed / skip 0 / xfail 0**, 최종 JSON/JUnit gate PASS.
+- 전체 실행 안의 실제 하위 inventory도 **272 passed / skip 0 / xfail 0**다. collection/selection/setup/call/teardown/all/JUnit의 7단계 parameter 증거 누락 **1113/1113 거부**, cancel subset **217/217 거부** (`rt05b-full/test_actual_report_rejects_eac0/parameter-mutations.json`). 최종 전체 JSON의 role/scenario 및 parameter metadata 일부 누락도 **593/593 거부** (`rt05b-full-partial-mutations.json`).
+- 최종 검증에 고정한 Python 소스/테스트 **13개 SHA-256 변경 0**, 보호 대상 pytest 폴더/recording JSON **1069개 SHA-256 변경 0** (`protected-before.json`, `protected-final.json`). `recording-baseline-negative-001.json` SHA-256은 `27BA6EE8F681F2DF93C4E147589DD932D4632D71631A77EDE194317D42247D99`다. 해당 경로를 수정·삭제·staging하지 않았다. 변경 파일은 15개, staging 0개다.
+- 작업 전용 MySQL은 **8.4.7 / port 13331 / `/tmp/rt05b-20261011/data/`** 소유를 SQL assert로 확인한 뒤 종료했다. 잔여 일회 schema/테스트 계정 **0/0**을 확인했다. 정리 보조 script의 LIKE binding 오류를 고친 뒤 SHUTDOWN은 실행됐으나 SQLAlchemy close-time ROLLBACK에서 2013이 발생했다. 별도로 mysqld session **exit 0**과 port closed를 확인했다. 이후 WSL log 경로는 없어서 log 기반 종료 확인을 주장하지 않는다. 기존 Windows MySQL service/사용자 DB 변경 없음.
+- 최종 증거·15개 변경 파일 목록·미추적 신규 파일까지 포함한 diff·source hash는 `.codex-scratch/rt05b-20261011/review-package.md`에 묶는다. 최종 검증 이후 수정은 Log/검토 패키지 기록뿐이며 product/test source는 바꾸지 않았다. RT-05는 **IN_PROGRESS / `Refs #292`**, 커밋·push·PR 생성 없음.
+
+**남은 위험**
+
+- B-X1은 DB 정상 구간 p95 20초 측정 목표다. 테스트 전용 짧은 cadence·DB 시간 검증은 운영 p95나 강제 취소 deadline의 실측 증거가 아니다. 실제 capability checkpoint는 RT-10이며 진행 중 provider HTTP·capability 내부 retry·backoff는 반환까지 계속된다.
+- 기존 B-D9 단계별 timeout은 heartbeat 전체 시도/join hard deadline이 아니다. sink 장애 시 metric 유실은 가능하다. 원격 GitHub Actions는 실행하지 않는다.
+- 실제 RT-06 sweep과의 통합은 RT-06에서 다시 검증해야 한다. 독립 재리뷰 전까지 RT-05는 IN_PROGRESS다.
+- RT-06의 unmarked terminal scan은 성공/실패 전용 현재 reflector에 CANCELLED를 반복 투입하지 않도록 Audit A에서 경계를 확인해야 한다. 현재 cancelled row의 case_applied_at을 Runtime이 임의로 채우지 않는다. 모든 terminal의 재전달 구현이 완료됐다고 주장하지 않는다.
+
+---
+
+### RT-05(b) 독립 리뷰 P2 후속 — cancel 지표의 COMMIT acknowledgement 경계 (2026-10-11)
+
+**Status: IN_PROGRESS · `Refs #292` · 독립 재리뷰 전 DONE / Closes / commit / push / PR 생성 없음.** 앞선 RT-05(b) 기록의 terminal 지표 `ended_at` 계산 설명은 구현 당시 상태이며, 아래 후속 수정으로 정정한다.
+
+**발견과 원인**
+
+- 독립 리뷰 P2에서 terminal UPDATE 직후와 COMMIT acknowledgement 사이의 대기가 `runtime.cancel.terminal_latency_ms`에서 누락됨을 확인했다. 로그 출력은 commit 뒤였지만 계산은 DB `cancel_requested_at → ended_at`으로 끝났다. checkpoint 지표는 record 함수가 terminal logger를 호출하고 반환한 뒤 시간을 읽어 logger 지연도 포함했다.
+- 실제 MySQL 8.4.7에 DBAPI COMMIT 직전 400ms 지연을 주입한 RED에서 terminal 지표 **11.793ms**가 380ms 하한에 미달했다. 400ms terminal logger 지연 RED에서 checkpoint 지표 **422ms**가 독립 COMMIT acknowledgement 측정 **16ms**와 불일치했다. terminal UPDATE의 row lock 대기 RED에서도 terminal 지표 **12.633ms**가 지연을 누락했다. 세 parameter가 모두 실패했다 (`red2.json`, `red2.xml`).
+- 신규 `terminal_ack / commit_delay` parameter의 collection·selection·모든 phase·JUnit 증거를 함께 제거했을 때 기존 gate가 통과한 RED도 확인했다 (`gate-red.xml`: DID NOT RAISE).
+
+**최소 수정과 implementation detail**
+
+- 기존 ownership commit guard를 composition 안에서 감싼다. transaction helper가 `conn.begin()`을 성공적으로 종료한 직후, ownership guard가 풀리기 전의 monotonic 시각을 고정한다. pool cleanup·transaction observer·terminal logger보다 앞선 경계다. 공통 transaction helper·fencing·잠금 순서·cancel port·상태 전이를 바꾸지 않는다.
+- terminal UPDATE 또는 기존 unknown-COMMIT receipt의 locking read로 terminal facts가 확인된 같은 T1 안에서 DB `NOW(6) - 최초 cancel_requested_at`을 읽는다. 이 DB marker 나이에 SELECT 시작부터 고정된 acknowledgement까지 monotonic 경과를 더한다. `ended_at`과 marker의 저장값은 변경하지 않는다. SELECT 이전 lock wait와 retry 대기는 DB 나이에 포함되며, SELECT 이후 COMMIT 대기는 monotonic 구간에 포함된다. DB/monotonic clock 연결에는 SELECT 전송 시간과 clock 해상도에 따른 측정 오차가 있다. 테스트는 별도 DB 시간 sample의 client 전후 시각으로 구간을 만들고 acknowledgement와 30ms 허용 오차 내에서 비교한다.
+- 내부 `TerminalCommit` receipt가 동일한 종료 시각을 WorkerLoop로 전달한다. 최초 cancellation checkpoint부터 이 시각까지 별도 지표를 기록하므로 느린 terminal logger·pool cleanup·heartbeat join이 추가되지 않는다. bool record를 사용하는 기존 내부 test adapter는 기존 호환 동작을 유지한다. Case 공개 port의 None 반환은 그대로다.
+- 매 transaction attempt에서 이전 sample을 지운다. 실제 COMMIT 응답 유실은 성공 경계를 고정하지 않고, B-D8 재시도에서 owner/status/produced/failure가 일치하는 durable CANCELLED를 잠금 확인한 최종 성공 acknowledgement만 사용한다. checkpoint·signal 중복에도 지표는 한 번만 시도한다. 재시도 테스트는 backoff 호출값 1초를 검증하되 실행 대기는 50ms로 줄였다.
+- durable 결과 이후 계산과 logging은 terminal transaction 재시도 경계에서 분리하고 일반 Exception을 격리한다. 계산에 DB 오류 타입을 주입해도 추가 UPDATE/COMMIT/retry가 없다. 일반 handler taxonomy 및 KeyboardInterrupt/SystemExit 정책은 유지한다. late SUCCEEDED·ownership 상실·복구 receipt가 아닌 UPDATE 0행에는 cancel terminal/checkpoint 지표가 없다. sink 장애로 metric 유실은 가능하다.
+- Contract·Decision·Baseline 값/의미·Plan·Case Owner surface 변경 없음. 요청→CANCELLED 기록의 종료점을 durable acknowledgement에 정합화한 내부 구현 수정이다. **observe 지표의 SELECT 전 구간 보수적 과대계상은 비차단 의견으로 유지하며 수정하지 않았다.**
+
+**RED → GREEN 및 검증**
+
+- 관련 targeted **1493 passed**. 최종 MySQL 지표 parameter **10 passed**: commit_delay / slow_logger / lock_wait / unknown_commit / retry / logger / filter / handler / calculation / zero_rows. lock_wait는 schema와 writer connection이 일치하는 `performance_schema.data_lock_waits`를 확인한 뒤 400ms 지연을 주입한다.
+- 최종 targeted 측정: 400ms COMMIT 지연에서 terminal **469.661ms**, checkpoint와 독립 acknowledgement **453ms**. 400ms logger 지연에서는 checkpoint와 acknowledgement **15ms**, terminal **16.788ms**. 실제 row lock 대기에서 terminal **497.776ms**, checkpoint와 acknowledgement **438ms**. COMMIT OK packet 유실 후 복구에서도 두 지표/성공 acknowledgement가 각 1회다 (`final-target.xml`). 이는 시험 지연 회귀이며 운영 p95 측정이 아니다.
+- 실제 MySQL require inventory **282 tests / 846 phases passed / MySQL skip 0 / xfail 0** 및 JSON/JUnit gate PASS. 전체 collection의 비-MySQL optional `typer` module skip 4건은 MySQL target에 속하지 않는다. 기존 cancel·claim·sweep·finish 경합도 포함한다 (`mysql.json`, `mysql.xml`).
+- 실제 report의 scenario 전체 및 role/scenario/parameter metadata 일부 누락 **624/624 거부** (`mysql-partial-mutations.json`). 신규 10 parameter를 독립 test inventory와 gate에 모두 추가했다.
+- boundary 위반 **0**, Contract fixture 구조/JSON/의미 **62/26/104 PASS**. workflow actionlint **5 files / 0 errors**, YAML 정책·bash -n·ShellCheck **5 run steps PASS** (pyflakes disabled). 원격 workflow 실행을 주장하지 않는다.
+
+**최종 검증 / 독립 재리뷰 상태**
+
+- 전체 pytest **3852 passed / 비-MySQL skip 26 / 1018.11s**. skip은 optional dependency·로컬 미디어 opt-in 항목이다. 최종 실제 MySQL **283 tests / 849 phases passed / skip 0 / xfail 0**, JSON/JUnit gate PASS (`full.json`, `full.xml`, `verification-summary.json`).
+- 전체 회귀 안의 실제 하위 inventory **282 tests / 846 phases passed**. collection/selection/setup/call/teardown/all/JUnit의 7단계 parameter 누락 **1183/1183 거부**, cancel subset **287/287**, 신규 terminal_ack **70/70** 거부 (`full-tmp/test_actual_report_rejects_eac0/parameter-mutations.json`). 최종 전체 report의 scenario 전체 및 role/scenario/parameter 일부 누락도 **624/624 거부** (`full-partial-mutations.json`).
+- 최종 Python 소스/테스트 **13개 SHA-256 변경 0**. 기존 보호 pytest 폴더·recording JSON·전체 `.codex-scratch/`의 **14372개 항목 목록 변경 0**, 읽을 수 있는 **14334개 내용 SHA-256 변경 0**. Windows에서 내용 해시를 읽을 수 없는 **38개 항목은 경로·크기 보존만 확인**했다 (`protected-before.json`, `protected-current.json`, `protected-final-verification.json`). 보호 경로 수정·삭제·staging 없음.
+- 전용 MySQL **8.4.7 / port 13341 / `/tmp/rt05b-p2-20261011/data/`**를 SQL로 확인하고, 잔여 테스트 schema/계정 **0/0**을 확인한 뒤 SHUTDOWN했다. mysqld session exit **0** 및 port closed를 확인했다 (`mysql-cleanup.json`). localhost 전용 바인딩과 임의 비밀번호 계정을 사용했다.
+- 이번 P2 수정 파일은 composition / worker_loop / cancel checkpoint MySQL test / gate script / gate unit inventory / 실제 gate integration inventory / Worker README / 본 Log의 **8개**다. 이전 RT-05(b) 작업까지 합친 브랜치 변경은 **15개**, staging **0개**다. 검토 diff는 보호 파일을 제외하고 미추적 신규 파일 4개를 포함한다 (`branch-review.diff`). 커밋·push·PR 생성 없음. RT-05는 **IN_PROGRESS / `Refs #292`**, 독립 재리뷰 대기다.
+- boundary·Contract fixture·workflow 정적 검사·`git diff --check` PASS. Plan·Contract·Decision·Baseline·Case surface 변경 없음. observe의 보수적 과대계상·clock 연결 오차·sink 장애 시 metric 유실·운영 p95 미측정 한계는 유지한다.
+
+증거는 새 `C:/Users/cheol/AppData/Local/Temp/rt05b-p2-20261011/`에만 기록했다. 기존 `.codex-scratch/` 및 보호 파일에는 쓰지 않았다.
+
+### RT-05 최종 독립 재리뷰 통과 — P2 해소 및 검증 주체 구분
+
+사용자가 전달한 독립 재리뷰 통과와 「RT-05(b) 리뷰」의 최종 결과를 기록한다. **이전 terminal 지표 P2 해소 · 추가 병합 차단 문제 없음**으로 판정됐다. P2 이후 변경된 8개 파일을 중심으로 검토했으며, RT-05 최종 상태는 **DONE**이다.
+
+**재리뷰 직접 실행 결과**
+
+| 검증 | 리뷰어 직접 실행 결과 |
+| --- | --- |
+| bool adapter · terminal · T2 단위 회귀 | 4 passed |
+| 신규 gate family · 10 parameter × 7단계 누락 검사 | 71 passed |
+| 실제 MySQL 신규 지표 10개 · late success · ownership 회귀 | 13 passed · skip 0 · xfail 0 |
+| 보존된 실제 보고서에서 신규 parameter 개별 누락 검사 | 110/110 거부 |
+| cleanup · observer · logger 시간 제외 및 장애 격리 독립 probe | 3개 통과 |
+| `git diff --check` | PASS |
+
+- 실제 MySQL의 400ms COMMIT 지연에서 terminal 약 **442ms**, checkpoint / 독립 ACK **421ms / 421ms**를 측정했다. 실제 row lock wait + 400ms 지연에서는 terminal 약 **486ms**, checkpoint / ACK **437ms / 437ms**였다. 400ms terminal logger 지연에서는 terminal 약 **26ms**, checkpoint / ACK **16ms / 16ms**였다.
+- cleanup·observer·logger 합계 600ms 지연으로 기록 함수가 약 625ms 걸려도 receipt의 ACK 종료 시각은 늘어나지 않았다. cleanup·observer·ACK clock에 DB 오류 타입을 주입해도 COMMIT은 한 번이었다. UPDATE 0행·late success·ownership 상실의 지표 미발행, unknown COMMIT 복구 성공 시 각 지표 1회, attempt마다 timestamp/sample 초기화와 기존 bool adapter 호환성을 확인했다.
+- 직접 probe 증거: [independent-probe.json](C:/Users/cheol/.codex/visualizations/2026/10/11/01a12ac2-823b-7ab2-80a5-3bc5e29c406b/rt05b-p2-review/independent-probe.json).
+
+**구현 단계 실행 결과 — 재리뷰에서는 보존 증거 대조**
+
+- 전체 pytest **3852 passed / 비-MySQL 26 skipped**는 구현 단계의 직접 실행 결과다. **재리뷰에서 전체 pytest를 다시 실행한 결과가 아니다.** 리뷰어는 보존 JSON/JUnit을 현재 gate로 대조하고 소스/테스트 13개 해시 일치를 확인했다.
+- targeted **1493 passed**, MySQL require **282 tests / 846 phases passed**, 전체 실행 MySQL **283 tests / 849 phases passed**도 구현 단계 보존 결과다. 재리뷰 직접 실행의 MySQL 13개와 구분하며 고유 test 수로 합산하지 않는다.
+- 증거 대조: [preserved-evidence.json](C:/Users/cheol/.codex/visualizations/2026/10/11/01a12ac2-823b-7ab2-80a5-3bc5e29c406b/rt05b-p2-review/preserved-evidence.json). 이번 Log 갱신에서는 코드·테스트를 수정하거나 재실행하지 않고 `git diff --check`만 확인한다.
+
+**두 지표의 최종 시간 의미**
+
+| 지표 | 시작점 | 공통 종료점 |
+| --- | --- | --- |
+| `runtime.cancel.terminal_latency_ms` | DB 최초 `cancel_requested_at` | 성공적으로 확인한 durable CANCELLED transaction의 COMMIT acknowledgement |
+| `runtime.cancel.checkpoint_to_terminal_ms` | 최초 cancellation checkpoint의 monotonic 시각 | 동일한 COMMIT acknowledgement |
+
+- COMMIT 확인 직후 고정한 monotonic 종료 시각을 공유한다. terminal 지표는 DB sample과 monotonic 구간을 연결한 추정 지연이며, checkpoint 지표는 monotonic 지연이다. lock wait·재시도·COMMIT 대기는 포함하고 종료점 이후 pool cleanup·observer·logger·heartbeat join은 제외한다.
+- unknown COMMIT 복구에서는 최초 COMMIT의 미확인 시각을 재사용하지 않고 **durable terminal을 확인한 복구 transaction의 성공 ACK 시각**을 사용한다. 확정된 terminal 이후 지표 계산·Runtime logger 장애는 transaction 재시도를 유발하지 않는다.
+
+**비차단 경계 · 남은 한계 · 최종 PR**
+
+- `observe_latency_ms`의 SELECT 전 구간 보수적 과대계상은 그대로다. terminal 지표의 **DB sample ↔ monotonic 연결에도 SQL 전송 시간·clock 해상도에 따른 오차**가 있다. 이번 재리뷰가 이를 해결했다고 주장하지 않는다. **B-X1 운영 p95는 미측정**이며 시험 지연 회귀는 운영 p95나 강제 중단 deadline의 증거가 아니다.
+- **제3자 logger의 원문 비노출은 보장하지 않는다.** 리뷰어가 원문을 가진 pool-reset 예외를 주입했을 때 SQLAlchemy 자체 logger는 traceback·SQL·경로를 stderr에 출력했다. 새 지표 계산·Runtime logger 경로에서는 누수를 발견하지 못했으나, 전역/제3자 logger의 masking까지 구현된 상태는 아니다. 이는 비차단 경계로 남긴다.
+- sink 장애 중 metric 유실, B-D9 단계별 timeout의 whole-attempt/join 상한 미보장, 실제 RT-06 sweep·CANCELLED T2 재전달 경계 및 RT-10 capability checkpoint의 후속 검증 한계는 유지한다. 원격 GitHub Actions 실행을 주장하지 않는다.
+- RT-05 **DONE**, 최종 RT-05(b) PR 연결은 **`Closes #292`**, **PR 번호와 merge SHA는 pending**이다. 최종 PR의 CI 및 Plan §12 Implementation Notes·Log 요건을 반영한다. 이번 갱신은 RT-05 절만 수정하며 커밋·push·PR 생성은 하지 않는다.
 
 ---
 
