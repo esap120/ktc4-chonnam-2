@@ -1,7 +1,7 @@
 # 모듈 결과의 위치 · case가 읽는 길 — 결과 저장소 · `StoredObservationAdapter` · 관찰 반영 (8-6 2단계)
 
-> **상태: case 쪽 결정 · Runtime 수락 대기** · 결정일 2026-10-12 · 담당 유소연(`case`) · 근거 W7 고도화 8순위 8-6 2단계(`../design-refinement-w7-baseline.md`), 6.6순위 조건 2, #245 D-1 · #246 S-4, Runtime Tech Spec §12.2(T1 · T2), RT-10 Gate, REC-1(#302)
-> CaseView를 무엇으로 조립하는지와 T2에서 관찰 결과로 무엇을 하는지는 case 결정 범위다. **결과 저장소 신설과 T1 범위 확장은 Runtime 소유**(Tech Spec §12.2)라 이 문서만으로 확정되지 않는다 — Decision 이슈로 수락을 받는다(§8). 객체의 뜻 · 모양은 각 모듈 계약 몫이고, recording 저장은 REC-1 몫이다.
+> **상태: case 쪽 결정 · RT-10 Implementer 확인 대기** · 결정일 2026-10-12 · 담당 유소연(`case`) · 근거 W7 고도화 8순위 8-6 2단계(`../design-refinement-w7-baseline.md`), 6.6순위 조건 2, #245 D-1 · #246 S-4, Runtime Tech Spec §12.2(T1 · T2), RT-10 Gate, REC-1(#302)
+> CaseView를 무엇으로 조립하는지와 T2에서 관찰 결과로 무엇을 하는지는 case 결정 범위다. 8-6 2단계는 Runtime Plan §7이 「case 주도 설계, 새 RD 아님」으로 둔 RT-10 Gate다. 다만 **결과 저장소와 T1에서의 쓰기는 Runtime 구현**이라 RT-10 Implementer(정철원)와 먼저 맞춘다(Plan §12.2 Consult, §8). 그것이 Contract · Tech Spec 의미 변경인지는 Plan §12.3대로 Implementer가 판단해 Runtime/Ops Owner(김준영)에게 올린다. 객체의 뜻 · 모양은 각 모듈 계약 몫이고, recording 저장은 REC-1 몫이다.
 
 ## 1. 목표 · 범위
 
@@ -40,7 +40,7 @@
 
 ## 4. 결정
 
-1. **search · readout 결과는 common/runtime 결과 저장소에 둔다(Runtime 수락 필요).** 모양 예시는 `produced_objects(kind, ref, case_id, execution_id, payload JSON)`이다. Worker가 T1에서 terminal 행 · `produced`와 **같은 transaction**에서 쓴다 — 실행은 끝났는데 내용이 없는 상태가 생기지 않는다. 저장소는 내용을 해석하지 않는 append-only 상자이고, 뜻과 모양은 각 모듈 계약이 정한다. recording은 REC-1의 자기 저장소를 공개 함수로 읽는다(같은 사실을 두 곳에 두지 않는다).
+1. **search · readout 결과는 common/runtime 결과 저장소에 둔다(RT-10 Implementer 확인 필요).** 모양 예시는 `produced_objects(kind, ref, case_id, execution_id, payload JSON)`이다. Worker가 T1에서 terminal 행 · `produced`와 **같은 transaction**에서 쓴다 — 실행은 끝났는데 내용이 없는 상태가 생기지 않는다. 저장소는 내용을 해석하지 않는 append-only 상자이고, 뜻과 모양은 각 모듈 계약이 정한다. recording은 REC-1의 자기 저장소를 공개 함수로 읽는다(같은 사실을 두 곳에 두지 않는다).
 2. **evidence · RequirementReport · ReportPackage는 저장하지 않고 `get_view`마다 다시 계산한다.** 재료(관찰 객체 · recording 사실 · case 상태와 정정)가 모두 저장되어 있고 조립은 순수 함수라, 저장하면 정정 · 재선택 때 무효화할 사본만 늘어난다. `get_view`는 실행 · 관찰을 돌리지 않는다 — 모든 관찰은 job 결과이거나 recording 영속 조회다.
 3. **`ModuleAdapter` Protocol은 남기고, 요청마다 만드는 무상태 구현 `StoredObservationAdapter`를 더한다.** `CaseStore`는 case별 registry 대신 composition root가 꽂는 **`adapter_factory(case, conn)`**를 받고, `store.adapter_for(case)`가 그것을 부른다. API · Worker는 stored factory를, 테스트 · 데모는 지금 registry에서 꺼내는 factory를 쓴다. 「adapter 제거」는 「프로세스 메모리에 case별 상태를 들지 않는다」는 뜻이다. `view.py` · `service.py` · `command.py`의 조립 코드와 동기 real 경로 · 테스트는 그대로 돈다.
 4. **선택 후보의 관찰은 결과 객체 안의 `candidate_id`와 job 순서로 고른다.** JobRecord 계약(v1.8)은 바꾸지 않는다(6.6순위 「관찰 결과는 후보에 묶인다」).
@@ -57,7 +57,7 @@
 
 ## 6. 미결 (채우지 않는다)
 
-- 결과 저장소 이름 · 컬럼 · 인덱스, `ref` 부여 규칙 — Runtime(김준영) 수락과 함께 정한다(§8).
+- 결과 저장소 이름 · 컬럼 · 인덱스, `ref` 부여 규칙 — RT-10 Implementer(정철원)가 정한다(Plan §12.3 implementation detail, §8).
 - IncidentClip을 만드는 job handler와 그 결과의 위치 — RT-10 handler 설계.
 
 ## 7. 고르지 않은 안
@@ -71,14 +71,14 @@
 | `candidate_id`만으로 거른다 | 재탐색 뒤 같은 id에 이전 세대 관찰을 잘못 쓴다(`reselect-observation-reuse.md` (c)) |
 | T2에서 관찰 내용을 case state에 복사 | 저장소가 원본이라 같은 사실이 두 곳에 생긴다 |
 
-## 8. Runtime에 받을 것 (Decision 이슈, @flosure23 · 참조 search · readout · recording)
+## 8. 맞출 것 (Consult 이슈 — RT-10 Implementer @cheol1203, Contract 판단은 @flosure23, search · readout 사실 확인)
 
-1. 결과 저장소 신설 수락 — common/runtime 소유, 해석 없는 append-only.
+1. 결과 저장소 신설 — common/runtime, 해석 없는 append-only.
 2. T1 범위 확장 — terminal 행 · `produced`와 같은 transaction에서 저장소 append.
 3. id 없는 객체의 `ref` 부여 규칙.
 4. 관찰 객체(readout `ReadRequest` 계열 · Fine `VisualEvidence`)가 `candidate_id`를 싣는다는 확인 — search · readout Owner.
 
-## 9. case 쪽 구현 (Runtime 수락 뒤, TDD)
+## 9. case 쪽 구현 (RT-10 Implementer 확인 뒤, TDD)
 
 - `CaseStore(adapter_factory=…)` — 기본은 지금 registry factory.
 - `StoredObservationAdapter` — Runtime 저장소 전에는 가짜 `ProducedReader` · 가짜 recording으로 테스트한다.
