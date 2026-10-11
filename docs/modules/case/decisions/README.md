@@ -22,3 +22,4 @@
 - `case-store-mysql.md — CaseStore MySQL 영속화 1단계: 하이브리드 schema(cases + append-only 레코드 3종) · 호출자 transaction 참여 · FOR UPDATE/FOR SHARE · opt-in MySQL 테스트 (W7 8순위 8-6, 2026-10-05). adapter 제거는 2단계`
 - `running-jobs-derivation.md — running_jobs를 case가 JobRecord 정산 기록(REFLECTED · STOPPED_WAITING · CANCELLED · SUPERSEDED, state JSON)으로 계산, 실행 기록 없으면 PENDING, 공개 함수의 running_jobs 인자 제거 (W7 8순위 8-11, 2026-10-06)`
 - `start-analysis.md — 분석 시작(START_ANALYSIS): case당 타임라인 하나를 교체 가능한 port로 받고(임시로 등록 순서대로 이어 붙임), 탐지 유형 4개 전부 · 예산 150초/설정 1,000원 · 첫 fingerprint sha256 · 단서 구조화 대기 90초 (W7 8순위 8-1, 2026-10-07)`
+- `jobexecution-read-port.md — JobExecution read port를 `CaseStore(executions=…)`로 주입, case가 자기 job_id로 조회해 running_jobs · Fine 실행 상태를 계산, 진입 함수의 job_executions · visual_verify_status 인자 제거 (W7 8순위 8-10, 2026-10-11)`
