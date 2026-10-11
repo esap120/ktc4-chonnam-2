@@ -39,7 +39,7 @@ def uncertain_observations() -> real_e2e.ObservationBundle:
         MockFixtureAdapter(MOCK_ROOT, "happy_001").get_analysis_scopes()[0]
     )
     candidate = search_module.search_candidates(scope).candidates[0]
-    obs = real_e2e.observe_happy_001_candidate(
+    obs = real_e2e.observe_fixture_candidate(
         case_id="case_await_001", candidate=candidate, scope=scope, mock_root=MOCK_ROOT
     )
     return replace(obs, visual_evidence=_uncertain(obs.visual_evidence))
@@ -75,13 +75,13 @@ def test_user_unsure_response_resumes_assembly_from_same_observations(uncertain_
 def test_real_adapter_caseview_for_await_is_partial_and_not_ready(monkeypatch) -> None:
     """adapter 경로 — 무응답 AWAIT는 CaseView 조립까지 예외 없이 가고, evidence는 부분 투영(#239)이며
     EvidenceRecord · Package가 없다."""
-    original = real_e2e.observe_happy_001_candidate
+    original = real_e2e.observe_fixture_candidate
 
     def observe_uncertain(**kwargs):
         obs = original(**kwargs)
         return replace(obs, visual_evidence=_uncertain(obs.visual_evidence))
 
-    monkeypatch.setattr(real_e2e, "observe_happy_001_candidate", observe_uncertain)
+    monkeypatch.setattr(real_e2e, "observe_fixture_candidate", observe_uncertain)
 
     scope = MockFixtureAdapter(MOCK_ROOT, "happy_001").get_analysis_scopes()[0]
     case = CaseAggregate.intake(case_id="case_await_002", hints={}, manifest_summary={})
@@ -101,7 +101,7 @@ def test_real_adapter_caseview_for_await_is_partial_and_not_ready(monkeypatch) -
 
 def test_real_adapter_resumes_after_user_unsure_without_reobserving(monkeypatch) -> None:
     """응답 뒤 같은 selection context로 재개 — 관찰(Fine·OCR)은 다시 돌지 않는다."""
-    original = real_e2e.observe_happy_001_candidate
+    original = real_e2e.observe_fixture_candidate
     calls = []
 
     def observe_uncertain(**kwargs):
@@ -109,7 +109,7 @@ def test_real_adapter_resumes_after_user_unsure_without_reobserving(monkeypatch)
         obs = original(**kwargs)
         return replace(obs, visual_evidence=_uncertain(obs.visual_evidence))
 
-    monkeypatch.setattr(real_e2e, "observe_happy_001_candidate", observe_uncertain)
+    monkeypatch.setattr(real_e2e, "observe_fixture_candidate", observe_uncertain)
 
     scope = MockFixtureAdapter(MOCK_ROOT, "happy_001").get_analysis_scopes()[0]
     case = CaseAggregate.intake(case_id="case_await_003", hints={}, manifest_summary={})
@@ -133,14 +133,14 @@ PENDING_CODE = "case.situation_response_pending"
 def _await_case(
     monkeypatch, case_id: str, *, plate_outcome: str | None = None, hints: dict | None = None
 ) -> tuple[CaseAggregate, RealAdapter]:
-    original = real_e2e.observe_happy_001_candidate
+    original = real_e2e.observe_fixture_candidate
 
     def observe_uncertain(**kwargs):
         obs = original(**kwargs)
         obs = replace(obs, visual_evidence=_uncertain(obs.visual_evidence))
         return replace(obs, plate_read_outcome=plate_outcome) if plate_outcome else obs
 
-    monkeypatch.setattr(real_e2e, "observe_happy_001_candidate", observe_uncertain)
+    monkeypatch.setattr(real_e2e, "observe_fixture_candidate", observe_uncertain)
     scope = MockFixtureAdapter(MOCK_ROOT, "happy_001").get_analysis_scopes()[0]
     case = CaseAggregate.intake(case_id=case_id, hints=hints or {}, manifest_summary={})
     real = RealAdapter(case_id=case_id, case=case, search_scope=scope, mock_root=MOCK_ROOT)

@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from daesingo import search as search_module
 from daesingo.case import correction, jobs, real_e2e, service
 from daesingo.case.adapters import MockFixtureAdapter, RealAdapter
 from daesingo.case.domain import CaseAggregate
@@ -178,7 +179,7 @@ def test_evidence_bundle_uses_real_plate_and_time_values():
     """readout/search/recording을 실제로 호출해서 나온 값이지, mock JSON을 베낀 게
     아니라는 걸 값으로 확인한다 — 세 값 다 `data/mock/readout/scenario_happy_001.json`과
     같지만, 이번엔 `readout.read_plate()`/`read_overlay_time()`을 실제로 실행해서 나온
-    결과다(`real_e2e.build_happy_001_evidence_bundle` 내부에서 fixture JSON을 읽지 않음
+    결과다(`real_e2e.build_fixture_evidence_bundle` 내부에서 fixture JSON을 읽지 않음
     — 예외는 모듈 docstring에 적은 time_source_candidates 한 곳뿐)."""
     import daesingo.search as search_module
 
@@ -186,7 +187,7 @@ def test_evidence_bundle_uses_real_plate_and_time_values():
     scope = search_module.AnalysisScope.model_validate(scope_dict)
     candidate = search_module.search_candidates(scope).candidates[0]
 
-    bundle = real_e2e.build_happy_001_evidence_bundle(
+    bundle = real_e2e.build_fixture_evidence_bundle(
         case_id="case_h001_bundle_test", candidate=candidate, scope=scope, mock_root=MOCK_ROOT
     )
 
@@ -258,7 +259,7 @@ def test_evidence_bundle_wires_search_stream_context(monkeypatch):
     scope = search_module.AnalysisScope.model_validate(scope_dict)
     candidate = search_module.search_candidates(scope).candidates[0]
 
-    bundle = real_e2e.build_happy_001_evidence_bundle(
+    bundle = real_e2e.build_fixture_evidence_bundle(
         case_id="case_h001_stream_context_test", candidate=candidate, scope=scope, mock_root=MOCK_ROOT
     )
 
@@ -417,3 +418,37 @@ def test_real_e2e_happy_path_reaches_ready_caseview():
     assert view["hints"] != {}
     # package는 알려진 단순화 2 때문에 None일 수 있다 — 존재 자체를 요구하지 않는다.
     assert view["package"] is None or "package_ref" in view["package"]
+
+
+def test_real_adapter_runs_other_scenario():
+    """시나리오 이름은 recording fixture 로드에만 쓴다 — search · readout은 값으로 찾는다."""
+    mock = MockFixtureAdapter(MOCK_ROOT, "correction_rerun_001")
+    scope = mock.get_analysis_scopes()[0]
+    case = CaseAggregate.intake(case_id="case_r001_real", hints=mock.get_hints(), manifest_summary={})
+    real = RealAdapter(
+        case_id="case_r001_real",
+        case=case,
+        search_scope=scope,
+        mock_root=MOCK_ROOT,
+        scenario_id="scenario_correction_rerun_001",
+    )
+    case.start_search()
+    jobs.issue_coarse_search(case, scope_ref=scope["scope_id"], input_fingerprint="f")
+    candidates = service.receive_search_candidates(case, real)
+    case.select_candidate(candidates[0].candidate_id)
+
+    view = service.build_view_from_adapter(case, real)
+
+    assert view["evidence"]["plate_display"]["value"] == "34나7890"
+
+
+def test_single_analysis_source_is_required(monkeypatch):
+    """AnalysisSource가 하나가 아니면 `[0]`을 조용히 쓰지 않는다."""
+    fixture = real_e2e.load_recording_fixture(real_e2e.DEFAULT_SCENARIO_ID)
+    doubled = fixture.model_copy(update={"analysis_sources": fixture.analysis_sources * 2})
+    monkeypatch.setattr(real_e2e, "load_recording_fixture", lambda _sid: doubled)
+    scope = search_module.AnalysisScope.model_validate(_real_scope())
+    candidate = search_module.search_candidates(scope).candidates[0]
+
+    with pytest.raises(ValueError, match="AnalysisSource"):
+        real_e2e.observe_fixture_candidate(case_id="c", candidate=candidate, scope=scope, mock_root=MOCK_ROOT)

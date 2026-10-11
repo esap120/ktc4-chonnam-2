@@ -40,7 +40,7 @@ W5/W6 마감(월요일 20:00 회의 — 대표 시나리오 1개가 E2E를 실�
 맞춰 readout/recording도 이미 실제 공개 함수가 있다는 걸 확인했다(`real_e2e.py` 참고
 — recording의 `resolve_span`/`build_incident_clip`, readout의 `read_plate`/
 `read_overlay_time` 전부 fixture 없이도 순수 호출 가능). evidence 6개 메서드를
-`real_e2e.build_happy_001_evidence_bundle()`로 교체했다 — recording→search.verify_visual
+`real_e2e.build_fixture_evidence_bundle()`(당시 이름 `build_fixture_evidence_bundle`)로 교체했다 — recording→search.verify_visual
 →readout→evidence 전체 체인을 실제 함수로 잇는다.
 
 `get_job_executions()`(common/runtime)는 여전히 `NotImplementedError`다 — 다만
@@ -48,7 +48,8 @@ W5/W6 마감(월요일 20:00 회의 — 대표 시나리오 1개가 E2E를 실�
 이 메서드를 부르지 않으므로(실행 상태는 `CaseStore`의 read port로 읽음, 8-10), 오늘 목표인
 "CaseView까지 E2E 통과"에는 영향이 없다.
 
-시나리오는 `scenario_happy_001` 하나로 고정돼 있다 — `real_e2e.py` 모듈 docstring의
+시나리오는 `RealAdapter(scenario_id=…)`로 고른다(기본 `scenario_happy_001`, 2026-10-12 4순위 —
+`decisions/real-e2e-scenarios.md`). `real_e2e.py` 모듈 docstring의
 "알려진 단순화"(시각 원시 데이터 raw read, `situation_response`/`observation_facts`
 None) 두 가지도 그대로 적용된다.
 
@@ -286,9 +287,11 @@ class RealAdapter:
         case: CaseAggregate | None = None,
         search_scope: dict[str, Any] | search_module.AnalysisScope | None = None,
         mock_root: Path | None = None,
+        scenario_id: str = real_e2e.DEFAULT_SCENARIO_ID,
         **clients: Any,
     ) -> None:
         self.case_id = case_id
+        self._scenario_id = scenario_id
         self._case = case
         self._search_scope = search_scope
         self._mock_root = mock_root
@@ -423,11 +426,12 @@ class RealAdapter:
                         "get_candidate_events() 결과에서 찾을 수 없다 — 같은 인스턴스로 "
                         "먼저 후보를 받아왔는지 확인해야 한다."
                     )
-                observations = real_e2e.observe_happy_001_candidate(
+                observations = real_e2e.observe_fixture_candidate(
                     case_id=self.case_id,
                     candidate=candidate,
                     scope=scope,
                     mock_root=self._mock_root,
+                    scenario_id=self._scenario_id,
                 )
                 self._observations_by_candidate[selected.candidate_id] = observations
             self._evidence_bundle = real_e2e.assemble_evidence_bundle(
