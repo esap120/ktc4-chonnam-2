@@ -47,10 +47,12 @@ runner 성공 후 재실행은 version 기준 no-op이다. MySQL implicit-commit
 
 RT-06(a)는 `jobs/retry_policy.py`의 만료·상한·backoff pure logic과 `jobs/sweep.py`의 caller transaction 참여·주기 thread를 추가한다. STALE과 다음 QUEUED는 같은 commit이며, 원본 row 잠금 재확인·기존 UNIQUE(job_id, attempt)·재시도 동안 고정한 retry ID로 중복을 막는다. 만료 판단과 시각은 DB `NOW(6)`을 사용한다. Worker startup에서 첫 claim 전 실행하고 handler와 별개 thread로 반복한다. RT-07 hook은 sweep commit·connection 반환 뒤 실행한다. claim receipt의 내부 `queued_at`으로 attempt별 queue 대기 지표를 기록한다.
 
+RT-07(a)는 `usage/`에 typed `usage_inflight`·append-only `usage_record`와 exact `DECIMAL(65,30)` 경계를 추가했다(`runtime_0003`, 기존 `runtime_0002` 뒤). `append_final(conn, record)`는 caller transaction에 INSERT하며 같은 `usage_id`·snapshot의 replay는 no-op, 다른 snapshot은 `UsageIdentityConflict`다. 내부 commit/rollback·ID 발급·in-flight 변경·provider 호출은 없다. `read_final`의 금액은 문자열 또는 null이고, null과 0을 구분한다. live Core binder도 Decimal/문자열만 받으며 float·초과 precision/scale을 DB 변환 전에 거부한다. raw SQL로 binder를 우회하면 MySQL 자체의 소수 반올림이 가능하다. `execution_ref` index가 있으며 tracker와 Final은 같은 PK로 논리 연결하고 FK를 두지 않는다. frozen migration과 live metadata는 실제 MySQL DDL로 대조한다.
+
 아직 실제 구현되지 않은 범위:
 
 - terminal T2 재전달 scan · 실제 kill E2E(RT-06(b))
-- Runtime UsageRecord DB persistence
+- UsageSink begin/finish·Worker 주입·Run finalize 배선(RT-07(b)), reconciliation·늦은 관측·sweep hook·usage_refs projection(RT-07 후속)
 - API / Worker 실제 app·handler 조립(config bootstrap만 있음)
 - Runtime health endpoint
 

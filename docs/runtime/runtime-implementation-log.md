@@ -42,7 +42,8 @@ Plan §0.1이 Task PR로 넘긴 선택은 미리 행을 둔다. 그 밖의 선�
 | attempt observer · claim latency | sanitized outcome/duration · transaction 시작 → COMMIT acknowledgement · checkout/checkin/retry 대기 제외 · 관측 실패와 retry 분리 | RT-03(b) · 로컬, PR 미생성 | 아래 RT-03(b) · `common/db/transactions.py` |
 | Worker invocation · T1 replay | 불변 kind registry · execution context/result · claim/handler/T1 분리 · 결과 보존 재시도 · durable terminal facts 재조회 | RT-04(a) · 로컬, PR 미생성 · `Refs #291` | 아래 RT-04 · `worker/composition.py` · `common/jobs/worker_loop.py` |
 | heartbeat lifecycle · commit fencing | 실행별 전용 thread/NullPool connection · monotonic fixed-rate/skip · 내부 ownership fence · B-D8 매 시도/COMMIT 직전 guard · BaseException 소유 thread 전파 | RT-05(a) · 로컬 미커밋 · `Refs #292` | 아래 RT-05 · `common/jobs/heartbeat.py` · `common/db/transactions.py` |
-| `DECIMAL` precision/scale (Plan P-10) | pending | RT-07 | — |
+| `DECIMAL` precision/scale (Plan P-10) | `DECIMAL(65,30)` · 정수 35/소수 30자리 · Decimal/문자열 bind · 초과 precision/scale 거부 | RT-07(a) · 로컬 미커밋 · `Refs #294` | 아래 RT-07 · `common/usage/amount.py` |
+| usage identity · Final replay · 참조 | 양 table `usage_id` 단독 PK · FK 없이 snapshot 보존 · 고정 ID INSERT/1062 locked read · 동일 snapshot no-op/상이하면 conflict · caller tx | RT-07(a) · 로컬 미커밋 · `Refs #294` | 아래 RT-07 · `common/usage/{schema,repository}.py` |
 | cancel 잠금 · signal · 지연 측정 | 전체 입력 검증 후 sorted job별 unique index 순회 잠금 · 최초 marker 유지 · heartbeat commit 후 signal 한 번 전달 · DB 요청→terminal/추가 monotonic checkpoint→commit 지연 | RT-05(b) · 로컬 미커밋 · `Refs #292` | 아래 RT-05(b) · `common/jobs/cancel.py` |
 | STALE sweep · retry · hook lifecycle | 후보 scan 후 execution별 짧은 tx · PK SKIP LOCKED 재확인 · retry ID 고정/unknown COMMIT 복구 · startup gate + 독립 주기 thread · connection 반환 뒤 immutable hooks | RT-06(a) · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `common/jobs/{sweep,retry_policy}.py` |
 | attempt별 queue 대기 관측 | claim receipt 내부 queued_at · DB queued_at→started_at · INITIAL/RETRY 묶음 · heartbeat 시작 뒤 sink 호출 | RT-06(a) · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `repository.py` · `worker_loop.py` |
@@ -939,35 +940,66 @@ Status: IN_PROGRESS · Issue: #293 · Audit: A
 
 ## RT-07 — Usage ledger: in-flight · Final UsageRecord · reconciliation
 
-Status: NOT_STARTED · Issue: #294 · Audit: B
+Status: IN_PROGRESS · Issue: #294 · Audit: B
 
 | PR | 내용 | Merge SHA |
 | --- | --- | --- |
-| — | — | — |
+| pending — 로컬 미커밋, PR 미생성 | `Refs #294 (RT-07(a))` — schema · DECIMAL · caller transaction Final append | pending |
 
 ### 구현 결과
 
-—
+- 기존 Runtime head `runtime_0002` 뒤에 frozen `0003_usage.py`(`runtime_0003`)를 추가한다. 기존 revision은 변경하지 않는다. `usage_inflight`는 Runtime 내부 호출 identity·context·관측값·run 관계·STARTED/OBSERVED/FINALIZED 상태·관측/확정 시각을 typed column으로 갖는다. Final `usage_record`는 Contract §4~§8의 필드를 typed column으로 보존하고 내부 outcome/state/failure column을 내보내지 않는다.
+- 양 table의 `usage_id` 단독 ascii_bin PK로 호출 identity 재사용과 같은 identity의 Final 중복을 차단한다. nullable `execution_ref`에 index를 두며 `case_id`·run·execution·in-flight/Final 사이의 FK는 없다. Final은 tracker lifecycle과 독립된 snapshot이다. in-flight에는 pending run 관계를 허용하며 Final에는 Contract의 두 null 사유 또는 실제 run 참조만 허용한다.
+- nullable BIGINT token 세 값의 전체 null/전체 non-null CHECK와 total=input+output CHECK, KRW CHECK, run-kind/reason 관계 CHECK를 양 table에 둔다. SQL UNKNOWN으로 부분 null이 통과하지 않도록 null 여부를 명시한다.
+- MySQL ascii_bin의 PAD SPACE 비교로 enum에 공백 접미사가 허용되지 않도록 run_kind/run_ref_reason/state/outcome CHECK는 `CAST(... AS BINARY)`로 비교한다. frozen migration과 live metadata에 같은 제약을 둔다.
+- `common/usage/amount.py`와 live `ExactAmount` Core binder는 Decimal/문자열/None만 받는다. float·int·bool·비유한 값·초과 자릿수는 DB 변환 전에 거부한다. Decimal context precision에 의존하는 quantize/normalize를 쓰지 않으며 `amount=null`과 0을 구분한다. 읽기 금액은 문자열 또는 null이다.
+- `append_final(conn, record) -> bool`은 열린 caller transaction에서 전체 Contract 입력을 검증한 뒤 INSERT한다. 새 row=True, 동일 identity/typed snapshot replay=False, 다른 snapshot=`UsageIdentityConflict`다. 1062만 locked read/full comparison으로 처리하고 다른 SQL 오류는 전파한다. commit/rollback/retry·ID 발급·provider 호출·in-flight 변경은 하지 않는다. 결과는 caller commit 전까지 잠정적이다.
+- `read_final(conn, usage_id)`는 Final Contract 필드만 projection하며 UTC timestamp·decimal string을 반환한다. JobExecution `usage_refs` read port는 이번 범위에서 연결하지 않는다.
 
 ### Plan 대비 변경
 
-—
+- Plan의 예상 migration `0002_usage.py` 대신 이미 존재하는 claim receipt revision 다음의 `0003_usage.py`를 사용한다. 순번/파일 배치만 달라지는 implementation detail이다.
+- RT-07(a)에 한정했다. UsageSink begin/finish·Worker injection·Run finalize 배선은 (b), reconciliation·늦은 관측(P-7)·sweep hook은 (c), Search 배선은 SRCH-1에 남긴다. pricing/FX·retention/purge·budget guard·기존 SearchLedger는 변경하지 않는다.
+- 새 테스트 파일은 기존 jobs 테스트와 Python module 이름이 충돌하지 않도록 `test_usage_repository_mysql.py`로 둔다. 기존 migration acceptance의 head/table inventory와 future-revision parent만 새 head에 맞춘다. `.github/workflows/`·Case 소유 테스트/fixture는 변경하지 않는다.
 
 ### 새 implementation detail
 
-—
+- **DECIMAL(65,30) 근거(P-10):** Contract 예시는 `184.20`과 `0`이고 기존 `search/usage.py:ProviderUsage.cost_with_rates`는 Decimal(str(rate)) × 정수 token / 1,000,000이며 quantization 없이 Decimal을 반환한다. Accepted #244 U-2는 KRW 정규화 책임과 unknown=null을 정했으나 미래 KRW 출력의 숫자 상한/scale을 고정하지 않았다. (20,6)은 작은 소수, (38,18)은 더 긴 계산 결과를 수용하지 못한다. MySQL 지원 최대 65/30을 사용해 별도 가격 반올림 정책을 만들지 않고 35자리 정수와 30자리 소수를 허용한다. 모든 미래 값이 들어간다는 보장은 하지 않는다. 더 긴 fractional suffix(0 포함)도 거부한다. [MySQL DECIMAL](https://dev.mysql.com/doc/refman/8.4/en/precision-math-decimal-characteristics.html).
+- **Identity 대안:** composite `(execution_ref, usage_id)` UNIQUE는 서로 다른 execution에 같은 usage_id를 재사용할 수 있고 nullable execution에도 부적합하다. surrogate PK만으로는 Final 중복을 차단하지 못한다. usage_id 단독 PK를 선택하며 별도 중복 UNIQUE는 추가하지 않는다.
+- **참조 대안:** Final→in-flight FK는 ledger를 tracking lifecycle에 종속시키고 cascade는 원장 삭제 위험이 있다. 동일 PK의 논리 참조 + 독립 snapshot을 선택한다. 향후 tracker 정리는 삭제 대신 finalize 표시(P-7)이며 이번 primitive는 이를 구현하지 않는다. 내부 context 정합 확인은 후속 tracker/finalize 책임이다.
+- **Idempotency/COMMIT 불명:** 새 ID 재발급은 중복 청구, unconditional upsert/ignore는 원장 덮어쓰기/충돌 은폐 위험이다. caller가 identity와 전체 snapshot을 유지하여 replay한다. INSERT는 경쟁 transaction의 commit/rollback을 기다리고 1062 뒤 locked read가 동일 snapshot을 확인한다. 처음 writer가 rollback하면 새 INSERT가 성공한다. 기존 Worker DB callback retry와 조합할 수 있으나 caller transaction의 다른 효과도 각각 replay-safe여야 한다. 단일 Final receipt를 전체 다른 transaction 효과의 commit 증거로 확대하지 않는다.
+- 설계 비교·TDD/검증 계획은 [RT-07(a) 구현 계획](../superpowers/plans/2026-10-12-runtime-usage-ledger-schema.md)에 보존한다. 새 Decision·Contract·Baseline 값을 정하지 않는다.
+
+### Contract / Decision / Baseline 영향
+
+- 모두 변경 없음. 다른 Owner의 새 surface/의무, SoT 모순이나 외부 의미가 달라지는 ambiguity는 발견하지 않았다. supplied AGENTS.md를 적용하며 저장소 내 AGENTS.md 파일은 검색에서 확인되지 않았다.
 
 ### Owner 확인 포인트
 
-—
+- Deferred Audit B: amount의 명시적 물리 범위, unknown=null/0 구분, pending in-flight/Final run 연결 경계, fixed identity의 snapshot conflict와 caller transaction/COMMIT 불명 경계를 확인한다. §12.3에 따른 사전 Owner 확인 사항은 없다.
 
 ### Verification
 
-—
+- **RT-07(a) 독립 재리뷰 최종 판정 — PASS(사용자 전달 결과):** 병합 차단 문제 없음. schema·DECIMAL·caller transaction·idempotency의 최종 판정이 모두 통과했다. 아래 구현 단계의 보존 증거와 구분한다.
+- **독립 MySQL 재검증:** **445 passed · skip 0 · xfail 0**, JSON/JUnit gate **PASS**. parameter 누락 **2,093/2,093 거부**, usage parameter 증거 누락 **560/560 거부**다. 독립 재리뷰의 전체 pytest 실행 결과로 아래 **5,022 passed / 26 skipped**를 재인용하지 않는다.
+- **구현 단계의 보존 증거:** 아래 TDD·read-only 수정 리뷰·nested suite·전체 회귀·재검증 기록은 구현 당시 실행의 증거다.
+- TDD RED: 금액 경계 33개·실제 MySQL schema/append 77개·gate 새 usage family 11개와 필수 parameter 동시 collection/selection/phases/JUnit 누락 74개를 미구현 실패로 확인했다. 극단 exponent의 InvalidOperation 분류도 1개 RED 후 수정했다.
+- 기존 Runtime migration/queue real MySQL baseline 33 passed. amount 34 passed, gate unit 2,230 passed. CHECK 위반의 실제 MySQL 3819는 PyMySQL OperationalError로 전달되어 테스트에서 코드까지 확인한다. 테스트 파일명 충돌은 collection error 확인 후 신규 파일명 변경으로 해결했다. 첫 baseline unit의 임시 디렉터리 parent 누락과 boundary stdout cp949 인코딩은 실행 환경을 바로잡았으며 제품 source 변경으로 숨기지 않았다.
+- 구현 단계의 독립 read-only 리뷰가 발견한 enum 공백 접미사 P2를 실제 MySQL INSERT **6 failed** RED로 재현하고 수정했다. six suffix + frozen/live DDL **7 passed** GREEN, 새 필수 parameter 누락 **6 failed** gate RED를 확인했다. 당시 수정 재리뷰의 독립 SELECT probe와 기존 GREEN JSON/JUnit 확인에서 P2 해결 및 추가 actionable finding 없음으로 보고됐다. 해당 read-only reviewer는 새 pytest를 실행하지 않았으며, 위 최종 독립 MySQL 재검증과 별개다.
+- 중간 전체 실행 `full-verified`는 리뷰 수정 전 증거이므로 중단했다. 최종 source로 `full-final`을 다시 실행하며 필수 usage inventory는 11 families / 80 parameters다.
+- 구현 단계 최종 실행의 nested 실제 MySQL suite **445 tests · skip 0 · xfail 0**, JSON/JUnit gate PASS를 별도 CLI로 확인했다. 실제 보고서 parameter 증거 누락 **2,093/2,093 거부**, 신규 usage **80 parameters × 7 layers = 560/560 거부**다. `full-final/test_actual_report_rejects_eac0/{mysql.json,mysql.xml,parameter-mutations.json}`에 보존한다.
+- `full-final` 전체 실행은 **5,022 passed / 1 failed / 26 skipped**, 1,515.89초였다. 기존 API kill 테스트의 blocker `lock.rollback()`에서 MySQL 2013 / Windows 10053 연결 중단이 발생했다. 같은 test는 nested suite와 별도 진단 **1 passed**였으며 해당 기존 test/transaction source는 변경하지 않았다. 실패 보고서를 통과 증거로 사용하지 않는다.
+- 구현 단계의 코드 변경 없는 `full-recheck`는 **5,022 passed / 26 skipped**, **928.39초 · exit 0**이다. 이 전체 수치는 구현 단계의 보존 증거이며 이번 독립 재검증에서 전체 suite를 다시 실행했다는 의미가 아니다. 이미 통과한 실제 보고서 mutation test 하나(`test_migration_gate.py`)만 중첩 반복에서 제외하며 그 PASS와 실제 nested JSON/JUnit/누락 2,093건 거부 증거를 보존한다. skip 26개는 비-MySQL의 typer 의존성/로컬 미디어 opt-in 항목이며 MySQL skip으로 대체하지 않았다.
+- 구현 단계 최종 재검증 JSON/JUnit을 별도 CLI와 evidence 집계 script로 검사했다. 실제 MySQL **445 tests · skip 0 · xfail 0 · 1,335 phases passed**, 신규 usage MySQL **101 passed**다. amount unit **34 passed**, gate unit **2,272 passed**를 포함한다. evidence는 `.codex-scratch/rt07a-20261012/{full-recheck.txt,json,xml,exit,final-evidence-summary.json}`이며 실패한 `full-final` 보고서는 gate가 실제로 거부하는 것도 확인했다.
+- 실행: `DAESINGO_REQUIRE_MYSQL=1`, 실제 disposable MySQL URL, `PYTHONIOENCODING=utf-8`에서 `.venv/Scripts/python.exe -B -X utf8 -m pytest -vv --tb=short -p no:cacheprovider --ignore=tests/common/db/integration/test_migration_gate.py --basetemp=.codex-scratch/rt07a-20261012/full-recheck --mysql-report=.codex-scratch/rt07a-20261012/full-recheck.json --junitxml=.codex-scratch/rt07a-20261012/full-recheck.xml`. 보고서는 `scripts/check_mysql_test_report.py`로 검증했다. boundary checker PASS, `git diff --check` PASS. 테스트 서버는 검증 후 PID/datadir 확인 스크립트로 종료했다. 원격 CI 실행은 하지 않았다.
 
 ### 남은 위험
 
-—
+- 독립 재리뷰에서 cancel timing 테스트의 단발 경계 초과가 보고됐다. 원인은 미확정이며 timing 안정성 위험을 유지한다. 이를 해소됐다고 기록하지 않으며, 병합 차단 문제 없음이라는 최종 판정과 별도로 보존한다.
+- RT-07(b)/(c)·SRCH-1은 미구현이며 실제 provider 호출 수, invocation 시작 조건, Run 확정/복구/늦은 관측 보존을 이번 schema/append 결과로 검증했다고 주장하지 않는다. B-G1의 terminal 기반 recovery와 P-7 의미는 그대로다.
+- raw textual SQL/외부 DB writer는 application amount binder를 우회할 수 있다. MySQL은 column 변환에서 소수를 반올림할 수 있어 CHECK로 원래 입력 scale을 복구할 수 없다([MySQL rounding](https://dev.mysql.com/doc/refman/8.4/en/precision-math-rounding.html)). 공식 append/live Core write 경계의 검증을 보장하며 raw SQL writer까지의 보호나 DB UPDATE/DELETE 권한 차단을 구현하지 않았다. repository는 Final을 수정/삭제하지 않는다.
+- tracker와 Final의 context 정합은 후속 finalize가 확인해야 한다. 재시도에 영향을 주는 실제 lock timeout/deadlock은 caller의 기존 transaction 정책 대상이다. 새로운 identity로 재시도하거나 provider를 재호출하면 안 된다.
+- 사용자 요청에 따라 기존 미추적 파일을 수정/staging하지 않으며 커밋·push·PR 없이 독립 재리뷰 가능한 로컬 상태로 남긴다. PR/merge SHA는 pending, 연결은 `Refs #294 (RT-07(a))`다.
 
 ---
 
