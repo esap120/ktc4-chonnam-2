@@ -21,6 +21,7 @@ from daesingo.common.jobs.schema import job_execution
 from daesingo.common.jobs.sweep import SweepService, sweep_once
 from daesingo.common.jobs.worker_loop import WorkerLoop, TerminalCommit
 from daesingo.common.jobs.reflection import ReflectionInput, ResultReflector, reflect_terminal
+from daesingo.common.jobs.redelivery import observe_reflection, redeliver_once
 from daesingo.common.logging import bind_context, log_event_best_effort, safe_correlation
 from daesingo.worker.registry import KindRegistry
 
@@ -139,9 +140,7 @@ def compose_worker(
                 sleep=sleep, logger=startup.logger,
             )
             # A recovered/completed receipt is ALREADY_APPLIED, so no double count.
-            if incoming.attempt >= 2 and result.status == "NOT_APPLIED" and result.reason == "STOPPED_WAITING":
-                log_event_best_effort(startup.logger, "runtime.retry.after_case_stopped_count",
-                                      status="STOPPED_WAITING")
+            observe_reflection(incoming, result, startup.logger)
             return result
 
     return WorkerLoop(
@@ -154,5 +153,7 @@ def compose_worker(
         sweeper=SweepService(
             sweep=partial(sweep_once, engine, settings, sleep=sleep, logger=startup.logger),
             settings=settings, stop=stop, logger=startup.logger, hooks=sweep_hooks,
+            redeliver=partial(redeliver_once, engine, reflector, sleep=sleep, logger=startup.logger)
+                if reflector is not None else None,
         ),
     )

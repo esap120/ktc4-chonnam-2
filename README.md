@@ -66,7 +66,7 @@ Python · FastAPI · **Modular Monolith**(API 1 + Worker 1) · MySQL 8.4 · DB Q
 | --- | --- |
 | `apps/prototype/` | 흐름 프로토타입 (React 19 + Vite 6, 목데이터). **제품 코드 아님** |
 | `apps/web/` | 실제 웹 앱. `CaseView` 소비 화면·컴포넌트 구현 진행 중 (Owner: 신유민) — 자세한 현황은 `apps/web/README.md` |
-| `src/daesingo/` | Python 모듈형 모놀리스 — `case`·`search`·`readout`·`recording`·`evidence`·`common`은 실제 구현+테스트가 있다. `api`는 RT-01 설정·로그 bootstrap, `worker`는 RT-04(a) 진입점·claim/dispatch·T1을 구현했다(HTTP route·T2·실제 Worker handler 미구현) |
+| `src/daesingo/` | Python 모듈형 모놀리스 — `case`·`search`·`readout`·`recording`·`evidence`·`common`은 실제 구현+테스트가 있다. `api`는 RT-01 설정·로그 bootstrap, `worker`는 claim/dispatch·T1/T2·heartbeat/cancel·STALE/retry·T2 재전달과 주입형 Case adapter를 구현했다(HTTP route·기본 entrypoint 실제 handler/reader 조립은 미구현) |
 | `eval/` | 오프라인 채점 도구 — `datasets` / `manifests` / `runners` / `scorers` / `predictions` / `results` / `locked_test`, 실제로 동작한다 |
 | `data/` | 테스트 · 데모용 고정 데이터 — `mock/`(모듈별 계약 fixture · 시나리오), `real/`(실제 영상 E2E 산출 JSON) |
 | `examples/` | `recording` · `search` 공개 함수 사용 예제 스크립트 |

@@ -16,6 +16,9 @@ REQUIRED_SCENARIOS = frozenset({
 
 # Stable acceptance identifiers, independent of Python test function names.
 REQUIRED_CHECKS = frozenset({
+    *(("redelivery", scenario) for scenario in (
+        "eligibility", "atomicity", "concurrent", "commit_unknown", "isolation",
+        "unsupported", "metric", "startup_periodic", "process_kill")),
     # RT-07(a): Final persistence, without sink/reconciliation wiring.
     *(("usage", scenario) for scenario in (
         "schema", "migration", "checks", "references", "amount", "binding", "append",
@@ -100,6 +103,17 @@ REQUIRED_CHECKS = frozenset({
 # Each parameter is an independent acceptance obligation. Names come from
 # explicit pytest marks, never from function names or parsed node ID suffixes.
 REQUIRED_PARAMETERS = frozenset({
+    *(("redelivery", "eligibility", mode) for mode in
+      ("SUCCEEDED", "FAILED", "CANCELLED", "STALE", "QUEUED", "RUNNING", "receipt")),
+    *(("redelivery", "atomicity", mode) for mode in ("success", "failed_hint", "enqueue", "marker")),
+    ("redelivery", "concurrent", "case_first"),
+    *(("redelivery", "commit_unknown", mode) for mode in ("followup", "stopped")),
+    *(("redelivery", "isolation", mode) for mode in ("reflector", "db", "logger", "filter", "handler", "scan")),
+    *(("redelivery", "unsupported", mode) for mode in ("PLATE_READ", "UNKNOWN")),
+    *(("redelivery", "metric", mode) for mode in
+      ("first_stopped", "retry_stopped", "third_stopped", "CANCELLED", "SUPERSEDED", "APPLIED")),
+    *(("redelivery", "startup_periodic", mode) for mode in ("startup", "periodic")),
+    *(("redelivery", "process_kill", mode) for mode in ("gap", "running")),
     *(("usage", "checks", f"{table}_{mode}") for table in ("usage_record", "usage_inflight")
       for mode in ("partial_input", "partial_output", "partial_total", "only_input", "only_output", "only_total",
                    "sum", "currency", "lower_currency", "run_kind", "run_partial", "run_reason", "reason_invalid",

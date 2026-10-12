@@ -12,6 +12,7 @@ import pytest
 
 from migration_support import ROOT
 from usage_acceptance import USAGE_CHECKS, USAGE_PARAMETERS
+from redelivery_acceptance import REDELIVERY_CHECKS, REDELIVERY_PARAMETERS
 
 pytestmark = pytest.mark.mysql
 
@@ -49,6 +50,7 @@ LIFECYCLE_CHECKS = (
 )
 
 WORKER_CHECKS = (
+    *REDELIVERY_CHECKS,
     *(("sweep", scenario) for scenario in ("detect_latency", "detect_boundary", "detect_fault")),
     ("sweep_worker", "hook_fatal"), ("sweep_worker", "hook_exception"),
     *(("sweep", scenario) for scenario in (
@@ -77,6 +79,7 @@ WORKER_CHECKS = (
 )
 
 WORKER_PARAMETERS = (
+    *REDELIVERY_PARAMETERS,
     *(("sweep", "detect_latency", f"{lease}_{reason}") for lease in (60, 7)
       for reason in ("RETRIED", "EXHAUSTED", "CANCELLED")),
     *(("sweep", "detect_boundary", mode) for mode in ("transition_clock", "null", "future")),
@@ -194,6 +197,7 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
          "tests/worker/test_heartbeat_mysql.py",
          "tests/worker/test_cancel_checkpoint_mysql.py",
          "tests/worker/test_sweep_worker_mysql.py",
+         "tests/worker/test_redelivery_mysql.py",
          "tests/case/test_store_mysql.py", "tests/case/test_case_repository_contract.py",
          "--ignore=tests/common/db/integration/test_migration_gate.py", "-m", "mysql", "-q",
          "-p", "no:cacheprovider", f"--basetemp={tmp_path / 'child'}",

@@ -11,12 +11,14 @@ import sys
 import pytest
 
 from usage_acceptance import USAGE_CHECKS, USAGE_PARAMETERS
+from redelivery_acceptance import REDELIVERY_CHECKS, REDELIVERY_PARAMETERS
 
 ROOT = Path(__file__).resolve().parents[3]
 
 # Independent role/scenario acceptance inventory, deliberately not imported
 # from the implementation being tested. Test function names are irrelevant.
 REQUIRED_CHECKS = (
+    *REDELIVERY_CHECKS,
     *USAGE_CHECKS,
     *(("sweep", scenario) for scenario in ("detect_latency", "detect_boundary", "detect_fault")),
     ("sweep_worker", "hook_fatal"), ("sweep_worker", "hook_exception"),
@@ -92,6 +94,7 @@ REQUIRED_CHECKS = (
 )
 
 REQUIRED_PARAMETERS = (
+    *REDELIVERY_PARAMETERS,
     *USAGE_PARAMETERS,
     *(("sweep", "detect_latency", f"{lease}_{reason}") for lease in (60, 7)
       for reason in ("RETRIED", "EXHAUSTED", "CANCELLED")),
