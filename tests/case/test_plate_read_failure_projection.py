@@ -84,6 +84,39 @@ def test_no_failure_notice_unless_plate_read_failed():
         assert service.derive_notices(view)["notices"] == []
 
 
+# --- 실행 실패 뒤 사용자가 번호판을 직접 입력하면 notice를 거둔다(#235 E-1 연결 질문 ①) --------------
+# 사용자 입력 값으로 Package · READY까지 가므로, blocking 실패 알림이 남으면 화면이 서로 어긋난다.
+# 진행 상태 `plate_read: FAILED`는 실행 사실이라 그대로 둔다. 실제 경로(정정 기록 → evidence 조립)는
+# evidence가 `previous_value=null`을 받기 시작한 뒤(#235 E-1 반영) 이어서 고정한다.
+
+
+def _view_with_plate(info_state: str, value: str | None) -> dict:
+    return {
+        "evidence": {
+            "record_id": "ev_test",
+            "plate_display": {"value": value, "needs_review": False, "info_state": info_state, "source_label_key": None},
+            "location_display": {"search_keyword": "광주 북구"},
+        },
+        "candidates": [],
+        "package": None,
+        "progress": [{"step": "plate_read", "state": "FAILED"}],
+        "notices": [],
+    }
+
+
+def test_failure_notice_withdrawn_after_user_enters_plate():
+    view = service.derive_notices(_view_with_plate("INFO_USER_CONFIRMED", "12가3456"))
+
+    assert FAILED_CODE not in [n["code"] for n in view["notices"]]
+    assert _plate_state(view) == "FAILED"
+
+
+def test_failure_notice_kept_while_plate_has_no_user_value():
+    view = service.derive_notices(_view_with_plate("INFO_UNKNOWN", None))
+
+    assert FAILED_CODE in [n["code"] for n in view["notices"]]
+
+
 def test_real_adapter_projects_readout_run_failure(monkeypatch):
     """real 경로: 판독이 `outcome=FAILED`로 끝나면 CaseView가 실패로 보여 준다."""
 

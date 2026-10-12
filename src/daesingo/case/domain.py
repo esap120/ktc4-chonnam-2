@@ -97,6 +97,9 @@ class Candidate:
 # JobRecord 정산 사유 — case가 그 job의 결과를 더 기다리지 않게 된 이유(`decisions/running-jobs-derivation.md`).
 JOB_SETTLE_REASONS = ("REFLECTED", "STOPPED_WAITING", "CANCELLED", "SUPERSEDED")
 
+# 「분석 진행」(`SEARCHING`)에서 사용자가 중단할 수 있는 job — `decisions/stop-analysis.md`.
+ANALYSIS_JOB_KINDS = ("HINT_EXTRACT", "COARSE_SEARCH")
+
 
 @dataclass
 class CaseAggregate:
@@ -139,6 +142,11 @@ class CaseAggregate:
     # case가 더는 결과를 기다리지 않는 job(`job_id` → `JOB_SETTLE_REASONS` 중 하나). `running_jobs[]`는
     # 여기 없는 JobRecord다(계약 B§10 불변조건 5). 처음 사유가 이긴다. CaseView 비노출.
     settled_jobs: dict[str, str] = field(default_factory=dict)
+
+    # Worker T2로 반영을 마친 execution(`execution_id` → `job_id`). 같은 execution이 다시 오면 반영하지 않는다 —
+    # T1 · T2 사이 Worker가 죽거나 T2 commit 응답을 잃으면 Runtime이 다시 넘긴다(Tech Spec §12.2 · #245 D-5,
+    # `decisions/result-reflection.md`). CaseView 비노출.
+    processed_executions: dict[str, str] = field(default_factory=dict)
 
     # 분석 시작 때 사용자가 적은 설명 원문(case-command Draft §11). 받은 그대로 두고 CaseView `description`으로
     # 내린다. 분석 시작 전에는 `None`.
@@ -228,29 +236,66 @@ class CaseAggregate:
             raise InvalidTransition(f"{self.stage}에서는 단서 구조화 결과를 받을 수 없다(SEARCHING 전용)")
         self.hints = dict(hints)
 
-    def record_candidate_search_failure(self) -> None:
+    def record_candidate_search_failure(self, *, job_id: str | None = None) -> bool:
         """후보 탐색 Run이 `FAILED`로 끝났다. 계약 §7(`RESUME_SEARCH` 행): 실패 Run은 투영 대상을
         바꾸지 않는다 — 후보 목록을 교체하지 않고, `CANDIDATE_REVIEW`로 진행하지도 않는다(그러면
         web이 「결과 없음」으로 그린다). stage는 `SEARCHING`에 머물고 실패 사실만 남긴다.
-        실패는 사용자 요청이 아니라 실행 결과라 `case_rev`를 올리지 않는다(§3-E)."""
+        실패는 사용자 요청이 아니라 실행 결과라 `case_rev`를 올리지 않는다(§3-E).
+
+        `job_id`(Worker 반영 경로)를 주면 그 job을 아직 기다릴 때만 받고 그 job만 정산한다 — 중단 · 대체된 job의
+        늦은 결과면 아무것도 바꾸지 않고 `False`(8-9). 주지 않으면(동기 경로) 기다리던 탐색 job을 모두 정산한다."""
+        if job_id is not None and not self.awaits_result(job_id):
+            return False
         if self.stage != "SEARCHING":
             raise InvalidTransition(f"{self.stage}에서는 후보 탐색 실패를 받을 수 없다(SEARCHING 전용)")
         self.candidate_search_failed = True
-        self._reflect_waiting("COARSE_SEARCH")
+        self._reflect(job_id, "COARSE_SEARCH")
+        return True
 
-    def receive_candidates(self, candidates: list[Candidate]) -> None:
+    def receive_candidates(self, candidates: list[Candidate], *, job_id: str | None = None) -> bool:
         """빈 배열(candidates=[])은 실패가 아니다 — `scenario_empty_001` 원칙(2026-09-14,
         실제 fixture로 검증: `AnalysisRun.outcome=SUCCEEDED`+`candidates=[]`도 검색 자체는
         성공이므로 `CANDIDATE_REVIEW`로 전진한다). 빈 배열이든 아니든 전진 여부는 같고,
         차이는 이후 단계(선택 가능한 candidate가 없어 evidence 파이프라인이 발주되지 않음)와
         `CaseView.notices[]`(`search.no_candidates`, 비차단 INFO)에서만 갈린다 — 이 notice는
         CaseView 값(`CANDIDATE_REVIEW` + 빈 `candidates`)만으로 발동해 `service.derive_notices()`가
-        붙인다."""
+        붙인다.
+
+        `job_id`는 `record_candidate_search_failure()`와 같다 — 기다리지 않는 job의 결과면 `False`."""
+        if job_id is not None and not self.awaits_result(job_id):
+            return False
         self.candidates = list(candidates)
         self.candidate_generation += 1
         self.candidate_search_failed = False
         self._advance("SEARCHING", "CANDIDATE_REVIEW")
-        self._reflect_waiting("COARSE_SEARCH")
+        self._reflect(job_id, "COARSE_SEARCH")
+        return True
+
+    def stop_analysis(self) -> list[str]:
+        """사용자가 「분석 진행」을 중단한다(`STOP_ANALYSIS`, #245 C-1). `SEARCHING`에서 기다리던 `HINT_EXTRACT` ·
+        `COARSE_SEARCH`만 `CANCELLED`로 정산하고 그 `job_id`를 돌려준다 — 다른 kind의 job은 그대로 기다린다
+        (C-1a B). 사용자 요청이라 `case_rev`를 올린다(§3-E). stage는 `SEARCHING`에 머문다 — 탐색 실패와 같이
+        「후보 없음」으로 보이지 않게 한다(`decisions/stop-analysis.md`)."""
+        if self.stage != "SEARCHING":
+            raise InvalidTransition(f"{self.stage}에서는 분석을 중단할 수 없다(SEARCHING 전용)")
+        waiting = [r["job_id"] for r in self.waiting_job_records() if r["kind"] in ANALYSIS_JOB_KINDS]
+        if not waiting:
+            raise InvalidTransition("기다리는 탐색 job이 없어 중단할 것이 없다")
+        for job_id in waiting:
+            self.settle_job(job_id, "CANCELLED")
+        self.bump_revision()
+        return waiting
+
+    @property
+    def analysis_stopped(self) -> bool:
+        """`SEARCHING`이고, 기다리는 탐색 job이 없고, 가장 나중 탐색 job이 사용자 중단으로 끝났다. 저장하지 않고
+        JobRecord와 정산 기록에서 계산한다 — 「이어서 찾기」로 새 job이 생기면 저절로 풀린다."""
+        if self.stage != "SEARCHING":
+            return False
+        records = [r for r in self.job_records if r["kind"] in ANALYSIS_JOB_KINDS]
+        if not records or any(r["job_id"] not in self.settled_jobs for r in records):
+            return False
+        return self.settled_jobs[records[-1]["job_id"]] == "CANCELLED"
 
     def select_candidate(self, candidate_id: str) -> None:
         """후보 선택은 case 소유(ownership.md §6) — evidence는 참조만 하고 복사해 갖지 않는다.
@@ -439,6 +484,20 @@ class CaseAggregate:
     def waiting_job_records(self) -> list[dict[str, Any]]:
         """아직 정산되지 않은 JobRecord — `running_jobs[]`의 원천. `job_records` 순서."""
         return [r for r in self.job_records if r["job_id"] not in self.settled_jobs]
+
+    def awaits_result(self, job_id: str) -> bool:
+        """case가 `job_id`의 결과를 아직 기다리는가 — 정산되지 않은 job만 받는다. 중단(`CANCELLED`) · 대체
+        (`SUPERSEDED`) · 이미 반영(`REFLECTED`)된 job의 결과는 반영하지 않는다(#245 C-4, A§10-7). 이 case가
+        발주하지 않은 `job_id`는 프로그래밍 오류다."""
+        if not any(r["job_id"] == job_id for r in self.job_records):
+            raise ValueError(f"이 case가 발주하지 않은 job_id: {job_id!r}")
+        return job_id not in self.settled_jobs
+
+    def _reflect(self, job_id: str | None, kind: str) -> None:
+        if job_id is None:
+            self._reflect_waiting(kind)
+        else:
+            self.settle_job(job_id, "REFLECTED")
 
     def _reflect_waiting(self, kind: str) -> None:
         for record in self.waiting_job_records():

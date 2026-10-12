@@ -1,7 +1,7 @@
 """이슈 #137 — Fine이 `NOT_OBSERVED`를 냈을 때 case가 downstream을 시작하지 않는다.
 
 유료 호출 없이 synthetic `NOT_OBSERVED` VisualEvidence를 실제 소비 경로
-(`real_e2e.build_happy_001_evidence_bundle`)에 주입한다. "결과가 비어 있더라"로 끝내지
+(`real_e2e.build_fixture_evidence_bundle`)에 주입한다. "결과가 비어 있더라"로 끝내지
 않고 IncidentClip·readout·TimeResolution·evidence 조립이 **호출되지 않았다는 것**을
 call count로 증명한다.
 
@@ -88,7 +88,7 @@ def test_not_observed_ends_without_a_contract_error(not_observed_run):
     scope, _ = not_observed_run
     candidate = search_module.search_candidates(scope).candidates[0]
 
-    bundle = real_e2e.build_happy_001_evidence_bundle(
+    bundle = real_e2e.build_fixture_evidence_bundle(
         case_id="case_h001_not_observed", candidate=candidate, scope=scope, mock_root=MOCK_ROOT
     )
 
@@ -102,7 +102,7 @@ def test_not_observed_does_not_start_downstream_work(not_observed_run):
     scope, spies = not_observed_run
     candidate = search_module.search_candidates(scope).candidates[0]
 
-    real_e2e.build_happy_001_evidence_bundle(
+    real_e2e.build_fixture_evidence_bundle(
         case_id="case_h001_not_observed_spy", candidate=candidate, scope=scope, mock_root=MOCK_ROOT
     )
 
@@ -122,7 +122,7 @@ def test_not_observed_produces_no_record_report_or_package(not_observed_run):
     scope, _ = not_observed_run
     candidate = search_module.search_candidates(scope).candidates[0]
 
-    bundle = real_e2e.build_happy_001_evidence_bundle(
+    bundle = real_e2e.build_fixture_evidence_bundle(
         case_id="case_h001_not_observed_outputs", candidate=candidate, scope=scope, mock_root=MOCK_ROOT
     )
 
@@ -141,7 +141,7 @@ def test_not_observed_preserves_visual_evidence_and_fine_execution(not_observed_
     scope, _ = not_observed_run
     candidate = search_module.search_candidates(scope).candidates[0]
 
-    bundle = real_e2e.build_happy_001_evidence_bundle(
+    bundle = real_e2e.build_fixture_evidence_bundle(
         case_id="case_h001_not_observed_preserved", candidate=candidate, scope=scope, mock_root=MOCK_ROOT
     )
 

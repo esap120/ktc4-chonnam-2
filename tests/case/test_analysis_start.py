@@ -99,11 +99,17 @@ def test_fingerprint_ignores_scope_id():
     assert first.job_records[0]["input_fingerprint"] == second.job_records[0]["input_fingerprint"]
 
 
+def _hint_id(case) -> str:
+    return next(r["job_id"] for r in case.job_records if r["kind"] == "HINT_EXTRACT")
+
+
 def test_reflect_ok_fills_hints_settles_and_issues_coarse():
     case = _case()
     a.start_analysis(case, "흰 SUV", timelines=FakeTimelines(), budget=BUDGET)
     hint_job = case.job_records[0]
-    assert a.reflect_hint_extraction(case, _ok(vehicle="흰 SUV", time=" "), timelines=FakeTimelines(), budget=BUDGET)
+    assert a.reflect_hint_extraction(
+        case, _ok(vehicle="흰 SUV", time=" "), job_id=_hint_id(case), timelines=FakeTimelines(), budget=BUDGET
+    )
     assert case.hints == {"time": None, "vehicle": "흰 SUV", "situation": None, "location": None}
     assert case.settled_jobs[hint_job["job_id"]] == "REFLECTED"
     assert [r["kind"] for r in case.job_records] == ["HINT_EXTRACT", "COARSE_SEARCH"]
@@ -116,7 +122,9 @@ def test_reflect_ok_fills_hints_settles_and_issues_coarse():
 def test_reflect_abstained_or_failed_uses_empty_hints(status):
     case = _case()
     a.start_analysis(case, "x", timelines=FakeTimelines(), budget=BUDGET)
-    assert a.reflect_hint_extraction(case, {"status": status, "vehicle_hint": "무시"}, timelines=FakeTimelines(), budget=BUDGET)
+    assert a.reflect_hint_extraction(
+        case, {"status": status, "vehicle_hint": "무시"}, job_id=_hint_id(case), timelines=FakeTimelines(), budget=BUDGET
+    )
     assert case.hints == {"time": None, "vehicle": None, "situation": None, "location": None}
     assert [r["kind"] for r in case.job_records] == ["HINT_EXTRACT", "COARSE_SEARCH"]
 
@@ -124,9 +132,12 @@ def test_reflect_abstained_or_failed_uses_empty_hints(status):
 def test_duplicate_result_changes_nothing():
     case = _case()
     a.start_analysis(case, "x", timelines=FakeTimelines(), budget=BUDGET)
-    a.reflect_hint_extraction(case, _ok(vehicle="v"), timelines=FakeTimelines(), budget=BUDGET)
+    a.reflect_hint_extraction(case, _ok(vehicle="v"), job_id=_hint_id(case), timelines=FakeTimelines(), budget=BUDGET)
     before = (dict(case.hints), len(case.job_records))
-    assert a.reflect_hint_extraction(case, _ok(vehicle="다른 값"), timelines=FakeTimelines(), budget=BUDGET) is False
+    again = a.reflect_hint_extraction(
+        case, _ok(vehicle="다른 값"), job_id=_hint_id(case), timelines=FakeTimelines(), budget=BUDGET
+    )
+    assert again is False
     assert (case.hints, len(case.job_records)) == before
 
 
@@ -134,7 +145,7 @@ def test_unknown_status_raises_before_any_change():
     case = _case()
     a.start_analysis(case, "x", timelines=FakeTimelines(), budget=BUDGET)
     with pytest.raises(ValueError):
-        a.reflect_hint_extraction(case, {"status": "WHAT"}, timelines=FakeTimelines(), budget=BUDGET)
+        a.reflect_hint_extraction(case, {"status": "WHAT"}, job_id=_hint_id(case), timelines=FakeTimelines(), budget=BUDGET)
     assert case.settled_jobs == {}
     assert len(case.job_records) == 1
 

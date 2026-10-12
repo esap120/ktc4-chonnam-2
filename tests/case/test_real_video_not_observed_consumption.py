@@ -1,4 +1,4 @@
-"""이슈 #137 — `build_evidence_for_real_video_candidate()`도 `build_happy_001_evidence_bundle()`과
+"""이슈 #137 — `build_evidence_for_real_video_candidate()`도 `build_fixture_evidence_bundle()`과
 동일하게 Fine이 `NOT_OBSERVED`를 냈을 때 downstream을 시작하지 않는다(PR #131→#142 후속
 정합화, 2026-09-22).
 
@@ -9,7 +9,7 @@ happy_001 recording fixture가 이미 갖고 있는 실제 `media_streams`/`Anal
 `NOT_OBSERVED` 분기는 그 뒤(두 번째 `resolve_span`/`build_incident_clip`/readout)를
 아예 타지 않으므로 `rec_service`가 실제로 동작할 필요조차 없다.
 
-`test_not_observed_consumption.py`가 fixture 경로(`build_happy_001_evidence_bundle`)의
+`test_not_observed_consumption.py`가 fixture 경로(`build_fixture_evidence_bundle`)의
 negative 결말을 맡고, 이 파일은 같은 결말을 real 영상 경로에서 맡는다.
 """
 from __future__ import annotations
@@ -77,7 +77,7 @@ def _synthetic_video_context() -> RealVideoContext:
     """happy_001 recording fixture의 실제 `media_streams`/`AnalysisSource` 값을 재사용한다
     — `analysis_source_ref`/`media_stream_refs`가 임의 문자열이 아니라 이미 계약을 통과한
     값이라 신뢰할 수 있다(`_match_analysis_source_streams()`가 그대로 검증에 쓴다)."""
-    fixture = real_e2e.load_recording_fixture(real_e2e.SCENARIO_ID)
+    fixture = real_e2e.load_recording_fixture(real_e2e.DEFAULT_SCENARIO_ID)
     analysis_source = fixture.analysis_sources[0]
     bootstrap_ref = analysis_source.media_stream_refs[0]
     return RealVideoContext(

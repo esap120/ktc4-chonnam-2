@@ -71,7 +71,7 @@
 
 `target_event_types` = `SIGNAL` · `CENTER_LINE_CROSSING` · `SOLID_LINE_LANE_CHANGE` · `MOTORCYCLE_HELMET_NON_USE`. 사용자가 유형을 고르는 입력이 없고(web 첫 화면은 자유 문장 하나, 비워도 진행 — `apps/web/src/screens/UploadScreen.tsx`), 설명이 비어도 탐색이 돌아야 한다. 계약은 다중 유형을 허용한다(AnalysisScope 계약 ADR-003). 사용자 문장은 지금처럼 `hint`(`vehicle` · `free_text`)로만 넘긴다.
 
-**위험:** search 실험은 클립마다 정답 유형 1개만 넣어 왔다(`event_types=(event,)`). 4개를 함께 넣은 성능은 미측정이다 — #313에서 search에 측정을 제안했다(선택).
+**위험(2026-10-12 갱신, #313):** search가 set1에서 「정답 유형 1개」와 「4개 동시 입력」을 3회 비교했다(`docs/modules/search/experiments/search-flash-set1-event-types-2026-10-09.md`). 4개를 함께 넣으면 최종 검출 4/33 → 0/33, Coarse 겹침 14/33 → 7/33으로 떨어졌고, 중앙선 침범을 실선 차로 변경으로 분류한 사례(C00)가 가장 뚜렷했다. 비용은 약 7.4% 높았다(Fine 후보 증가). 개발 표본 11사건의 3회 반복이라 독립 사건 33건이 아니고, search도 원인 확정 · 모델 전환을 결정하지 않았다. **case 방침은 유지한다** — 「무엇을 찾는가」는 여전히 4개 전부이고, 여러 유형을 어떻게 처리할지(한 호출 · 유형별 호출 · 분류 우선순위)는 AnalysisScope 계약상 search 내부 방식이다(「단일값 가정 금지」). search가 방식을 바꾸면 예산 기본값(§3-3 — 유형별 순차 호출이면 150초를 넘을 수 있다)만 다시 맞춘다.
 
 ### 3-3. 예산 — Draft §11 미결 2의 나머지
 

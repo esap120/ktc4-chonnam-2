@@ -13,6 +13,8 @@ W5/W6 Real E2E 공지와는 별개의 기존 요청이지만, 오늘(2026-09-18)
 > **상태 갱신 (2026-10-05)** — 카드 5장(#244 ~ #248)이 2026-10-04 모두 `ACCEPTED`로 닫혔다. case 제안(#245 C-1a B · C-4, #246 S-4 FrameRef, #247 H-4 `running_jobs` 정의)이 채택돼 다른 Owner 문서에 반영됐다. 8순위는 이제 착수할 수 있다. HTTP API Contract Draft(#265)의 case 경계 리뷰에서 나온 할 일(8-17 · 8-18)을 더했다.
 >
 > **상태 갱신 (2026-10-06)** — 8순위에서 결정 없이 할 수 있던 항목을 끝냈다: 8-4 · 8-5 · 8-18(#269), 8-7(#268) ✅, 8-12 · 8-17 case 쪽(#270) ✅, 8-6 1단계 설계(#267)는 리뷰 반영 뒤 머지 대기. 7순위 orchestration 지표 4 · 5차(#234) 머지. 3순위 모델은 Gemini 3.8 Flash로 확정(#278). 남은 8순위(8-1 · 8-2 · 8-8 · 8-9 · 8-10 · 8-11 · 8-13 · 8-16)는 #265 머지 · 8-6 구현 · recording 영속화 · Search PR(#210)을 기다린다.
+>
+> **상태 갱신 (2026-10-11)** — 2026-10-08까지 머지된 것을 반영했다: 8-6 1단계(#282) · 8-11(#284) ✅ · 8-1 분석 시작(#315, 중단 command는 남음) · CaseView v1.7 · v1.8(#286 · #317) · 3순위 challenger 검증(#306, 3.8 Flash 유지). 2순위 상황 응답 기록은 #177로 머지됐다(2026-10-02). 8-9의 Runtime cancel port 모양은 #292에 case 확인 답글을 달았다(2026-10-11). 8-10 read port 연결 ✅(`decisions/jobexecution-read-port.md`) · 8-9 분석 중단 구현(「분석 진행」만, `decisions/stop-analysis.md`). 8-8 T2 진입점 구현(단서 구조화 · 탐색, `decisions/result-reflection.md`). 남은 8순위는 8-6 2단계(판독 · Fine · export 반영 포함) · 8-13, 8-9의 case timeout, 8-1 · 8-9의 「초안 준비 중」 중단(product 미결)이다.
 
 ## 0. 범위 정의 — case가 직접 할 것과 아닌 것을 먼저 나눈다
 
@@ -30,9 +32,9 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **참고:** `src/daesingo/case/real_e2e.py`, `docs/modules/case/decisions/orchestration-service-layer.md` §7, PR #116
 
-### 2순위 — situation_response / observation_facts 워크플로우
+### 2순위 — situation_response / observation_facts 워크플로우 — ✅ case 몫 종결(2026-10-02, #177)
 
-> **2026-09-30:** situation_response 기록·전달은 PR #177(evidence 테스트 반영 대기). observation_facts(최종 영상 관찰, I4)는 producer가 없어 case 몫이 아니다(ADR-EVIDENCE-008 §6.2) — I4가 없는 동안 real 경로 FINAL은 `UNKNOWN`이다.
+> **2026-09-30:** situation_response 기록·전달은 PR #177(evidence 테스트 반영 대기). *(2026-10-02 #177 머지.)* observation_facts(최종 영상 관찰, I4)는 producer가 없어 case 몫이 아니다(ADR-EVIDENCE-008 §6.2) — I4가 없는 동안 real 경로 FINAL은 `UNKNOWN`이다.
 
 **문제:** 오늘 데모(`demo_happy_001.py`)에서 실제로 관찰됨 — `situation_response`/`observation_facts`가 없어서 `FINAL_PACKAGE` 판정이 `UNKNOWN`에 걸리고 `build_report_package()`가 `PackageNotReady`를 던진다. `package`가 항상 `null`이다.
 
@@ -44,13 +46,15 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **참고:** `docs/modules/case/experiments/w6-real-e2e-happy-001.md` "알려진 단순화 2"
 
-### 3순위 — Intent LLM 통합
+### 3순위 — Intent LLM 통합 — ✅ 종결(2026-10-08)
 
 > **2026-09-30:** 1차 구현(09-24)은 case 모듈 경계 위반(프롬프트·provider 호출이 case 안)으로 머지 전 되돌렸다. 호출 창구 위치는 이슈 #210에서 search와 조율 중이고, 모델 선정·평가 체계는 멘토 피드백 후 확정(`미결 유지`). 아래 「API 키/모델 ID 확정이 유일한 외부 의존」은 더 이상 맞지 않는다.
 >
 > **2026-10-04:** #210 Search 의견(a) — 프롬프트 · structured 스키마 · provider 호출 · 실패 분류는 search public 함수, case는 원문 전달 · 6필드→4키 매핑 · 실패 처리. 결과는 `OK` / `ABSTAINED` / `FAILED`로 나뉘고 intent 모델은 Coarse · Fine과 다른 설정 키를 쓴다. case는 [동의 답글](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/210#issuecomment-5979330944)을 달았고, 호출은 **1회짜리 비동기 Job**으로 붙인다(`decisions/intent-llm-model-selection.md` §5). 흐름은 case-command Draft §11 `START_ANALYSIS` 초안(분석 시작 → 단서 구조화 Job → 결과 반영 때 `COARSE_SEARCH` 발주). **Search PR(텍스트 structured public 함수) 대기** — 매핑 코드 · 실험 하네스 import 변경 · Job 배선은 그 뒤다(배선은 #245 D-5 · D-7도 필요).
 >
 > **2026-10-05:** 모델 선정 · 평가 체계의 `미결 유지`를 해제했다 — **Gemini 3.8 Flash 확정**(`decisions/intent-llm-model-selection.md` §13). 멘토 피드백 Q1(judge 신뢰도 검증) · Q2(지식 증류로 robustness-v3 100케이스 증강, 5회 반복 일관성) · Q3(confidence 실험)과 #213의 단일 점수(정확도 × 일관성, `decisions/intent-llm-eval-target-thresholds.md` §1.0)로 판단했다 — 3.8 Flash 0.941 vs Flash-Lite 0.884. 연동은 그대로 Search public 함수(#210) 대기.
+>
+> **2026-10-08:** challenger 검증(GPT-6 Luna · reasoning effort, #306) — 3.8 Flash 기본값을 유지하고, 비용 대안을 Flash-Lite에서 Luna `none`으로 바꿨다(`decisions/intent-llm-model-selection.md` §14).
 
 **문제:** `CaseAggregate.intake()`가 여전히 구조화된 `hints`만 파라미터로 받는다. 원문 자연어를 구조화하는 실제 호출이 `domain.py`/`scope.py` 어디에도 없다.
 
@@ -70,7 +74,11 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **참고:** `docs/modules/case/decisions/correction-log-reuse.md`, Issue #74, Issue #71(영상 자산 lifecycle — 경계 분리됨)
 
-### 4순위 — `real_e2e.py` 시나리오 확장 (1/7 → 7/7)
+### 4순위 — `real_e2e.py` 시나리오 확장 (1/7 → 5/7) — ✅ 2026-10-12
+
+> **2026-10-12:** happy · unknown_abstain · correction_rerun · plate_reread · empty 5개를 real로 돌리고 case fixture 마지막 CaseView와 대조한다. infra_failure는 비동기 E2E(RT-09 · RT-10) 몫, relative_rebase는 범위 밖(선택 전 rebase · recording rebase 공개 함수 없음). 결정 · 발견 사항 4건은 `decisions/real-e2e-scenarios.md`.
+>
+> **순서 기록:** 4 · 5순위는 번호와 달리 6 ~ 8순위 뒤에 했다. 미루는 결정을 남긴 적은 없다 — 1순위가 풀린 뒤(2026-09-20) 실영상 경로 수정 · transport(6 · 6.5) · 8순위(M5 선행)가 차례로 앞에 섰고, 4순위는 「기존 걸 넓게 검증하는 확장」이라 밀렸다. 5순위 lineage 선택은 8-6 2단계 `StoredObservationAdapter`가 다시 쓴다.
 
 **문제:** 지금 recording→search→readout→evidence real 연결은 `scenario_happy_001` 하나로만 검증됐다. correction rerun(supersede 체인), plate reread, unknown/abstain, infra failure(재시도), relative rebase, empty — Mock이 이미 커버하는 6개 시나리오는 Real 경로로 하나도 안 됐다.
 
@@ -78,7 +86,9 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **참고:** `src/daesingo/case/real_e2e.py`, `tests/case/test_real_e2e.py`
 
-### 5순위 — asset_refs 선택 로직
+### 5순위 — asset_refs 선택 로직 — ✅ 2026-10-12
+
+> **2026-10-12:** `real_e2e.select_case_assets()` — 선택 후보의 IncidentClip 자신과 lineage에 그 clip이 있는 asset만 넘긴다. 역할로는 거르지 않는다(evidence 규칙). 결정 `decisions/real-e2e-scenarios.md` §4-2.
 
 **문제:** `real_e2e.py`의 `asset_refs`도 recording fixture 객체가 이미 아는 목록을 그대로 재사용한다 — "이 case에 어떤 asset_facts가 관련 있는지"를 스스로 판단하는 로직이 없다.
 
@@ -184,7 +194,7 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 | # | 할 일 | 출처 |
 | --- | --- | --- |
-| 8-1 | 🔄 **분석 시작 구현(2026-10-07) — `START_ANALYSIS` · 단서 반영 진입 함수 · 타임라인 port(임시: 등록 순서 이어 붙이기). 결정 `decisions/start-analysis.md`. 중단 command는 남음.** case-command Draft에 분석 시작 · 중단 command 추가 — 이름 · payload · 허용 상태, 시작 command가 hints를 어디서 받는지 포함. **분석 시작은 초안 작성(2026-10-04, Draft §11 — #210 Search 의견 반영 · case 결정 4건(`HINT_EXTRACT` · 실패 notice 없음 · 빈 설명은 구조화 생략 · CaseView `description`) · 남은 미결 5건)**, 중단은 C-1a 결정 뒤 | #245 C-1 · #247 H-2 |
+| 8-1 | 🔄 **중단 command `STOP_ANALYSIS`(2026-10-11, 8-9 — 「초안 준비 중」 중단은 product 미결).** **분석 시작 구현(2026-10-07) — `START_ANALYSIS` · 단서 반영 진입 함수 · 타임라인 port(임시: 등록 순서 이어 붙이기). 결정 `decisions/start-analysis.md`.** case-command Draft에 분석 시작 · 중단 command 추가 — 이름 · payload · 허용 상태, 시작 command가 hints를 어디서 받는지 포함. **분석 시작은 초안 작성(2026-10-04, Draft §11 — #210 Search 의견 반영 · case 결정 4건(`HINT_EXTRACT` · 실패 notice 없음 · 빈 설명은 구조화 생략 · CaseView `description`) · 남은 미결 5건)**, 중단은 C-1a 결정 뒤 | #245 C-1 · #247 H-2 |
 | 8-2 | ✅ **2026-10-08 case-command §2 반영 — HTTP API Contract(`http-api/v1`, Final) §5.3을 가리킨다.** case-command Draft §2 transport 줄을 HTTP API Contract(RD-05)를 가리키도록 수정 — Contract는 `docs/architecture/contracts/contract-http-api.md`(Draft, #265). #265 merge 뒤 그 경로로 고친다 | #247 H-6 |
 | 8-3 | ✅ CaseView 계약에 `running_jobs[]` 정의 추가 — 「case가 아직 결과를 기다리는 job」, 실행 종료부터 case 반영까지 · backoff 중에도 유지, 중단 · timeout으로 기다리기를 멈춘 job은 제외. **2026-10-04 B절 §10 불변조건 5로 반영됨**(#263, common/runtime이 case 답변대로 정합) | #247 H-4 |
 | 8-4 | ✅ **2026-10-06 CaseView 계약 B절 §7 반영(#269).** CaseView 계약에 「중단된 job은 실제 실행 상태와 상관없이 `PARTIAL`로 투영」 추가 — 마지막 attempt가 `STALE`이어도 `FAILED`로 보이지 않게 | #245 C-3 · #248 Q-1 |
@@ -195,15 +205,15 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 | # | 할 일 | 출처 |
 | --- | --- | --- |
-| 8-6 | 🔄 **1단계 구현(2026-10-06) — `MySQLCaseRepository` · in-memory 복사본 load · `CaseStore` facade. 처리 execution · 중단 job 테이블(8-8 · 8-9)과 adapter 제거(2단계)는 남음.** 설계: `decisions/case-store-mysql.md`(#267, Runtime §9 확인 완료). `CaseStore` MySQL 구현 — case마다 adapter를 들고 CaseView 때마다 adapter에서 다시 읽는 구조도 함께 바꾼다. 영속화 대상: Case aggregate(`Candidate.thumb_ref` 포함) · JobRecord · `scope_ref`가 가리키는 AnalysisScope · 처리한 `execution_id`. **첫 비동기 Real E2E의 선행**이고 8-7 ~ 8-11은 이 위에서 한다 | #245 D-1 · #246 S-4 |
+| 8-6 | 🔄 **1단계 구현(2026-10-06, #282 머지) — `MySQLCaseRepository` · in-memory 복사본 load · `CaseStore` facade. 2단계 설계(2026-10-12) — 결과 저장소 · `StoredObservationAdapter` · 관찰 반영, RT-10 Implementer 확인 대기(`decisions/observation-storage.md`). 처리 execution은 테이블 대신 `processed_executions`(8-8). 중단 job 테이블은 만들지 않고 8-11 정산 기록으로 대신한다(`decisions/case-store-mysql.md` D5).** 설계: `decisions/case-store-mysql.md`(#267, Runtime §9 확인 완료). `CaseStore` MySQL 구현 — case마다 adapter를 들고 CaseView 때마다 adapter에서 다시 읽는 구조도 함께 바꾼다. 영속화 대상: Case aggregate(`Candidate.thumb_ref` 포함) · JobRecord · `scope_ref`가 가리키는 AnalysisScope · 처리한 `execution_id`. **첫 비동기 Real E2E의 선행**이고 8-7 ~ 8-11은 이 위에서 한다 | #245 D-1 · #246 S-4 |
 | 8-7 | ✅ **2026-10-06 `execute_command()` → `CommandResult.appended_job_records`(#268, 결정 `decisions/command-appended-job-records.md`).** command 처리가 「이번 command로 append한 JobRecord 목록」을 응답 body 밖으로 돌려준다 — composition root의 dispatch와 HTTP 202/200 판단에 쓴다 | #245 D-2 · #247 H-3 |
-| 8-8 | 결과 반영 함수를 `execution_id` 기준 idempotent로. 8-6 1단계 후속: COARSE_SEARCH 첫 발주 경로는 `issue_coarse_search(scope=…)`로 AnalysisScope를 남겨야 한다(지금은 데모 · 스크립트만 발주) · adapter 캐시가 rollback된 case_rev를 기억할 수 있다(2단계 adapter 제거 때 함께). | #245 D-5 |
-| 8-9 | 중단 command 처리 + 「중단된 `job_id` 집합」으로 늦은 결과를 거르는 guard. 6.6순위 조건 2(현재 선택 context 대조)와 함께 동작한다 | #245 C-1a · C-4 |
-| 8-10 | JobExecution read port 연결 + attempt 최댓값 선택(CaseView 계약 A§10-6)을 case가 구현. `view.py`의 「최신 attempt 선택은 runtime이 건네준다」 주석 수정. **선택 규칙 · 주석 수정은 선반영(2026-10-04, `view.representative_execution_status()`)** — read port 연결만 D-6 뒤 | #245 D-6 · #248 Q-1 |
-| 8-11 | 🔄 **구현(2026-10-06) — JobRecord 정산 기록으로 case가 계산, 실행 기록 없으면 `PENDING`. 결정: `decisions/running-jobs-derivation.md`. #282 머지 뒤 PR.** `running_jobs` 투영을 8-3 정의대로 구현 — `handle_command()`가 `running_jobs`를 호출자에게 받지 않고 case가 직접 계산한다. **command 응답의 `case_view`에는 이번 command로 append한 job이 들어 있어야 한다**(HTTP 202 직후 polling이 멈추지 않게, #265 §5.3 · §7-2). 응답을 만드는 시점에는 enqueue 전이라 실행 기록이 없으므로, JobRecord는 있고 실행 기록이 없는 job은 `PENDING`으로 싣는다 | #247 H-4 · #265 |
+| 8-8 | 🔄 **2026-10-11 — Worker T2 진입점 `reflection.reflect_execution()`(case 행 잠금 · `processed_executions`로 `ALREADY_APPLIED` · 기다리지 않는 job은 `NOT_APPLIED` · kind별 반영은 `HINT_EXTRACT` · `COARSE_SEARCH`, 결과 내용은 주입 `ProducedReader`). 결정 `decisions/result-reflection.md`. 남은 것: 판독 · Fine · export 반영기와 실제 reader(8-6 2단계).** 결과 반영 함수를 `execution_id` 기준 idempotent로. 8-6 1단계 후속: ~~COARSE_SEARCH 첫 발주 경로는 `issue_coarse_search(scope=…)`로 AnalysisScope를 남겨야 한다~~(#315 `START_ANALYSIS`가 남긴다) · adapter 캐시가 rollback된 case_rev를 기억할 수 있다(2단계 adapter 제거 때 함께). | #245 D-5 |
+| 8-9 | 🔄 **2026-10-11 구현 — `STOP_ANALYSIS`(`SEARCHING`에서 기다리던 탐색 job만 `CANCELLED` · `CommandResult.cancelled_job_ids` · `coarse_search` `PARTIAL` · `case.analysis_stopped`) + 늦은 결과 guard(「기다리는 job만 받는다」, 단서 반영 진입점 `job_id` 필수). 결정 `decisions/stop-analysis.md`. 남은 것: case timeout(`STOPPED_WAITING`) · 「초안 준비 중」 중단(product 미결) · 선택 context 대조(8-8).** 중단 command 처리 + 「중단된 `job_id` 집합」으로 늦은 결과를 거르는 guard. 6.6순위 조건 2(현재 선택 context 대조)와 함께 동작한다. **Runtime cancel port `request_cancel(conn, job_ids)` 모양은 #292에 case 확인 답글(2026-10-11) — 같은 tx · 반환값 없음 · 중단 집합은 8-11 `CANCELLED` 정산 기록** | #245 C-1a · C-4 |
+| 8-10 | ✅ **2026-10-11 — `CaseStore(executions=…)` 주입 · case가 자기 `job_id`로 조회 · 진입 함수의 `job_executions` · `visual_verify_status` 인자 제거. 결정 `decisions/jobexecution-read-port.md`. 꽂는 쪽은 RT-08(b).** JobExecution read port 연결 + attempt 최댓값 선택(CaseView 계약 A§10-6)을 case가 구현. `view.py`의 「최신 attempt 선택은 runtime이 건네준다」 주석 수정. **선택 규칙 · 주석 수정은 선반영(2026-10-04, `view.representative_execution_status()`)** — read port 연결만 D-6 뒤 | #245 D-6 · #248 Q-1 |
+| 8-11 | ✅ **2026-10-08 #284 머지 — JobRecord 정산 기록으로 case가 계산, 실행 기록 없으면 `PENDING`. 결정: `decisions/running-jobs-derivation.md`(남은 것: 경로별 `REFLECTED` 기록 8-8 · 중단 기록 8-9 · read port 8-10).** `running_jobs` 투영을 8-3 정의대로 구현 — `handle_command()`가 `running_jobs`를 호출자에게 받지 않고 case가 직접 계산한다. **command 응답의 `case_view`에는 이번 command로 append한 job이 들어 있어야 한다**(HTTP 202 직후 polling이 멈추지 않게, #265 §5.3 · §7-2). 응답을 만드는 시점에는 enqueue 전이라 실행 기록이 없으므로, JobRecord는 있고 실행 기록이 없는 job은 `PENDING`으로 싣는다 | #247 H-4 · #265 |
 | 8-12 | ✅ **2026-10-06 구현 — `create_case()` · `record_source_registered()`(#270, 결정 `decisions/empty-case-and-manifest.md`).** 빈 case 생성 경로 — `CaseAggregate.intake()` 필수 인자(`hints` · `manifest_summary`) 정리, adapter 없이 등록, 업로드마다 `manifest_summary` 갱신 | #247 H-2 |
 | 8-13 | source asset을 `RealVideoAdapter`의 local path 대신 recording 공개 함수로 조회 | #246 S-3 |
-| 8-14 | ✅ `FINE_VERIFY` 실행 실패의 notice · action 정하기 — **2026-10-04 `search.visual_verify_failed`**(ERROR · blocking · `actions:[]`, 출구는 「다른 후보 보기」, CaseView 계약 등재). 실행 상태는 호출자가 `visual_verify_status`로 넘긴다. 동기 real 경로의 Fine 예외 → 실행 실패 분류는 Search failure taxonomy 접합(#244) 뒤 | #244 R-1 |
+| 8-14 | ✅ `FINE_VERIFY` 실행 실패의 notice · action 정하기 — **2026-10-04 `search.visual_verify_failed`**(ERROR · blocking · `actions:[]`, 출구는 「다른 후보 보기」, CaseView 계약 등재). 실행 상태는 호출자가 `visual_verify_status`로 넘긴다 *(2026-10-11부터 case가 read port 조회 결과로 계산 — 8-10)*. 동기 real 경로의 Fine 예외 → 실행 실패 분류는 Search failure taxonomy 접합(#244) 뒤 | #244 R-1 |
 | 8-15 | ✅ **2026-10-04 overlay 판독 결과 notice 3종**(`readout.overlay_not_present` · `_presence_undetermined` · `_ocr_failed`)을 case가 붙인다 — readout `failure-taxonomy.md` 매핑 그대로, 현재 선택 후보의 가장 나중 판독 기준. 이 카드들의 후속은 아니고 8순위 검토 중 찾은 공백(코드가 붙이지 않았고 CaseView 계약 등재도 둘 빠짐) | readout `failure-taxonomy.md` |
 | 8-16 | ✅ **2026-10-07 — 반영 함수 + `service.receive_hint_extraction_result()`(첫 탐색 발주까지). Worker 배선은 Runtime #297.** 단서 구조화(`HINT_EXTRACT`) 결과 반영 — **결과 반영 함수만 선반영(2026-10-04, `service.receive_hint_extraction()`)**. 결과 모양은 #210 Search 의견 가정, 발주 · 배선은 Search PR · D-5 뒤. 3순위와 같은 일 | #210 · 3순위 |
 | 8-17 | 🔄 **case 쪽 완료(2026-10-06) — `INTAKE`에서만 받고 아니면 `SourceNotAccepted`(#270). HTTP 매핑은 #265.** source 연결은 `INTAKE`에서만 받는다 — 분석 시작 뒤 추가 업로드는 거부. product에 분석 시작 뒤 업로드 흐름이 없고 `START_ANALYSIS` 초안도 `INTAKE` 전용이다(2026-10-05 case 결정, #265 §9). 거부 status · code 모양은 HTTP Contract가 정한다 | #265 |
@@ -214,7 +224,7 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 - ~~timeout된 job을 `running_jobs`에서 빼는가~~ → **뺀다(2026-10-04, B절 §10 불변조건 5).** timeout 뒤 늦게 반영된 결과는 web이 다시 조회할 때 보인다.
 - 파일별 upload에서 `manifest_summary.failed_file_count`가 무엇을 세는가 — 계약 정의는 「파일 등록 실패 수」인데 #265는 거부된 upload를 기록 없이 버려(422) 셀 수 없다. case 제안: 손상 파일은 recording이 `availability=UNAVAILABLE`로 등록 · 연결해 case가 세고, 파일 이름은 web이 upload 응답으로 보여 준다(CaseView에는 파일 목록이 없다). recording · web과 정한다(#265 §9). 8-12
 - budget guard가 「계산 불가」(`amount=null` 포함)일 때 발주를 막는가 계속하는가 — guard 구현 때 정한다(#244 U-2)
-- 시작 command payload 모양 — 8-1과 함께 정한다
+- ~~시작 command payload 모양~~ → **`{ "description": … }`(case-command Draft §11 · `decisions/start-analysis.md`, 2026-10-07).**
 
 **다른 Owner 쪽 반영** — case가 고치지 않고 결과만 확인한다. **2026-10-05 세 건 모두 반영 확인.**
 

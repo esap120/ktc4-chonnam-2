@@ -23,6 +23,7 @@ _STATE_FIELDS = (
     "candidate_search_failed",
     "candidate_generation",
     "settled_jobs",
+    "processed_executions",
     "description",
     "sources",
 )

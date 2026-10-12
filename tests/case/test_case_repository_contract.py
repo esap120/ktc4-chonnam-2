@@ -123,3 +123,34 @@ def test_non_json_value_in_state_is_refused(repo_conn):
         with pytest.raises(StatementError) as exc:
             repo.insert(conn, case)
         assert isinstance(exc.value.orig, TypeError)
+
+
+def test_stopped_analysis_survives_save_and_load(repo_conn):
+    """중단은 정산 기록(`CANCELLED`)으로만 남는다 — 다시 로드해도 중단 상태와 `case_rev`가 같다(8-9)."""
+    repo, conn = repo_conn
+    case = CaseAggregate.empty("case_repo_stop")
+    case.start_search()
+    coarse = jobs.issue_coarse_search(case, scope_ref="s1", input_fingerprint="sha1:c")
+    repo.insert(conn, case)
+    loaded = repo.load(conn, case.case_id, lock="update")
+    loaded.stop_analysis()
+    repo.save(conn, loaded)
+
+    again = repo.load(conn, case.case_id)
+    assert again.settled_jobs == {coarse["job_id"]: "CANCELLED"}
+    assert again.analysis_stopped is True
+    assert again.case_rev == case.case_rev + 1
+
+
+def test_processed_executions_survive_save_and_load(repo_conn):
+    """Worker T2가 반영한 execution 기록은 다시 로드해도 남는다 — 재전달을 ALREADY_APPLIED로 거른다(8-8)."""
+    repo, conn = repo_conn
+    case = CaseAggregate.empty("case_repo_exec")
+    case.start_search()
+    coarse = jobs.issue_coarse_search(case, scope_ref="s1", input_fingerprint="sha1:c")
+    repo.insert(conn, case)
+    loaded = repo.load(conn, case.case_id, lock="update")
+    loaded.processed_executions["exec_1"] = coarse["job_id"]
+    repo.save(conn, loaded)
+
+    assert repo.load(conn, case.case_id).processed_executions == {"exec_1": coarse["job_id"]}

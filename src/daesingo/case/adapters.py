@@ -40,15 +40,16 @@ W5/W6 마감(월요일 20:00 회의 — 대표 시나리오 1개가 E2E를 실�
 맞춰 readout/recording도 이미 실제 공개 함수가 있다는 걸 확인했다(`real_e2e.py` 참고
 — recording의 `resolve_span`/`build_incident_clip`, readout의 `read_plate`/
 `read_overlay_time` 전부 fixture 없이도 순수 호출 가능). evidence 6개 메서드를
-`real_e2e.build_happy_001_evidence_bundle()`로 교체했다 — recording→search.verify_visual
+`real_e2e.build_fixture_evidence_bundle()`(당시 이름 `build_happy_001_evidence_bundle`)로 교체했다 — recording→search.verify_visual
 →readout→evidence 전체 체인을 실제 함수로 잇는다.
 
 `get_job_executions()`(common/runtime)는 여전히 `NotImplementedError`다 — 다만
 `case/service.py`의 `fetch_case_view_inputs()`/`build_view_from_adapter()`는 애초에
-이 메서드를 부르지 않으므로(`running_jobs`는 case가 정산 기록으로 계산함), 오늘 목표인
+이 메서드를 부르지 않으므로(실행 상태는 `CaseStore`의 read port로 읽음, 8-10), 오늘 목표인
 "CaseView까지 E2E 통과"에는 영향이 없다.
 
-시나리오는 `scenario_happy_001` 하나로 고정돼 있다 — `real_e2e.py` 모듈 docstring의
+시나리오는 `RealAdapter(scenario_id=…)`로 고른다(기본 `scenario_happy_001`, 2026-10-12 4순위 —
+`decisions/real-e2e-scenarios.md`). `real_e2e.py` 모듈 docstring의
 "알려진 단순화"(시각 원시 데이터 raw read, `situation_response`/`observation_facts`
 None) 두 가지도 그대로 적용된다.
 
@@ -286,9 +287,11 @@ class RealAdapter:
         case: CaseAggregate | None = None,
         search_scope: dict[str, Any] | search_module.AnalysisScope | None = None,
         mock_root: Path | None = None,
+        scenario_id: str = real_e2e.DEFAULT_SCENARIO_ID,
         **clients: Any,
     ) -> None:
         self.case_id = case_id
+        self._scenario_id = scenario_id
         self._case = case
         self._search_scope = search_scope
         self._mock_root = mock_root
@@ -297,8 +300,13 @@ class RealAdapter:
         # 관찰 단계 결과(Fine·IncidentClip·OCR)는 같은 탐색 결과(`case.candidate_generation`) 안에서
         # 후보별로 재사용한다 — 정정(이슈 #73)과 A→B→A 재선택(`decisions/reselect-observation-reuse.md`).
         # 세대가 바뀌면(재탐색) 같은 candidate_id라도 버린다(정책 표 1행).
-        self._observations_by_candidate: dict[str, real_e2e.ObservationBundle] = {}
+        # 키는 (candidate_id, 그 후보의 재판독 수) — 재판독 전 관찰도 버리지 않는다(4순위 plate_reread).
+        self._observations_by_candidate: dict[tuple[str, int], real_e2e.ObservationBundle] = {}
         self._observations_generation: int | None = None
+        # 재판독(`PLATE_REREAD` → force_rerun `PLATE_READ`)은 발주할 때 선택돼 있던 후보의 것이다. JobRecord에 후보가
+        # 없어(6.6순위 「JobRecord 계약 변경 없음」) 새로 본 증가분을 그때 선택된 후보에 붙인다. 세대가 바뀌면 버린다.
+        self._rereads_by_candidate: dict[str, int] = {}
+        self._rereads_seen = 0
         # 마지막 `get_candidate_events()`의 CandidateEvent — evidence 조립이 선택된 것을 여기서 찾는다.
         self._candidates_by_id: dict[str, search_module.CandidateEvent] = {}
         self._clients = clients
@@ -361,12 +369,27 @@ class RealAdapter:
 
     # ── evidence ────────────────────────────────────────────────────────
     def _cached_observations(self, candidate_id: str) -> real_e2e.ObservationBundle | None:
-        """같은 탐색 결과 세대 안에서 이미 관찰한 후보면 그 관찰을 준다. 세대가 바뀌었으면 전부 버린다."""
+        """같은 탐색 결과 세대 안에서 이미 관찰한 후보면 그 관찰을 준다. 세대가 바뀌었으면 재판독 수까지 전부 버린다."""
         generation = self._case.candidate_generation
         if self._observations_generation != generation:
             self._observations_by_candidate = {}
+            self._rereads_by_candidate = {}
+            self._rereads_seen = self._reread_jobs()
             self._observations_generation = generation
-        return self._observations_by_candidate.get(candidate_id)
+        return self._observations_by_candidate.get(self._observation_key(candidate_id))
+
+    def _observation_key(self, candidate_id: str) -> tuple[str, int]:
+        return candidate_id, self._rereads_by_candidate.get(candidate_id, 0)
+
+    def _reread_jobs(self) -> int:
+        return sum(1 for r in self._case.job_records if r["kind"] == "PLATE_READ" and r.get("force_rerun"))
+
+    def _count_new_rereads(self, candidate_id: str) -> None:
+        """지난 조립 뒤 새로 발주된 재판독을 지금 선택된 후보에 붙인다 — 재판독은 그 후보의 EvidenceNeeds로 발주된다."""
+        total = self._reread_jobs()
+        if total > self._rereads_seen:
+            self._rereads_by_candidate[candidate_id] = self._rereads_by_candidate.get(candidate_id, 0) + total - self._rereads_seen
+        self._rereads_seen = total
 
     def _build_evidence_bundle(self) -> real_e2e.EvidenceBundle:
         """evidence로 넘기는 candidate/selection_rev는 **case가 실제로 선택한 값**이어야
@@ -386,7 +409,11 @@ class RealAdapter:
         `EVENT_TIME_MANUAL` 등 "요건 검사만 다시"). 처음 보는 후보를 고르거나 재탐색으로 후보 목록이
         바뀌면 관찰부터 다시 한다 — 같은 탐색 결과에서 이미 본 후보로 돌아오면(A→B→A) 관찰은 재사용하고
         조립만 새 선택 context로 한다(`decisions/reselect-observation-reuse.md`)."""
-        if self._evidence_bundle is None or self._evidence_bundle_case_rev != self._case.case_rev:
+        if (
+            self._evidence_bundle is None
+            or self._evidence_bundle_case_rev != self._case.case_rev
+            or (self._case is not None and self._reread_jobs() != self._rereads_seen)
+        ):
             if self._search_scope is None or self._mock_root is None:
                 self._not_ready(
                     "get_evidence_record",
@@ -414,6 +441,8 @@ class RealAdapter:
             scope = self._search_scope
             if not isinstance(scope, search_module.AnalysisScope):
                 scope = search_module.AnalysisScope.model_validate(scope)
+            self._cached_observations(selected.candidate_id)  # 세대부터 맞춘다 — 바뀌었으면 재판독 수도 버린다
+            self._count_new_rereads(selected.candidate_id)
             observations = self._cached_observations(selected.candidate_id)
             if observations is None:
                 candidate = self._candidates_by_id.get(selected.candidate_id)
@@ -423,13 +452,17 @@ class RealAdapter:
                         "get_candidate_events() 결과에서 찾을 수 없다 — 같은 인스턴스로 "
                         "먼저 후보를 받아왔는지 확인해야 한다."
                     )
-                observations = real_e2e.observe_happy_001_candidate(
+                observations = real_e2e.observe_fixture_candidate(
                     case_id=self.case_id,
                     candidate=candidate,
                     scope=scope,
                     mock_root=self._mock_root,
+                    scenario_id=self._scenario_id,
+                    plate_source_profile=(
+                        "readout-native-hires" if self._rereads_by_candidate.get(selected.candidate_id) else "readout-native"
+                    ),
                 )
-                self._observations_by_candidate[selected.candidate_id] = observations
+                self._observations_by_candidate[self._observation_key(selected.candidate_id)] = observations
             self._evidence_bundle = real_e2e.assemble_evidence_bundle(
                 observations,
                 case_id=self.case_id,

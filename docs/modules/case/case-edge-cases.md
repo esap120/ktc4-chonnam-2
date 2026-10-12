@@ -42,11 +42,11 @@
 | 오래된 화면에서 제출 | `stale_revision` + 현재 CaseView를 같이 돌려준다 | `VERIFIED` | `test_command.py` |
 | 같은 case에 두 요청이 동시에 씀 | 저장 시 `cases` 행 `FOR UPDATE` — 뒤 요청이 기다린다 | `DECIDED`(#282) | `decisions/case-store-mysql.md` · MySQL opt-in 테스트 |
 | 저장된 기록 앞부분이 바뀐 채 저장 시도 | `AppendOnlyViolation`, 아무것도 쓰지 않음(호출자가 예외를 삼키고 commit해도) | `DECIDED`(#282) | #282 Runtime 리뷰 반영 테스트 |
-| 같은 실행 결과가 두 번 도착 | `execution_id` 기준으로 한 번만 반영 | `DECIDED` | #245 D-5 · 구현 8-8 |
+| 같은 실행 결과가 두 번 도착 | `execution_id` 기준으로 한 번만 반영 | `VERIFIED`(단서 구조화 · 탐색 — `ALREADY_APPLIED`) | `test_result_reflection.py` · `test_result_reflection_mysql.py` · `decisions/result-reflection.md` · #245 D-5 |
 | 재시도로 대체된 job의 결과가 늦게 도착 | 대표 job은 가장 나중 job — 이전 job은 대체(`SUPERSEDED`)로 정산, 늦은 결과는 반영하지 않음 | `VERIFIED`(대체 정산) · 늦은 결과 guard `DECIDED` | `test_job_settlement.py` · `decisions/running-jobs-derivation.md` · 늦은 결과 guard는 8-9 |
-| 사용자가 중단 · 다른 후보로 바꾼 뒤 이전 결과 도착 | 중단된 `job_id` 집합 + 현재 선택 context 대조로 거른다 | `DECIDED` | #245 C-1a · C-4 · 구현 8-9 |
+| 사용자가 중단 · 다른 후보로 바꾼 뒤 이전 결과 도착 | 중단된 `job_id` 집합 + 현재 선택 context 대조로 거른다 | `VERIFIED`(중단 · 대체 job의 단서 · 후보 · 탐색 실패 결과 무시) · 선택 context 대조 `DECIDED`(8-8) | `test_stop_analysis.py` · `decisions/stop-analysis.md` · #245 C-1a · C-4 |
 | 실행은 끝났는데 case 반영 전 · 재시도 대기 중 | `running_jobs`에 남아 polling이 멈추지 않는다 | `VERIFIED` | `test_running_jobs_view.py` · 계약 B§10 불변조건 5 |
-| 사용자가 중단했는데 실행이 아직 RUNNING | case는 더 기다리지 않는다 — `running_jobs`에서 뺀다 | `VERIFIED`(정산된 job 제외) · 중단 command `PENDING` | `test_running_jobs_view.py` · 불변조건 5 · 중단 command는 8-1 · 8-9 |
+| 사용자가 중단했는데 실행이 아직 RUNNING | case는 더 기다리지 않는다 — `running_jobs`에서 뺀다 | `VERIFIED`(정산된 job 제외 · `STOP_ANALYSIS` 「분석 진행」만, 「초안 준비 중」 중단은 product 미결) | `test_running_jobs_view.py` · `test_stop_analysis.py` · 불변조건 5 · `decisions/stop-analysis.md` |
 
 ## 4. 실패 · 시간 초과
 
@@ -110,4 +110,4 @@ case에서 LLM을 부르는 곳은 분석 시작 때 단서 구조화(`HINT_EXTR
 | 응답 대기 중 Fine attempt 2 실행 중 표시 | #276 후속 |
 | `confidence: low` 재입력 유도 | #266 |
 | ~~분석 시작 command(분석 범위 출처 · 첫 발주 fingerprint · 단서 구조화 대기 시간)~~ → 종결(#315) | `decisions/start-analysis.md` · 대기 시간 동작은 8-9 |
-| 중단 command · case timeout 구현 | 8-9 · #292 |
+| ~~중단 command~~ → 구현(2026-10-11, `decisions/stop-analysis.md`) · case timeout 구현 · 「초안 준비 중」 중단 | 8-9 · #292 · product |

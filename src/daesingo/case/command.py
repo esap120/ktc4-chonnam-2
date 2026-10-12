@@ -45,6 +45,7 @@ _PAYLOAD_KEYS = {
     "MARK_REVIEWED": frozenset(),
     "RUN_NOTICE_ACTION": frozenset({"notice_code", "action"}),
     "START_ANALYSIS": frozenset({"description"}),
+    "STOP_ANALYSIS": frozenset(),
 }
 
 
@@ -142,12 +143,21 @@ def _start_analysis(
         raise _Rejected("not_allowed") from None
 
 
+def _stop_analysis(case: CaseAggregate, payload: dict[str, Any], view: dict[str, Any]) -> None:
+    # 「분석 진행」(SEARCHING)만 받는다 — 「초안 준비 중」 중단은 product 미결(`decisions/stop-analysis.md`).
+    try:
+        case.stop_analysis()
+    except InvalidTransition:
+        raise _Rejected("not_allowed") from None
+
+
 _HANDLERS = {
     "SELECT_OTHER_CANDIDATE": _select_other_candidate,
     "RECORD_SITUATION_RESPONSE": _record_situation_response,
     "MARK_REVIEWED": _mark_reviewed,
     "RUN_NOTICE_ACTION": _run_notice_action,
     "START_ANALYSIS": _start_analysis,
+    "STOP_ANALYSIS": _stop_analysis,
 }
 
 
@@ -165,17 +175,19 @@ class CommandResult:
     """`execute_command()`의 결과. `response`는 web에 그대로 가는 §4 응답이고,
     `appended_job_records`는 이번 command로 append된 JobRecord(복사본)다 — composition root가
     enqueue와 HTTP 200/202 판단에 쓰며 응답 body에는 싣지 않는다(HTTP API Contract §5.3,
-    `decisions/command-appended-job-records.md`). 실패한 command는 늘 `[]`다."""
+    `decisions/command-appended-job-records.md`). `cancelled_job_ids`는 이번 command로 case가 `CANCELLED`로 정산한
+    job이다 — composition root가 같은 transaction에서 Runtime `request_cancel(conn, job_ids)`를 부른다(`STOP_ANALYSIS`,
+    `decisions/stop-analysis.md`). 둘 다 실패한 command는 늘 `[]`다."""
 
     response: dict[str, Any]
     appended_job_records: list[dict[str, Any]] = field(default_factory=list)
+    cancelled_job_ids: list[str] = field(default_factory=list)
 
 
 def handle_command(
     request: dict[str, Any],
     *,
     store: CaseStore,
-    job_executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
     timelines: CaseTimelineSource | None = None,
     budget: InitialSearchBudget | None = None,
@@ -183,7 +195,7 @@ def handle_command(
     """`execute_command()`의 `response`만 돌려준다 — append된 JobRecord가 필요 없는 호출자(transport ·
     테스트)용."""
     return execute_command(
-        request, store=store, job_executions=job_executions, notices=notices, timelines=timelines, budget=budget
+        request, store=store, notices=notices, timelines=timelines, budget=budget
     ).response
 
 
@@ -191,7 +203,6 @@ def execute_command(
     request: dict[str, Any],
     *,
     store: CaseStore,
-    job_executions: list[dict[str, Any]] | None = None,
     notices: list[dict[str, Any]] | None = None,
     timelines: CaseTimelineSource | None = None,
     budget: InitialSearchBudget | None = None,
@@ -201,11 +212,11 @@ def execute_command(
     성공하면 stage가 `EVIDENCE_REVIEW`일 때 `PACKAGE_READY`를 다시 보고 준비됐으면 `READY`로 올린다
     (§5 — 그 전이도 `case_rev`를 올린다). 검사 순서는 §6 그대로 `invalid_payload` → `unknown_target`(case) → `stale_revision` →
     `unknown_target`(대상) → `not_allowed`다. 실패하면 아무 상태도 바꾸지 않고 현재 CaseView를
-    싣는다 — case_id가 없을 때만 `case_view=None`이다. `job_executions`·`notices`는 `get_view()`에
-    그대로 넘긴다(사용자가 본 화면과 같은 notices로 `RUN_NOTICE_ACTION`을 검사하기 위해).
+    싣는다 — case_id가 없을 때만 `case_view=None`이다. `notices`는 `get_view()`에 그대로 넘긴다(사용자가 본
+    화면과 같은 notices로 `RUN_NOTICE_ACTION`을 검사하기 위해). 실행 상태는 `store`의 read port로 읽는다(8-10).
     `START_ANALYSIS`는 `timelines`(필수) · `budget`(기본 `InitialSearchBudget()`)을 쓴다.
     """
-    view_kwargs = {"store": store, "job_executions": job_executions, "notices": notices}
+    view_kwargs = {"store": store, "notices": notices}
     case_id = request.get("case_id") if isinstance(request, dict) else None
 
     def current_view() -> dict[str, Any] | None:
@@ -215,7 +226,9 @@ def execute_command(
             return None
 
     def view_of(case: CaseAggregate) -> dict[str, Any]:
-        return build_view_from_adapter(case, store.get_adapter(case.case_id, case), job_executions=job_executions, notices=notices)
+        return build_view_from_adapter(
+            case, store.get_adapter(case.case_id, case), executions=store.read_executions(case), notices=notices
+        )
 
     try:
         _check_payload(request)
@@ -232,6 +245,7 @@ def execute_command(
         return CommandResult(_response("stale_revision", view))
 
     jobs_before = len(case.job_records)
+    settled_before = dict(case.settled_jobs)
     handler = _HANDLERS[request["kind"]]
     if request["kind"] == "START_ANALYSIS":
         handler = functools.partial(_start_analysis, timelines=timelines, budget=budget or InitialSearchBudget())
@@ -245,4 +259,5 @@ def execute_command(
         mark_ready_if_package_ready(case, store.get_adapter(case_id, case))
     store.save(case)
     appended = copy.deepcopy(case.job_records[jobs_before:])
-    return CommandResult(_response(None, view_of(case)), appended)
+    cancelled = [j for j, reason in case.settled_jobs.items() if reason == "CANCELLED" and j not in settled_before]
+    return CommandResult(_response(None, view_of(case)), appended, cancelled)
