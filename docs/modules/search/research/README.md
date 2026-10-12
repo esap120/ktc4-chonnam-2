@@ -11,3 +11,4 @@
 - `adaptive-video-sampling-research-2026-09-29.md` — 적응적 프레임 선택·공간 초점·조기 종료·Cerberus 등 긴 영상 Coarse→Fine 연구를 프록시 제약 아래 적용성으로 정리한 조사 (수치 원문 대조 전, 결정 아님)
 - `visual-prompting-overlay-research-2026-10-01.md` — SoM·ViP-LLaVA·FGVP 시각 프롬프팅(오버레이) 효과·설계 지침, 경량 차량/차선 CV 후보 비교, 사례 A·B 오버레이 A/B 실험안 (수치 원문 대조 전, 결정 아님)
 - `traffic-violation-video-research-2025-2026-2026-10-02.md` — 2025–2026 교통위반 판정(DashCop·UAV 등)·교통 VLM(RoadSafe365)·긴 영상 grounding(ExtremeWhenBench·TrafficRAG) 조사를 현재 Coarse→Fine 구조에 대응시키고, 고정 참고 사례 Fine A/B 등 쓸 지점과 안 쓸 지점을 정리 (수치 원문 대조 전, 결정 아님)
+- `lane-roi-vlm-model-assessment-2026-10-05.md` — 사용자 제공 차선·ROI·VLM 조사 문서화 여부, 핵심 논문 수치 원문 대조, CLRerNet⋆·DiffusionLane·UFLDv2·기존 AI Hub 모델의 적용성, 최신 로컬 평가와 확률 해석의 한계 (결정 아님). 제공 원문은 `lane-roi-vlm-user-source-2026-10-05.txt`에 보존

@@ -1,7 +1,31 @@
 # search/experiments
 
+- [CV 전체 진행 결과와 남은 작업](cv-lane-track-progress-summary-2026-10-10.md) — 최신 평가 도구·중복 차선 처리·미완료 범위 반영.
+- [CV 잔여 작업 처리 결과](cv-remaining-plan-2026-10-11.md) — 188개 테스트·실제 영상 검증, 최종 선정·정답·L2 환경 미완료 상태 기록.
+
 재현 가능한 실험 기록을 둔다. 입력/설정/결과/실패/다음 learning을 남긴다. AI 원문과 원본 영상은 저장소에 두지 않는다. 신규 실험 결과 원본(JSON·JSONL)은 로컬에만 보관하고, Git에는 설정·수치 요약·해석을 담은 Markdown 보고서를 남긴다.
 
+- [Retrieval Coarse 사전검증 (#279 실험 B)](retrieval-coarse-preflight-2026-10-11.md) — SigLIP so400m 프레임·문장 유사도, set1 13클립 1,240프레임. 판단용 3유형 Recall@3 4/11(무작위 95백분위 3 초과·기준 5/11 미달) → 약한 신호. 적중 4건 중 2건이 신호위반, 차선 유형은 유형 구분 못 함
+- [Retrieval Coarse — Qwen3-VL-Embedding 영상 창](retrieval-coarse-qwen3vl-embedding-2026-10-12.md) — 4초 창(2fps 8장) 영상 임베딩, v1 문장. 판단용 Recall@3 3/11(무작위 95백분위 3 이하) → 신호 부족. 차로 변경 움직임에는 반응, 실선·점선은 구분 못 함
+- [Retrieval Coarse — Qwen3-VL-Embedding + 차선 표시 영상](retrieval-coarse-qwen3vl-overlay-2026-10-12.md) — 사후 설계. PP-LiteSeg 표시 프레임·색 문장. Recall@3 2/11 → 신호 부족. 합법 점선 변경 점수가 실선 위반보다 높음. retrieval 실험 B 정리
+- [Retrieval Coarse v2 — 선에 걸친 장면 문장·4fps·정상 대비](retrieval-coarse-v2-2026-10-11.md) — 사후 설계. 판단용 Recall@3 2/11(무작위 95백분위 4 이하) → 신호 부족. 차선 문장과 정상 주행 문장 유사도 상관 0.94–0.96. 차선 표시 프레임 점검도 AUC 0.44로 미통과
+- [차선·차량·Gemini 테스트 통합 기록](lane-violation-tests-summary-2026-10-10.md) — AI Hub→2fps→실선/점선→프롬프트 변경→전체 힌트와 CV 후속 결과
+- [표시본 + 사용자 전체 정답 힌트](gemini-overlay-full-user-hints-2026-10-10.md) — 6영상×3회 완료. 양성18/18과 실제 대상·이동 근거를 구분
+- [PP-LiteSeg 실선·점선 구분](pp-liteseg-solid-dashed-2026-10-10.md) — 2영상/80관측. dashed 출력 확인, 혼합·구조물 오탐, 정확도 미평가
+- [Gemini 사건 종류 지정 A/B](gemini-lane-overlay-known-type-2026-10-10.md) — 원본만/원본+표시본 각3회, 두 조건0/3. 최초 프롬프트·스키마 보존
+- [Gemini 표시본만 짧은 프롬프트](gemini-lane-overlay-only-short-prompt-2026-10-10.md) — 141927 3회 모두 미검출
+- [Gemini 초록선 횡단 묘사](gemini-green-line-crossing-description-2026-10-10.md) — 141927 3회 양성이나 다른 흰 SUV 지목
+- [초록선 프롬프트 추가 한 영상](gemini-green-crossing-second-clip-2026-10-10.md) — 흰 세단 이동3/3 부합, 정밀 종료 시각 차이
+- [초록선 프롬프트 남은 실선 전체](gemini-green-crossing-remaining-2026-10-10.md) — 6영상18회, 양성9/18·대상/행위/구간 부합1/18
+- [CV UNKNOWN 교차 후보](cv-crossing-candidates-2026-10-10.md) — 5후보·화면3구간, 위반 확정/GT 정확도 미평가
+- [CV 후보 안정화 v2](cv-crossing-stability-2026-10-10.md) — 5→2후보, C00 동일 구간·접지 보호의 원거리 손실 가능성
+- [CV 보정 선택·차선 연결](cv-crossing-continuity-2026-10-10.md) — 실패763→656, 연결5058→5366. 정확도 미평가
+- [CV 평가 라벨 준비](cv-label-preparation-2026-10-10.md) — 1200장·29작업 자동 초안, 정답검수 대기
+- [CV 전체 진행 요약](cv-lane-track-progress-summary-2026-10-10.md) — 완료·미평가·후속 단계와 로컬 재현 자료
+
+- [CV_LANE_TRACK v1 · 차량 7모델 추론·속도 측정](cv-vehicle-model-comparison-2026-10-09.md) — 동일 원본 1,200프레임 × 3회 × 7종 완료(25,200행). 차량 bbox·ID GT 미확보로 정확도 비교·상위 2종 추적·선정 대기
+- [CV_LANE_TRACK v1 · 차선 출력·속도 비교](cv-lane-model-comparison-2026-10-09.md) — AI Hub 백색＋황색/L3 UFLDv2 동일 1,200프레임 × 3회 완료, 42시점·14시트 육안 진단. CLRerNet CUDA 환경 차단. GT 없이 속도·출력만 비교, 정확도·최종 선정 미평가
+- [CV_LANE_TRACK v1 · 전체 영상 추적 진단](cv-tracking-diagnostic-2026-10-09.md) — 임시 V1＋L3로 15영상 전체 5fps 3,233프레임, 같은 검출을 ByteTrack/BoT-SORT에 입력. 30개 출력 영상 검증·29시트 육안 진단 완료. GT 정확도·최종 선정·교차 후보 미평가
 - [coarse-fine-probe-summary-2026-09-12.md](coarse-fine-probe-summary-2026-09-12.md) — 약 39분 주행 영상 Coarse·Fine 탐침 총정리
 - [decision-trace-guide.md](decision-trace-guide.md) — 로컬 진단 실행과 전체 관찰 출력 형식
 - [7영상 진단 실행 결과 JSON](decision-trace-seven-video-2026-09-26-results.json) — p3·진단 형식 각 1회의 수치·상태·해시
@@ -27,6 +51,8 @@
 - [sol 파이프라인 Fine 720p](search-v3-gpt-sol-fine720-2026-10-02.md) — Fine만 720p로 3회; 위반 3·3·2/4, 오탐 0, 141927 처음 통과(2/3). 남은 실패는 모두 Coarse 후보 없음. 토큰 360p의 1.7배 ([JSON](search-v3-gpt-sol-fine720-2026-10-02-results.json))
 - [sol 파이프라인 Fine 720p · set1 10클립](search-v3-gpt-sol-fine720-set1-2026-10-04.md) — 10/02 최고 조건을 새 정답 10클립(사건 11)에 3회; 위반 1·1·1/11, Coarse가 정답 구간에 후보를 낸 건 33번 중 4번. 신호위반 Fine이 합법 출발을 `OBSERVED`로 오판(3건). 토큰 1.9배
 - [Flash 운영 조건 set1 · 탐지 유형 1개 vs 4개](search-flash-set1-event-types-2026-10-09.md) — 스트리밍 A/B3회 완료(범위 오류 포함); A2·1·1/11 vs B0·0·0/11, Coarse14/33 vs7/33. 후보60→65·비용+7.4%, 이번 개발 표본에서 동시 입력 차이 관찰. 비교 비용₩1,433, 실패/probe 포함 확인 누적₩1,680(미확인 요청2개 별도).
+- [Flash set1 · 유형별 Coarse 호출(B-split)](search-flash-set1-split-coarse-2026-10-10.md) — 4개 유형을 Coarse 4회로 나눠 호출; 전체 13클립 1회 top3 2/11·Coarse 5/11(B 0/11·평균 2.3/11, A 평균 1.33/11). C00 중앙선 3/3 회복, C08 신호 첫 검출. 비용 약 2.5배·시간 약 2배, 1회라 확정 아님
+- [VideoChat3-4B 3060 사전검증 · 12초 창 분할](videochat3-window-preflight-2026-10-10.md) — #279 실험 C. 13클립 93창 × 3유형 × grounding·존재 질문 1회; 판단용 3유형 Recall@3 1/11로 무작위 95백분위(3) 이하 → 판단 C(신호 부족), VideoChat3 목적 GPU 요청 안 함. 정답 유형 제공 참고 조건 4/11도 무작위 이하. 60초 OOM은 Windows·flash-attn 없는 환경의 구현 한계로 기록
 - [AI Hub Coarse + sol Fine · 15개 영상](aihub-coarse-sol-fine-2026-10-04.md) — 정답 없이 1fps 탐지·IoU 추적으로 후보 63개 생성, Fine 720p 4fps 1회; 사건 구간 포함 7/13(앞뒤 4초 포함 10/13), 최종 정답 중첩 판정 2/13·신규 0/8·정상 3/3 기각. 대상 연결 오류·녹색 신호 오판 확인, 같은 set1 최종 1/11로 개선 없음
 - [AI Hub LRCN 분류 + sol Fine · 15개 영상](aihub-lrcn-sol-fine-2026-10-04.md) — 분류 후보 51개·독립 3종 Fine 1회; 정답 구간·종류 중첩 4/13, 신규 1/8·정상 후보 오탐 0/3, 앞선 공간 후보 조합 2/13보다 증가·토큰 35.4% 감소. 조건 차이·1회 실험으로 우월성 미확정
 - [AI Hub + sol 토큰 분석](aihub-sol-token-analysis-2026-10-04.md) — 기존 51/63호출 분석; 최신 약 127만 토큰의 이미지 비중 추정 93.3%, 중복 이미지 22.3%·여유 구간 57.3%·정상 후보 입력 29.6%. 새 API 호출 없이 계산
