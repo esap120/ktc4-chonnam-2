@@ -253,7 +253,7 @@ def _fake_real_adapter(monkeypatch) -> tuple[CaseAggregate, RealAdapter, dict[st
         calls["assemble"].append((observations.candidate_id, kwargs["selection_rev"]))
         return SimpleNamespace(evidence_record={"candidate_id": observations.candidate_id})
 
-    monkeypatch.setattr(real_e2e, "observe_happy_001_candidate", fake_observe)
+    monkeypatch.setattr(real_e2e, "observe_fixture_candidate", fake_observe)
     monkeypatch.setattr(real_e2e, "assemble_evidence_bundle", fake_assemble)
     return case, adapter, calls
 

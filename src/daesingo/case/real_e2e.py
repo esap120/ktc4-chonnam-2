@@ -1,4 +1,4 @@
-"""`scenario_happy_001` 대표 시나리오용 real E2E 파이프라인 — recording → search →
+"""Mock 시나리오 fixture용 real E2E 파이프라인(기본 `scenario_happy_001`) — recording → search →
 readout → evidence까지 전부 실제 공개 함수를 호출한다(W5/W6, 2026-09-22 월 20:00
 회의 데드라인 대응).
 
@@ -24,8 +24,9 @@ Worker 배선은 이번 범위 밖).
 - **`gps_observation`**: recording이 GPS 관찰을 내놓는 공개 함수를 아직 노출하지 않아
   `None`으로 둔다. case의 자연어 위치 단서(`hints.location`)는 real 경로에 전달하지만,
   좌표(`location.coord`)는 GPS producer가 연결되기 전까지 비어 있을 수 있다.
-- **시나리오 고정**: `scenario_happy_001` 하나로 고정돼 있다. 다른 시나리오로 넓히려면
-  recording fixture 선택과 asset_facts 매핑을 다시 설계해야 한다(W7).
+- **시나리오**: `scenario_id`로 고른다(기본 `scenario_happy_001`). 이름으로 찾는 곳은 recording
+  fixture 로드뿐이고 search · readout fixture는 값(`scope_id` · `incident_clip_ref`)으로 찾는다.
+  real로 도는 시나리오와 이유는 `docs/modules/case/decisions/real-e2e-scenarios.md`.
 
 ## Fine 결과 소비 (이슈 #137)
 
@@ -114,6 +115,7 @@ develop에 있다. 3개 gap 전부 종결(`doc/real-e2e-protocol.md`/`doc/real e
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -154,7 +156,7 @@ from daesingo.recording import (
 )
 from daesingo.search.sources import RecordingAnalysisSourceResolver, SourceMeta
 
-SCENARIO_ID = "scenario_happy_001"
+DEFAULT_SCENARIO_ID = "scenario_happy_001"
 
 # 공용 Mock Pack happy 기준(정철원 확인, 2026-09-21) — 계약 기본값으로 확정된 게
 # 아니라 월요일 GT 없는 배관 E2E용 재사용 값이다.
@@ -253,7 +255,7 @@ def _resolve_via_search_stream_context(
 ) -> tuple[Any, str]:
     """`AnalysisSource.media_stream_refs`를 등록된 `media_streams`와 매칭해 search의
     실행 문맥 API를 부르고, `(VisualVerificationResult, 선택된 media_stream_ref)`를
-    돌려준다. fixture 경로(`build_happy_001_evidence_bundle`)와 실제 영상 경로
+    돌려준다. fixture 경로(`build_fixture_evidence_bundle`)와 실제 영상 경로
     (`build_real_video_evidence_bundle`)가 공유한다.
 
     `service`가 `None`이면 search 자체 fixture로 빠진다(`verify_visual_with_stream_context`
@@ -336,6 +338,29 @@ class ObservationBundle:
     asset_facts: list[dict[str, Any]] = field(default_factory=list)
     # 번호판 판독 `ReadoutRun.outcome`(#172 [D]). 판독을 시작하지 않았으면 None.
     plate_read_outcome: str | None = None
+
+
+def select_case_assets(incident_clip_ref: str, asset_facts: Iterable[Any]) -> list[Any]:
+    """선택 후보의 IncidentClip 자신과, `lineage`에 그 clip이 있는 asset만 남긴다(5순위,
+    `decisions/real-e2e-scenarios.md` §4-2). 입력 순서를 지킨다.
+
+    역할(`derived_role`)로는 거르지 않는다 — 어느 역할이 패키지에 쓰이는지는 evidence가 정한다. 후보 목록은
+    호출자가 준다: fixture 경로는 fixture에 등록된 전부, 8-6 2단계는 recording 공개 조회 결과. 원소는 recording
+    `AssetFacts` 모델이나 그 JSON dict다."""
+    target = ("incident_clip", incident_clip_ref)
+
+    def field_of(obj: Any, name: str) -> Any:
+        return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+    def key(ref: Any) -> tuple[Any, Any]:
+        return (field_of(ref, "kind"), field_of(ref, "ref")) if ref is not None else (None, None)
+
+    return [
+        facts
+        for facts in asset_facts
+        if key(field_of(facts, "asset_ref")) == target
+        or target in (key(entry) for entry in field_of(facts, "lineage") or [])
+    ]
 
 
 def assemble_evidence_bundle(
@@ -493,12 +518,13 @@ def assemble_evidence_bundle(
     )
 
 
-def build_happy_001_evidence_bundle(
+def build_fixture_evidence_bundle(
     *,
     case_id: str,
     candidate: search_module.CandidateEvent,
     scope: search_module.AnalysisScope,
     mock_root: Path,
+    scenario_id: str = DEFAULT_SCENARIO_ID,
     selection_rev: int = 1,
     correction_records: list[dict[str, Any]] | None = None,
     location_hint: str | None = None,
@@ -507,11 +533,11 @@ def build_happy_001_evidence_bundle(
     실제 함수로 이어서 실행한다. 모듈 docstring의 "알려진 단순화" 두 곳만 raw
     fixture/`None`이고 나머지는 전부 각 모듈의 공개 함수 호출 결과다.
 
-    `observe_happy_001_candidate()` + `assemble_evidence_bundle()`을 이어 부른다. 정정 후
+    `observe_fixture_candidate()` + `assemble_evidence_bundle()`을 이어 부른다. 정정 후
     다시 계산할 때는 관찰 결과를 재사용하고 조립만 다시 부른다(이슈 #73, `RealAdapter`).
     """
-    observations = observe_happy_001_candidate(
-        case_id=case_id, candidate=candidate, scope=scope, mock_root=mock_root
+    observations = observe_fixture_candidate(
+        case_id=case_id, candidate=candidate, scope=scope, mock_root=mock_root, scenario_id=scenario_id
     )
     return assemble_evidence_bundle(
         observations,
@@ -522,16 +548,25 @@ def build_happy_001_evidence_bundle(
     )
 
 
-def observe_happy_001_candidate(
+def observe_fixture_candidate(
     *,
     case_id: str,
     candidate: search_module.CandidateEvent,
     scope: search_module.AnalysisScope,
     mock_root: Path,
+    scenario_id: str = DEFAULT_SCENARIO_ID,
+    plate_source_profile: str = "readout-native",
 ) -> ObservationBundle:
-    """`build_happy_001_evidence_bundle()`의 관찰 단계 — recording → Fine → IncidentClip →
-    readout(fixture OCR) → 시간 source·AssetFacts까지. 정정과 무관한 값만 만든다."""
-    fixture = load_recording_fixture(SCENARIO_ID)
+    """`build_fixture_evidence_bundle()`의 관찰 단계 — recording → Fine → IncidentClip →
+    readout(fixture OCR) → 시간 source·AssetFacts까지. 정정과 무관한 값만 만든다.
+
+    `plate_source_profile`은 번호판 판독 프로파일이다 — 재판독은 `readout-native-hires`(readout 계약 §3,
+    `decisions/real-e2e-scenarios.md` §4-3). 시각 판독은 늘 `readout-native`다."""
+    fixture = load_recording_fixture(scenario_id)
+    if len(fixture.analysis_sources) != 1:
+        raise ValueError(
+            f"{scenario_id}: AnalysisSource가 {len(fixture.analysis_sources)}개다 — 하나일 때만 profile을 정할 수 있다"
+        )
     rec_service = RecordingService.from_fixture(fixture, case_id=case_id)
 
     # candidate.span을 recording.resolve_span() 입력으로 변환한다 — ms→sec는
@@ -600,31 +635,34 @@ def observe_happy_001_candidate(
         narrowed_resolution.model_dump(mode="json")
     )
 
-    read_request = readout_api.ReadRequest(
-        case_id=case_id,
-        candidate_id=candidate.candidate_id,
-        input_ref=InputRef(
-            incident_clip_ref=incident_clip.incident_clip_ref,
-            source_profile="readout-native",
-            provenance="SOURCE_DERIVED_INCIDENT_CLIP",
-        ),
-    )
+    def _read_request(source_profile: str) -> readout_api.ReadRequest:
+        return readout_api.ReadRequest(
+            case_id=case_id,
+            candidate_id=candidate.candidate_id,
+            input_ref=InputRef(
+                incident_clip_ref=incident_clip.incident_clip_ref,
+                source_profile=source_profile,
+                provenance="SOURCE_DERIVED_INCIDENT_CLIP",
+            ),
+        )
+
     plate_run, plate_readout = readout_api.read_plate(
-        read_request, provider=readout_providers.FixtureOcrProvider()
+        _read_request(plate_source_profile), provider=readout_providers.FixtureOcrProvider()
     )
     _overlay_run, overlay_readout = readout_api.read_overlay_time(
-        read_request, provider=readout_providers.FixtureOcrProvider()
+        _read_request("readout-native"), provider=readout_providers.FixtureOcrProvider()
     )
 
     # 알려진 단순화 1 (모듈 docstring 참고) — recording이 아직 공개 함수로 노출 안 함.
     raw_recording = json.loads(
-        (mock_root / "recording" / f"{SCENARIO_ID}.json").read_text(encoding="utf-8")
+        (mock_root / "recording" / f"{scenario_id}.json").read_text(encoding="utf-8")
     )
     time_source_candidates = raw_recording.get("time_source_candidates", [])
 
-    asset_refs = [facts.asset_ref for facts in fixture.asset_facts]
+    # 5순위 — fixture에 등록된 asset 전부가 아니라 이 후보 clip의 것만 넘긴다.
+    related = select_case_assets(incident_clip.incident_clip_ref, fixture.asset_facts)
     asset_facts_real = [
-        rec_service.lookup_asset_facts(ref).model_dump(mode="json") for ref in asset_refs
+        rec_service.lookup_asset_facts(facts.asset_ref).model_dump(mode="json") for facts in related
     ]
 
     return ObservationBundle(
@@ -894,7 +932,7 @@ def observe_real_video_candidate(
     fine_run = visual_result.analysis_run.model_dump(mode="json")
 
     # Fine 결과를 downstream(두 번째 resolve_span·IncidentClip·readout·TimeResolution
-    # 포함)으로 밀어넣기 전에 먼저 분류한다(이슈 #137, `build_happy_001_evidence_bundle()`과
+    # 포함)으로 밀어넣기 전에 먼저 분류한다(이슈 #137, `build_fixture_evidence_bundle()`과
     # 동일 패턴 — PR #131→#142 후속 정합화). `NOT_OBSERVED`는 유효한 관찰 결과이므로
     # 여기서 조립을 시작하지 않고 정상 종료한다.
     disposition = classify_visual_evidence(visual_evidence)
