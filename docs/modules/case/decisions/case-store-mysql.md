@@ -33,7 +33,7 @@ api · worker가 별도 process가 되면서(Ops §2) case의 in-memory 전제�
 | D2 | **하이브리드 schema** — `cases`(조회 칼럼 + aggregate JSON) + append-only 레코드 테이블(§4) | 전부 정규화 — 후보 목록은 탐색마다 통째로 바뀌어 매핑 비용만 늘어난다 / JSON 하나 — append-only를 앱 코드로만 지켜야 한다 |
 | D3 | **비관적 잠금** — 쓰기 경로는 `cases` 행을 `SELECT … FOR UPDATE`로 잡고 읽는다. 읽기 경로는 `FOR SHARE` | 낙관적 `row_version` — worker T2에 재시도 루프가 필요하고, 같은 case 동시 쓰기가 드물어 얻는 게 적다 |
 | D4 | **opt-in MySQL 통합 테스트 + in-memory 구현** — 두 구현이 같은 계약 테스트를 통과한다 | CI에 MySQL 추가 — 공용 CI라 Runtime과 협의가 먼저다(§9) / sqlite — `FOR UPDATE` · JSON · 잠금 동작이 달라 통과해도 믿을 수 없다 |
-| D5 | 처리한 `execution_id` · 중단된 `job_id` 테이블은 **8-8 · 8-9에서** 만든다. **2026-10-06 갱신:** 중단된 `job_id`는 테이블 대신 aggregate 정산 기록으로 둔다(`running-jobs-derivation.md` §결정 5) | 지금 만들기 — 쓰는 코드가 없는 schema가 된다. forward-only라 나중에 더해도 된다 |
+| D5 | 처리한 `execution_id` · 중단된 `job_id` 테이블은 **8-8 · 8-9에서** 만든다. **2026-10-11 갱신:** 처리한 `execution_id`도 테이블 대신 aggregate `state`의 `processed_executions`로 둔다(`result-reflection.md` 결정 2). **2026-10-06 갱신:** 중단된 `job_id`는 테이블 대신 aggregate 정산 기록으로 둔다(`running-jobs-derivation.md` §결정 5) | 지금 만들기 — 쓰는 코드가 없는 schema가 된다. forward-only라 나중에 더해도 된다 |
 
 D3을 고른 근거 하나 더: 잠금 안에서 `expected_case_rev`를 검사하므로 `case.command.stale_revision` 판정이 정확해진다(검사와 저장 사이 틈이 없다).
 
