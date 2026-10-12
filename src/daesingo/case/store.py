@@ -30,6 +30,14 @@ class InvalidCaseId(ValueError):
     pass
 
 
+class ExecutionReader(Protocol):
+    """JobExecution read port(#245 D-6) — Runtime `read_executions(conn, job_ids)`와 같은 모양. 요청한 job의 모든
+    attempt를 Contract 모양으로 돌려주고 대표는 case가 고른다(A§10-6). 호출자 transaction에 참여하며 잠그지 않는다.
+    case는 Runtime 구현을 import하지 않는다 — composition root가 꽂는다(`decisions/jobexecution-read-port.md`)."""
+
+    def __call__(self, conn: Any, job_ids: list[str]) -> list[dict[str, Any]]: ...
+
+
 def validate_case_id(case_id: str) -> None:
     if not case_id or len(case_id) > CASE_ID_MAX or not case_id.isascii():
         raise InvalidCaseId(f"case_id는 1~{CASE_ID_MAX}자 ASCII여야 한다: {case_id!r}")
@@ -119,18 +127,20 @@ class AdapterRegistry:
 class CaseStore:
     """repository · conn · adapter registry를 묶는다. 진입점(`get_view` · `execute_command` · `create_case` ·
     `record_source_registered`)은 이것 하나를 받는다 — composition root는 요청 transaction마다
-    `CaseStore(repository=MySQLCaseRepository(), adapters=registry, conn=connection)`을 만든다.
-    기본값은 in-memory(테스트 · 로컬). MySQL transaction은 READ COMMITTED여야 한다 — `MySQLCaseRepository` docstring 참고."""
+    `CaseStore(repository=MySQLCaseRepository(), adapters=registry, conn=connection, executions=read_executions)`을
+    만든다. 기본값은 in-memory(테스트 · 로컬)이고, `executions`가 없으면 실행 기록이 없는 것으로 본다. MySQL transaction은 READ COMMITTED여야 한다 — `MySQLCaseRepository` docstring 참고."""
 
     def __init__(
         self,
         repository: CaseRepository | None = None,
         adapters: AdapterRegistry | None = None,
         conn: Any = None,
+        executions: ExecutionReader | None = None,
     ) -> None:
         self.repository: CaseRepository = repository if repository is not None else InMemoryCaseRepository()
         self.adapters = adapters if adapters is not None else AdapterRegistry()
         self.conn = conn
+        self.executions = executions
 
     def register(self, case: CaseAggregate, adapter: ModuleAdapter | None = None) -> None:
         """`adapter=None`은 빈 case(`service.create_case()`)다 — 선택 전에는 adapter를 조회하지 않는다."""
@@ -148,3 +158,10 @@ class CaseStore:
 
     def get_adapter(self, case_id: str, case: CaseAggregate | None = None) -> ModuleAdapter | None:
         return self.adapters.for_case(case_id, case)
+
+    def read_executions(self, case: CaseAggregate) -> list[dict[str, Any]]:
+        """`case`가 발주한 job 전체의 JobExecution — 같은 `conn`(호출자 transaction)으로 한 번 조회한다."""
+        job_ids = [r["job_id"] for r in case.job_records]
+        if self.executions is None or not job_ids:
+            return []
+        return self.executions(self.conn, job_ids)

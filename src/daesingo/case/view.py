@@ -244,6 +244,10 @@ def _build_progress(
     # 「아직 찾는 중」과도 다른 상태다(PR #187 리뷰).
     if case.candidate_search_failed:
         progress["coarse_search"] = "FAILED"
+    # 사용자가 분석을 중단했으면 실행 상태와 상관없이 PARTIAL이다(B§7 `progress[].state` 행 · #245 C-3). 실패 뒤
+    # 다시 찾다가 중단했으면 마지막 사용자 행동(중단)을 보인다(`decisions/stop-analysis.md`).
+    if case.analysis_stopped:
+        progress["coarse_search"] = "PARTIAL"
     if stage_rank < 3:
         for step in ("plate_read", "overlay_time_read", "evidence_assembly", "requirement_check", "package_assembly"):
             progress[step] = "PENDING"
