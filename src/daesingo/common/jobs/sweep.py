@@ -167,9 +167,11 @@ class SweepService:
     """
     def __init__(self, *, sweep: Callable, settings: WorkerSettings, stop: Event,
                  logger: logging.Logger, hooks: Sequence[Callable[[], object]] = (),
+                 redeliver: Callable[[], object] | None = None,
                  wait: Callable | None = None, retry_wait: Callable | None = None):
         self.sweep, self.settings, self.worker_stop, self.logger = sweep, settings, stop, logger
         self.hooks = tuple(hooks)
+        self.redeliver = redeliver
         self.stop = Event()
         self.wait = wait if wait is not None else self.stop.wait
         self.retry_wait = retry_wait if retry_wait is not None else stop.wait
@@ -178,6 +180,10 @@ class SweepService:
 
     def _pass(self):
         self.sweep()
+        if self.redeliver is not None:
+            # Startup scan failures use the same admission retry gate; individual
+            # candidates isolate their own faults within this callback.
+            self.redeliver()
         for hook in self.hooks:
             try:
                 hook()

@@ -51,7 +51,7 @@ RT-07(a)는 `usage/`에 typed `usage_inflight`·append-only `usage_record`와 ex
 
 아직 실제 구현되지 않은 범위:
 
-- terminal T2 재전달 scan · 실제 kill E2E(RT-06(b))
+- 기본 Worker entrypoint의 실제 Case reader/timeline 조립(RT-10). RT-06(b)의 `jobs/redelivery.py` startup/periodic scan과 Worker-owned Case adapter·실제 process-kill MySQL 테스트는 구현했다. 대상은 SUCCEEDED/FAILED이고 CANCELLED·STALE은 제외한다. 후보 scan/replay receipt read는 비잠금이며 Case→Runtime 순서의 기존 T2를 재사용한다. 후보 오류는 격리하고 COMMIT 불명은 durable receipt로 복구한다.
 - UsageSink begin/finish·Worker 주입·Run finalize 배선(RT-07(b)), reconciliation·늦은 관측·sweep hook·usage_refs projection(RT-07 후속)
 - API / Worker 실제 app·handler 조립(config bootstrap만 있음)
 - Runtime health endpoint

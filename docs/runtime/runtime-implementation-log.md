@@ -48,6 +48,7 @@ Plan §0.1이 Task PR로 넘긴 선택은 미리 행을 둔다. 그 밖의 선�
 | STALE sweep · retry · hook lifecycle | 후보 scan 후 execution별 짧은 tx · PK SKIP LOCKED 재확인 · retry ID 고정/unknown COMMIT 복구 · startup gate + 독립 주기 thread · connection 반환 뒤 immutable hooks | RT-06(a) · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `common/jobs/{sweep,retry_policy}.py` |
 | attempt별 queue 대기 관측 | claim receipt 내부 queued_at · DB queued_at→started_at · INITIAL/RETRY 묶음 · heartbeat 시작 뒤 sink 호출 | RT-06(a) · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `repository.py` · `worker_loop.py` |
 | STALE 관측 · fatal hook 비노출 | DB STALE ended_at − 마지막 heartbeat_at · post-commit 측정/누락 fallback 없음 · fatal cleanup 후 process 경계에서 원문 비노출·고정 코드 1 | RT-06(a) 후속 P2 · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `sweep.py` · `worker/__main__.py` |
+| T2 재전달 · Case adapter · kill 복구 | 비잠금 후보/receipt 조회 → 후보별 기존 T2 · Case→Runtime 잠금 · startup admission gate · 주입형 Case 8-8 bridge · 실제 spawned process kill/DB 상태 관측 | RT-06(b) · PR/merge SHA pending · `Refs #293` | 아래 RT-06(b) · `common/jobs/redelivery.py` · `worker/case_reflector.py` |
 | type checker 도구 (Plan RT-15) | pending | RT-15 | — |
 | secret scan 배치 — PR gate 편입 여부 (Plan RT-15) | pending | RT-15 | — |
 | Compose smoke의 CI 편입 여부 (Plan RT-13) | pending | RT-13 | — |
@@ -866,16 +867,17 @@ Status: DONE · Issue: #292 · Audit: A · 최종 PR 연결 문구: `Closes #292
 
 ## RT-06 — STALE sweep · 자동 retry · T2 재전달
 
-Status: IN_PROGRESS · Issue: #293 · Audit: A
+Status: DONE · Issue: #293 · Audit: A
 
 | PR | 내용 | Merge SHA |
 | --- | --- | --- |
-| pending (`Refs #293`, RT-06(a)) | sweep · retry — 두 P2 해소 · 독립 재리뷰 통과 | pending |
+| [#347](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/347) (`Refs #293`, RT-06(a)) | sweep · retry — 두 P2 해소 · 독립 재리뷰 통과 | `2f046954` |
+| pending (`Closes #293`, RT-06(b) 최종 PR) | 병합된 RT-06(a) PR #347에 이어 terminal T2 재전달 · 실제 Case adapter · process kill 복구 완료 — 독립 재리뷰 통과, 병합 차단 문제 없음 | pending |
 
 ### 구현 결과
 
-- 최초 구현 기준(2026-10-11): 당시 최신 `origin/develop` `184dd3b8be26a96c3b2b5ea7ef66edaf25e0dd76`의 Plan §6 RT-06 · §12 전체/§12.8, Baseline B-L3~B-L5 · B-R1~B-R3 · §2.4 · §3.2 · §9, Tech Spec §6.2 · §6.3 · §7.2 · §7.3 · §12.2, 이 Log와 Issue #293을 확인했다. 현재 브랜치 HEAD도 같은 커밋이다. 저장소/부모에서 AGENTS.md 파일은 발견되지 않았고 사용자가 제공한 AGENTS 지침을 적용했다.
-- **RT-06(a)만 구현**한다. `retry_policy.py`는 lease 만료·STALE-only retry·상한·중단 표식·지수 backoff/cap을 pure logic으로 분리한다. 실패 횟수와 failure_kind는 STALE/retry 판정에 쓰지 않는다.
+- 최초 RT-06(a) 구현 기준(2026-10-11): 당시 최신 `origin/develop` `184dd3b8be26a96c3b2b5ea7ef66edaf25e0dd76`의 Plan §6 RT-06 · §12 전체/§12.8, Baseline B-L3~B-L5 · B-R1~B-R3 · §2.4 · §3.2 · §9, Tech Spec §6.2 · §6.3 · §7.2 · §7.3 · §12.2, 이 Log와 Issue #293을 확인했다. 당시 브랜치 HEAD도 같은 커밋이었다. 저장소/부모에서 AGENTS.md 파일은 발견되지 않았고 사용자가 제공한 AGENTS 지침을 적용했다.
+- **RT-06(a)의 구현 범위:** `retry_policy.py`는 lease 만료·STALE-only retry·상한·중단 표식·지수 backoff/cap을 pure logic으로 분리한다. 실패 횟수와 failure_kind는 STALE/retry 판정에 쓰지 않는다.
 - `sweep_expired(conn, execution_id, settings)`는 caller-owned transaction에서 원본 row를 잠그고 DB 시각과 marker를 재확인한다. 조건부 RUNNING→STALE과 허용되는 attempt+1 QUEUED INSERT가 같은 commit이다. 원본/새 attempt의 ended_at/queued_at은 같은 DB sample이며 available_at에 backoff를 더한다. 새 attempt는 job/case/kind/trace만 이어받고 execution ID·lease·cancel·produced는 재사용하지 않는다.
 - `sweep_once()`는 후보 scan 뒤 execution별 B-D8 transaction을 실행한다. 중복 sweep은 원본 row 잠금 재확인과 기존 UNIQUE(job_id, attempt)로 차단한다. retry ID는 callback replay 동안 고정하고, unknown COMMIT 뒤에는 같은 원본 PK를 blocking read하여 durable STALE과 자신이 만든 child를 확인한다. 이미 STALE인 row에 추가 attempt를 만들지 않는다.
 - `SweepService`는 startup sweep 성공 전 claim을 막고 DB 오류는 B-Q3 대기한다. 이후 handler와 독립적인 단일 `runtime-sweep` thread로 주기 sweep을 실행한다. WorkerLoop finally에서 stop/join하며 기존 handler/heartbeat 종료 경계를 유지한다.
@@ -885,7 +887,7 @@ Status: IN_PROGRESS · Issue: #293 · Audit: A
 ### Plan 대비 변경
 
 - sweep 전체를 큰 transaction으로 묶지 않고 후보별 짧은 transaction으로 나눴다. 각 attempt의 STALE+QUEUED 원자성은 유지하며 긴 handler·다른 job의 cancel/finish가 전체 scan 잠금에 묶이지 않게 한다. 앞 후보가 commit된 뒤 뒷 후보가 실패하면 앞 결과는 유지되고 다음 pass가 나머지를 재평가한다. implementation detail이며 Contract/Decision/Baseline 변경은 없다.
-- RT-06(b)의 terminal T2 재전달 scan·실제 kill E2E·Case 8-8 배선은 제외한다. CANCELLED의 기존 T2 경계도 변경하지 않는다. Task 전체는 IN_PROGRESS이며 PR 연결은 `Refs #293`이다.
+- RT-06(a)에서는 terminal T2 재전달 scan·실제 kill E2E·Case 8-8 배선을 RT-06(b)로 분리했다. CANCELLED의 기존 T2 경계는 변경하지 않았다. 당시 전체 상태는 IN_PROGRESS, 연결은 `Refs #293`이었다. RT-06(b)의 구현·최종 독립 재리뷰 결과는 아래에 기록한다.
 - claim receipt에 내부 queued_at을 optional/default 필드로 추가하여 기존 positional adapter를 유지했다. 공개 JobExecution/read-port schema는 바꾸지 않았다.
 
 ### 새 implementation detail
@@ -923,18 +925,84 @@ Status: IN_PROGRESS · Issue: #293 · Audit: A
 
 ### RT-06(a) 최종 독립 재리뷰 통과 — 검증 주체 구분
 
-- **사용자 전달 최종 판정:** detect latency 의미와 fatal hook 원문 비노출의 두 P2가 해소됐으며 RT-06(a) 독립 재리뷰가 통과했다. RT-06 전체 상태는 **IN_PROGRESS**이고 연결은 **`Refs #293` (RT-06(a))**, PR 번호·merge SHA는 **pending**을 유지한다.
+- **사용자 전달 RT-06(a) 최종 판정:** detect latency 의미와 fatal hook 원문 비노출의 두 P2가 해소됐으며 RT-06(a) 독립 재리뷰가 통과했다. 당시 전체 상태는 **IN_PROGRESS**, 연결은 **`Refs #293` (RT-06(a))**, PR 번호·merge SHA는 pending이었다. 이후 **PR #347 / `2f046954`**로 병합됐으며, RT-06(b) 최종 PR이 **`Closes #293`**로 전체 완료를 연결한다.
 - **확인된 최종 경계:** detect latency는 durable STALE row의 `ended_at − heartbeat_at`이다. startup/periodic fatal hook은 일반 Exception 격리 경로로 삼키지 않고 stop/join·connection cleanup 후 고정 코드 **1**로 종료한다. 프로세스 경계는 예외 원문·traceback·secret·경로를 stderr나 Runtime 로그에 노출하지 않으며 실패/cleanup logger·filter·handler의 BaseException 재실패도 전파하지 않는다.
 - **재리뷰 직접 실행 결과(사용자 전달):** COMMIT 불명 소진, observer 장애, fatal과 cleanup BaseException 동시 발생을 독립 probe로 확인했다. 이 세 probe는 저장소 회귀 테스트에 아직 포함되지 않았다.
 - **구현 단계 보존 결과:** 위의 targeted **1,787 passed**, 전체 **4,312 passed / 비-MySQL 26 skipped**, 실제 **MySQL 345 tests / skip=0 / xfail=0**, 내부 MySQL 반복·gate parameter 누락 결과는 구현 단계의 보존 증거다. 이 수치를 독립 재리뷰의 직접 재실행 결과로 기록하지 않는다. 앞선 read-only 재리뷰 기록은 당시 검토 이력으로 유지한다.
 
 ### 남은 위험
 
-- RT-06(b) T2 재전달·실제 process kill E2E는 미구현이다. 이번 acceptance는 Runtime의 sweep/retry만 증명한다. 실제 Case wall timeout/context 적용 여부는 기존 case 소유 판단으로 남긴다(Baseline §3.2).
+- RT-06(a) acceptance는 Runtime의 sweep/retry를 증명했다. 당시 후속 범위였던 RT-06(b) T2 재전달·실제 process kill E2E는 아래 구현·독립 재리뷰에서 PASS로 확인됐다. 실제 Case wall timeout/context 적용 여부는 기존 case 소유 판단으로 남긴다(Baseline §3.2).
 - **비차단 회귀 보강 후보:** 독립 probe로 확인한 COMMIT 불명 소진·observer 장애·fatal과 cleanup BaseException 동시 발생을 저장소 회귀 테스트로 편입하는 작업은 남아 있다. 독립 probe 확인과 저장소 회귀 커버리지를 구분한다.
 - DB stall/B-D8 재시도·느린 hook이 sweep pass를 늦출 수 있고 whole-pass/hook/join의 전체 wall-clock 시간 상한을 보장하지 않는다. fatal 비노출 처리는 강제 kill이나 시간 상한을 추가하지 않는다. 운영 detect latency/false STALE 분포와 Baseline revisit 근거는 실측하지 않았다.
 - post-commit 지표는 best effort이며 sink 장애/process 종료/unknown COMMIT 복구가 소진되면 event 유실이 가능하다. durable STALE/retry 원자성은 지표에 의존하지 않는다. 제3자 logger의 전역 masking은 기존 한계다.
-- 독립 재리뷰 통과 후 미커밋 상태로 남긴다. 기존 미추적 파일은 수정/staging하지 않았으며 커밋·push·PR 생성은 하지 않는다. PR 번호·merge SHA는 pending이다.
+- RT-06(a)는 PR #347로 병합됐다. RT-06(b) 최종 PR의 번호·merge SHA는 pending이며 이번 Log 갱신에서 커밋·push·PR 생성은 하지 않는다. 기존 미추적 파일도 수정/staging하지 않는다.
+
+---
+
+### RT-06(b) — terminal T2 redelivery · 실제 Case adapter · process kill (2026-10-12)
+
+**Status: DONE · 최종 PR 연결: Closes #293 · PR 번호 / merge SHA pending.** 사용자 전달 RT-06(b) 독립 재리뷰는 통과했으며 병합 차단 문제 없음으로 판정됐다. 병합된 RT-06(a) PR #347의 sweep/retry에 이어 RT-06(b) 최종 PR이 T2 재전달·실제 Case adapter·process kill 복구를 완성한다. 실제 Issue close는 최종 PR 병합 연결이며, 이번에는 Log만 갱신하고 커밋·푸시·PR 생성은 하지 않는다.
+
+**구현 결과**
+
+- 착수 기준 HEAD/develop `fa5a0fcb`. 사용자 제공 AGENTS.md, Plan §6 RT-06/§12 전체, Tech Spec §6.2/6.3/7.2/7.3/12.2, Baseline B-L3–L5/B-R1–R3/§2.4/3.2/9, Log RT-04/05/06, Issue #293와 병합 PR #342·#343 및 Case 결정/공개 함수·T2 helper·transaction/composition을 확인했다. 저장소 내 AGENTS.md 파일은 발견되지 않았다. #347 merge는 Git history의 `2f046954`로 확인했다.
+- `common/jobs/redelivery.py`는 SUCCEEDED/FAILED와 `case_applied_at IS NULL`만 잠금 없이 scan한다. connection 반환 후 후보마다 B-D8 transaction을 사용하고 callback replay마다 비잠금 receipt 조회를 다시 한다. CANCELLED/STALE/이미 receipt가 있는 execution은 Case로 넘기지 않는다.
+- 기존 `reflect_terminal`과 Case `reflect_execution`을 그대로 재사용한다. Case lock/실행 ID dedup → Runtime terminal facts/receipt lock → 후속 enqueue + receipt 순서다. Case·후속 JobRecord의 Runtime enqueue·receipt는 같은 commit이며 COMMIT 응답 유실은 durable receipt와 Case 처리 기록으로 복구한다. 별도 delivery lease/schema/새 retry 정책은 없다.
+- `worker/case_reflector.CaseReflector`는 reader/timeline과 선택적 store factory/budget을 주입받고 Runtime 모델을 Case 모델로 변환한다. 기본 store는 같은 Connection의 MySQLCaseRepository와 `read_executions`다. 다른 Connection의 store는 거부한다. Case 코드/공개 surface는 수정하지 않는다.
+- `SweepService`의 startup pass와 각 periodic pass에 독립 redelivery callback을 연결했다. startup scan DB 실패는 B-Q3 admission 재시도로 첫 claim을 막는다. 후보 reflector/DB 오류는 rollback·기존 retry 뒤 격리하여 다음 후보와 다음 주기를 진행한다. scan 실패는 주기 경계로 올라가며 다음 주기에 다시 수행한다. hook은 여전히 transaction/connection 반환 뒤 호출하며 RT-07 import/reconciliation은 없다.
+- commit/recovery 이후 best-effort `runtime.reflect.redelivery_count`를 기록한다. scan/replay 중 이미 완료된 receipt에는 재반영하지 않는다. shared post-commit observer는 기존 `attempt >= 2 AND NOT_APPLIED(STOPPED_WAITING)`만 `runtime.retry.after_case_stopped_count`로 집계한다. CANCELLED/SUPERSEDED/ALREADY_APPLIED/rollback/예외는 제외한다. event는 durable exactly-once ledger가 아니다.
+- 실제 spawned Worker process에서 IPC로 T1 commit 뒤 T2 진입 전 또는 handler RUNNING 지점에 정지한다. 부모의 별도 MySQL 연결에서 durable 상태를 확인하고 OS kill/join·nonzero exit를 관측한다. gap 복구는 startup receipt 완료를 첫 claim 전에 확인한다. 실행 중 kill은 새 Worker의 실제 lease 만료→STALE→attempt 2→backoff 후 claim→성공→Case 처리 ID/receipt를 확인한다. 후보 중복/Case 후보 1개와 재전달 no-op도 확인한다. child의 engine/heartbeat/sweep를 별도 process가 소유하며 finally에서 child/pipe를 정리한 후 fixture schema를 drop한다.
+
+**Plan 대비 변경 · 새 implementation detail**
+
+- Plan 예상 `sweep.py`에 T2 persistence를 더하는 대신 `redelivery.py`와 Worker-owned adapter로 분리했다. 기존 T2/Case 공개 함수를 소비하는 implementation detail이며 다른 Owner의 새 surface는 필요하지 않았다. 기본 entrypoint의 실제 module reader/timeline/handler 조립은 RT-10에 남긴다.
+- [구현 계획/선택 비교](../superpowers/plans/2026-10-12-runtime-t2-redelivery-kill-recovery.md)에 scan 분할, 동시 sweeper, COMMIT 불명, adapter 위치/DI, kill 동기화, 미지원 kind의 대안 2–3개와 장애를 기록했다. 기존 Case lock/receipt를 선택해 cross-process 중복을 해결하며 Runtime 선잠금이나 process-local mutex를 쓰지 않는다.
+- MySQL gate에 독립 `redelivery` 9 families / 32 parameters를 추가하고 nested actual-report suite에도 신규 테스트를 포함한다. collection/selection/setup/call/teardown/all/JUnit의 개별 누락은 기존 fail-closed 검사로 확인한다. workflow require/JSON-JUnit gate 경로는 유지한다.
+
+**Contract / Decision / Baseline 영향:** 모두 없음. test 전용 짧은 heartbeat/lease/sweep/backoff는 P-4이며 production 값을 바꾸지 않는다.
+
+**Owner 확인 포인트**
+
+- PR #343의 「미등록 kind는 T2까지 오지 않는다」는 전제를 사용하지 않는다. 실제 KindRegistry는 FAILED/RUNTIME_UNREGISTERED_KIND로 T1 확정 뒤 T2에 전달한다. Case 지원 kind는 현재 HINT_EXTRACT/COARSE_SEARCH다. PLATE_READ의 실제 durable JobRecord로 missing-applier ValueError를 확인하고 receipt를 남기지 않는다. UNKNOWN은 Case vocabulary 밖의 Runtime kind mismatch를 별도로 확인한다. Worker registry와 Case reflector의 호환성/fail-fast 책임은 **RT-10 후속 비차단 경계**이며 새 Case applier나 무음 APPLIED를 만들지 않았다.
+- Deferred Audit A: Case→Runtime 잠금, NOT_APPLIED receipt와 unknown COMMIT, 후보 오류 격리, startup 순서, actual kill 증거를 확인한다. ProducedReader의 실제 module persistence/새 applier는 Case 8-6 2단계·RT-10 선행이다.
+
+**Verification — 구현 단계 보존 증거**
+
+- RED: startup/periodic unit 2 failed, 실제 MySQL 신규 32 failed(미구현), gate family 누락 9 failed. 최초 GREEN 시도는 24 passed/8 failed였고 공용 logger.log test 오염을 monkeypatch 복원으로 수정했다.
+- 수정 후 unit/gate 2,513 passed. targeted 실제 MySQL/Case/기존 T2/startup 76 passed. 실제 connection kill→B-D8 3회 소진→다음 후보·다음 주기 1 passed. 첫 targeted 실패는 기존 concurrent T2 관측의 performance_schema SELECT 권한 부족이며 최소 읽기 권한 후 재검증했다.
+- read-only 구현 리뷰의 P2: 기존 JobRecord.kind를 메모리에서 바꾼 fixture는 MySQL append-only record를 바꾸지 않아 missing-applier 대신 mismatch를 검증했다. durable kind assertion **2 failed RED** 후 실제 Case `issue_plate_read` 발주·정확한 ValueError 원인 assertion으로 수정했다. production 수정은 없었다. 최종 독립 재리뷰와 구분한다.
+- 수정 환경의 nested 실제 MySQL require는 **482 passed / skip 0 / xfail 0**, MySQL **8.4.7**이며 별도 JSON/JUnit CLI gate PASS다. 기존·신규 개별 parameter의 7개 증거 계층 누락 **2,317건**을 모두 거부했다. 그중 redelivery 32 parameters의 **224건**이 포함된다.
+- 최종 전체 pytest: **5,363 passed / 26 skipped / exit 0**, 1,684.30초. MySQL 선택 **487 tests / skip 0 / xfail 0**, JSON/JUnit CLI gate PASS. 이 통과 baseline에서 신규 32 parameters × 7 계층 누락 **224건**, 9 family 누락 **9건**을 별도로 거부했다. 전체 skip은 search collection의 기존 `typer` 미설치 4개와 로컬 미디어/opt-in이 없는 Case 2·eval 5·recording 15개다. MySQL skip으로 합산하거나 성공 보고서를 조립하지 않았다.
+- 최종 boundary checker PASS(위반 0), Contract fixtures PASS(문서 구조 62 / JSON 26 / 의미 104 검사), 전체 5 workflow actionlint+ShellCheck PASS. 실제 host 파일 기준 코드 11개·기존 미추적 보호 파일 1,069개의 SHA-256 유지, 새 Python source 구문 검사와 `git diff --check` PASS, staging 없음. 원격 CI는 실행하지 않았다.
+- 첫 전체 require는 기존 `test_sweep_worker_mysql.py` migration fixture의 TLS authentication read에서 장시간 정지했다. read-only py-spy stack 두 번으로 같은 위치를 확인해 `require-hang-stack.txt`를 보존하고 소유 pytest PID만 종료했다. migration API의 timeout 생략은 기존 의도이며 production/migration helper/TLS 설정은 바꾸지 않았다. 정지한 테스트의 disposable schema 1개를 정리하고 test URL에 `connect_timeout=2&read_timeout=10&write_timeout=10`을 명시했다. transport stall의 원인은 미확정이다.
+- 재실행 `require-final`은 **485 passed / 1 failed / 비-MySQL collection skip 4**, 656.28초였다. 유일한 실패는 기존 Case `test_waiting_writer_sees_first_writers_commit_under_read_committed`의 `INNODB_TRX` 조회 권한 **1227 / PROCESS** 부족이다. 별도 실행으로 재현한 뒤 전용 서버 test 계정에 PROCESS 관측 권한을 추가해 해당 test **1 passed**를 확인했다. 실패 보고서는 JSON/JUnit gate가 거부했다. 이 보고서를 전체 require PASS 증거로 사용하거나 새 통과 결과와 합쳐 보고서를 만들지 않는다. 수정 환경의 전체 pytest/require 결과는 별도 `full` 보고서로 남긴다.
+- 전체 실행 종료 후 fixture schema/account 잔여 **0**, 활성 test connection **0**을 확인했다. 전용 datadir/loopback/port/version을 검증한 뒤 base schema와 test 계정을 제거해 잔여 test schema/account **0**, SQL SHUTDOWN / 서버 session exit **0**을 확인했다. 소유 MySQL PID/socket/pidfile 소멸·port 닫힘·Worker child process **0**을 확인했다. DB data/log는 검증 증거로 남겼다.
+- 구현 단계의 읽기 전용 source 재리뷰에서는 P2 fixture 수정 후 새 actionable finding 없음. 당시 reviewer는 테스트를 재실행하지 않았으며 위 실행 검증은 구현자 증거다. 당시 보류했던 최종 독립 재리뷰 판정은 아래 사용자 전달 결과로 구분해 기록한다.
+- 검증 산출물은 `.codex-scratch/rt06b-20261012/`에만 보존하며 commit에서 제외한다. 최초 sandbox local socket 10013은 escalation 뒤 해결했다. 임시 서버의 초기 0.0.0.0/% 광범위 권한 요청은 auto-review가 거부했고 loopback/localhost와 test schema 범위 권한으로 제한했다.
+
+**RT-06(b) 최종 독립 재리뷰 통과 — 검증 주체 구분**
+
+- **사용자 전달 최종 판정:** RT-06(b) 독립 재리뷰 통과, 병합 차단 문제 없음. RT-06(a) PR #347과 RT-06(b)를 합친 **RT-06 상태는 DONE**이며, RT-06(b) 최종 PR 연결은 **`Closes #293`**, **PR 번호·merge SHA는 pending**이다.
+- **독립 재리뷰 경계 판정(사용자 전달):** redelivery 대상(SUCCEEDED/FAILED·receipt null, CANCELLED/STALE/기존 receipt 제외), Case→Runtime lock 순서, 후보별 짧은 transaction, 동시 sweeper의 execution_id dedup/receipt, Case·후속 enqueue·Runtime receipt의 원자성 **PASS**. COMMIT 결과 불명 복구와 **exactly-once durable effect PASS**. 실제 process-kill **gap/running E2E 모두 PASS**, startup redelivery 완료→첫 claim 순서 및 **Case adapter PASS**. 미지원 kind의 registry↔reflector 호환성/fail-fast는 **RT-10 후속 비차단 경계**다.
+- **독립 리뷰 직접 실행 결과(사용자 전달):** 관련 unit/targeted **2,746 passed**; 실제 MySQL **482 passed / 1,446 phases / skip 0 / xfail 0**; 신규 RT-06(b) parameter **32개 모두 통과**, process-kill **gap/running 모두 통과**; JSON/JUnit gate **PASS**; 신규 parameter 누락 **224/224**, family 누락 **9/9**, metadata 일부 누락 **96/96** 거부; 추가 MySQL·kill probe **6개 통과**; boundary·Contract fixture·`git diff --check` **PASS**. 이 수치는 사용자에게서 전달받은 독립 리뷰의 직접 실행 결과이며, 이번 Log 갱신에서 테스트를 재실행하지 않았다.
+- **구현 단계와 구분:** 전체 pytest **5,363 passed / 비-MySQL 26 skipped**, 전체/nested MySQL **487/482**, 전체 누락 검사 **2,317건 거부**는 위 구현 단계의 보존 증거다. 독립 리뷰 직접 실행 결과와 합치거나 독립 리뷰가 전체 pytest를 재실행한 것으로 기록하지 않는다.
+
+**비차단 개선 후보**
+
+- 저장소 process-kill 회귀 테스트에 **HINT_EXTRACT → COARSE_SEARCH 후속 enqueue 경로**를 편입한다.
+- **ACK 유실 뒤 transaction retry 소진 경계**를 정식 저장소 회귀 테스트로 편입한다. 독립 probe PASS와 저장소 회귀 커버리지를 구분한다.
+- 로컬 전체 실행은 약 **28분**이며 원격 CI의 기존 **20분** 시간 예산 확인이 필요하다. 원격 실행 시간이나 CI 통과를 단정하지 않는다.
+
+**남은 위험**
+
+- 미지원 kind는 receipt 없이 매 pass에 반복 재전달될 수 있다. 오류를 숨기거나 APPLIED 처리하지 않으며 **RT-10 registry↔reflector 호환성/fail-fast 검증**이 필요하다. 이 후속 경계는 최종 독립 재리뷰의 비차단 항목이다.
+- 실제 **produced reader/timeline durability**는 후속 범위이며 이번 fixture 결과로 증명하지 않는다.
+- 후보 수 제한이나 whole-pass deadline은 도입하지 않았다. DB stall/B-D8·느린 Case reader/hook·join은 sweep/startup을 지연할 수 있으며 운영 분포/production tuning은 측정하지 않았다.
+- 전체 pass/join의 **wall-clock 상한은 없다**. 기존 retry/timeout 경계를 전체 시간 상한으로 확대 해석하지 않는다.
+- `runtime.reflect.redelivery_count`는 **전달 시도 횟수**를 관측하는 best-effort event이며 **durable effect exactly-once 지표가 아니다**. post-commit 지표는 sink 장애·process kill·unknown COMMIT에서 유실 가능하다. exactly-once 보장은 durable Case/후속 enqueue/Runtime receipt 효과이며 event 전달 횟수에 확대하지 않는다.
+- 초기 Windows/WSL **TLS 정지**와 사용자 전달 독립 리뷰의 **서버 shutdown 후 close에서 발생한 2013**은 해결된 것으로 단정하지 않는다. 이후 실제 검증 PASS는 이 transport 경계의 원인 규명이나 해소를 뜻하지 않는다. 이번에 workflow timeout이나 migration helper 정책을 바꾸지 않았다.
+- 기존 미추적 4개 항목은 수정·삭제·staging하지 않았다. **RT-06 DONE / 최종 PR Closes #293 / PR 번호·merge SHA pending**을 유지하며, 이번에는 RT-06 Log만 갱신한다. 코드·테스트 수정, 테스트 실행, 커밋·푸시는 하지 않는다.
 
 ---
 
