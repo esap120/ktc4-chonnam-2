@@ -40,7 +40,7 @@ def test_production_migration_schema_and_tracking(queue):
     with queue.connect() as conn:
         db = inspect(conn)
         assert "job_execution" in db.get_table_names()
-        assert conn.exec_driver_sql("SELECT version_num FROM runtime_alembic_version").scalar_one() == "runtime_0002"
+        assert conn.exec_driver_sql("SELECT version_num FROM runtime_alembic_version").scalar_one() == "runtime_0003"
         assert db.get_foreign_keys("job_execution") == []
         columns = {c["name"]: c for c in db.get_columns("job_execution")}
         assert set(columns) == {

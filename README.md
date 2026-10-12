@@ -135,7 +135,7 @@ MySQL integration은 `DAESINGO_MYSQL_URL`로 지정한 폐기 가능한 MySQL 8.
 
 Migration은 `uv run python -m daesingo.common.db.migrate --database-url-stdin`으로 실행한다. 호출자가 URL 한 개를 비대화형 stdin에 명시적으로 전달하며 credential을 argv·로그에 넣지 않는다. runner는 URL 환경변수·`.env`·RuntimeConfig를 읽지 않는다. 소스 checkout의 env를 frozen registry `case → runtime` 순서로 `head`까지 적용하며, 새 env는 registry와 필수 테스트에 등록해야 한다. 기존 MySQL gate는 RT-02(a)·Case 실행 목록과 새 migration 필수 check를 함께 검사한다.
 
-Migration은 단일 실행 전제다. process 내부 중복 호출만 거부하며 cross-process 동시 실행 안전성을 보장하지 않는다. 첫 실패에서 중단하고 retry·stamp·downgrade·resume/startup migration은 제공하지 않는다. MySQL DDL의 부분 적용은 전체 rollback되지 않으므로 실패 후 상태 검사·복구가 필요하다. 현재 Runtime env는 빈 `runtime_alembic_version`만 만들고 Runtime 업무 schema는 RT-03·RT-07에서 추가한다. 배포 실행 시점·URL 출처·배포 artifact 배치는 후속 범위이며 RT-02(b)는 독립 재리뷰 전이다.
+Migration은 단일 실행 전제다. process 내부 중복 호출만 거부하며 cross-process 동시 실행 안전성을 보장하지 않는다. 첫 실패에서 중단하고 retry·stamp·downgrade·resume/startup migration은 제공하지 않는다. MySQL DDL의 부분 적용은 전체 rollback되지 않으므로 실패 후 상태 검사·복구가 필요하다. 현재 Runtime head는 `runtime_0003`이며 `job_execution`·`usage_inflight`·`usage_record`를 생성한다. RT-07(a)의 Final append는 caller transaction에 참여하고, sink·reconciliation 배선은 후속 범위다. 배포 실행 시점·URL 출처·배포 artifact 배치는 후속 범위다. 실제 구현·검증 상태는 [Runtime Implementation Log](docs/runtime/runtime-implementation-log.md)를 확인한다.
 
 ### 프로토타입에 대해
 
