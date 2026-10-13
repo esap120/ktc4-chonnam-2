@@ -1,6 +1,6 @@
 # 모듈 결과의 위치 · case가 읽는 길 — 결과 저장소 · `StoredObservationAdapter` · 관찰 반영 (8-6 2단계)
 
-> **상태: case 쪽 결정 · RT-10 Implementer 확인 대기** · 결정일 2026-10-12 · 담당 유소연(`case`) · 근거 W7 고도화 8순위 8-6 2단계(`../design-refinement-w7-baseline.md`), 6.6순위 조건 2, #245 D-1 · #246 S-4, Runtime Tech Spec §12.2(T1 · T2), RT-10 Gate, REC-1(#302)
+> **상태: case 쪽 결정 · RT-10 Implementer 확인 대기 · §4-5 구현(2026-10-13 — 저장소와 무관한 정산 · gate만)** · 결정일 2026-10-12 · 담당 유소연(`case`) · 근거 W7 고도화 8순위 8-6 2단계(`../design-refinement-w7-baseline.md`), 6.6순위 조건 2, #245 D-1 · #246 S-4, Runtime Tech Spec §12.2(T1 · T2), RT-10 Gate, REC-1(#302)
 > CaseView를 무엇으로 조립하는지와 T2에서 관찰 결과로 무엇을 하는지는 case 결정 범위다. 8-6 2단계는 Runtime Plan §7이 「case 주도 설계, 새 RD 아님」으로 둔 RT-10 Gate다. 다만 **결과 저장소와 T1에서의 쓰기는 Runtime 구현**이라 RT-10 Implementer(정철원)와 먼저 맞춘다(Plan §12.2 Consult, §8). 그것이 Contract · Tech Spec 의미 변경인지는 Plan §12.3대로 Implementer가 판단해 Runtime/Ops Owner(김준영)에게 올린다. 객체의 뜻 · 모양은 각 모듈 계약 몫이고, recording 저장은 REC-1 몫이다.
 
 ## 1. 목표 · 범위
@@ -47,7 +47,7 @@
    - **현재 후보 목록 세대의 job만** 본다: 현재 후보 목록을 들여온 `COARSE_SEARCH`(가장 나중의 `REFLECTED` 탐색 job)보다 뒤에 append된 관찰 JobRecord. `job_records`가 append-only라 새 state 없이 계산된다. 재탐색 뒤 같은 `candidate_id`가 다시 나와도 이전 세대의 관찰을 쓰지 않는다(`reselect-observation-reuse.md` 「같은 후보와 같은 입력은 다르다」).
    - 그 안에서 객체의 `candidate_id`가 현재 선택 후보와 같은 것만, kind마다 가장 나중 job의 것 하나를 쓴다(A§10-7 대표 job). 같은 세대 안 A→B→A면 A의 관찰을 다시 쓴다(`reselect-observation-reuse.md` (b)).
    - 6.6순위 조건 2(늦게 온 이전 후보 결과 버리기)는 따로 guard 없이 이 필터로 성립한다 — 저장소에 있어도 투영되지 않는다.
-5. **T2에서 관찰 job(`PLATE_READ` · `OVERLAY_TIME_READ` · `FINE_VERIFY`) 결과는 정산만 한다.** applier는 그 job을 `REFLECTED`로 정산하고(기다리는 job만 받는 guard, `stop-analysis.md` §3-7), stage가 `EVIDENCE_REVIEW`면 `mark_ready_if_package_ready`를 다시 본다 — command 뒤와 같은 gate이고 adapter는 factory로 받는다. 내용은 case state에 복사하지 않는다(§4-2와 같은 이유). `FAILED` terminal도 정산만 하고, 실패 notice는 view가 read port의 실행 상태로 계산한다(`jobexecution-read-port.md`). 이전 후보의 결과도 기다리던 job이면 정산하고, 투영은 §4-4가, `READY`는 gate의 현재 선택 확인(#191)이 막는다.
+5. **T2에서 관찰 job(`PLATE_READ` · `OVERLAY_TIME_READ` · `FINE_VERIFY`) 결과는 정산만 한다.** applier는 그 job을 `REFLECTED`로 정산하고(기다리는 job만 받는 guard, `stop-analysis.md` §3-7), stage가 `EVIDENCE_REVIEW`면 `mark_ready_if_package_ready`를 다시 본다 — command 뒤와 같은 gate이고 adapter는 factory로 받는다. *(2026-10-13 구현 `reflection._apply_observation`: factory(§4-3) 전이라 command와 같이 `store.get_adapter()`를 쓴다 — 선택 후보가 있는데 adapter가 없으면 `AdapterNotAttached`로 T2가 실패한다. 결과를 읽지 않으므로 §4-1 저장소 확인과 무관하다.)* 내용은 case state에 복사하지 않는다(§4-2와 같은 이유). `FAILED` terminal도 정산만 하고, 실패 notice는 view가 read port의 실행 상태로 계산한다(`jobexecution-read-port.md`). 이전 후보의 결과도 기다리던 job이면 정산하고, 투영은 §4-4가, `READY`는 gate의 현재 선택 확인(#191)이 막는다.
 6. **새 port는 없다.** 내용 읽기는 8-8의 `ProducedReader(conn, kind, produced)`를 그대로 쓰고, Runtime 쪽 구현이 결과 저장소를 읽는다. 계약 문서 · id가 없는 객체(`IntentHintResult` 등)는 저장소가 붙인 `ref`로 가리킨다.
 
 ## 5. 알려진 한계

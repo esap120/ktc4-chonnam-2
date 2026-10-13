@@ -201,10 +201,12 @@ def test_kind_mismatch_is_a_programming_error():
 def test_kind_without_reflector_is_an_error_not_silent_settlement():
     store, case_id = _store_searching()
     case = store.load_for_update(case_id)
-    job = jobs.issue_plate_read(case, input_fingerprint="sha1:p")
+    # 신고용 영상 export 반영기는 아직 없다(`report-video-export.md` — 실행기 · 배선 보류).
+    job = jobs.issue_report_video_export(case, input_fingerprint="sha1:rv")
     store.save(case)
     outcome = ExecutionOutcome(
-        execution_id="exec_p", job_id=job["job_id"], case_id=case_id, kind="PLATE_READ", attempt=1, status="SUCCEEDED"
+        execution_id="exec_rv", job_id=job["job_id"], case_id=case_id, kind="REPORT_VIDEO_EXPORT", attempt=1,
+        status="SUCCEEDED",
     )
 
     with pytest.raises(ValueError):

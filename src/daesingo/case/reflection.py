@@ -18,7 +18,7 @@ from typing import Any, Literal, Protocol
 
 from daesingo.case.analysis_start import InitialSearchBudget, reflect_hint_extraction
 from daesingo.case.domain import CaseAggregate
-from daesingo.case.service import candidates_from_events
+from daesingo.case.service import candidates_from_events, mark_ready_if_package_ready
 from daesingo.case.store import CaseStore
 from daesingo.case.timeline_source import CaseTimelineSource
 
@@ -54,6 +54,9 @@ class ProducedReader(Protocol):
 
     - `HINT_EXTRACT` → search 단서 구조화 결과(`{"status": "OK|ABSTAINED|FAILED", "*_hint": …}`)
     - `COARSE_SEARCH` → `{"outcome": "SUCCEEDED|FAILED|…", "candidate_events": [CandidateEvent, …]}`
+
+    관찰 kind(`PLATE_READ` · `OVERLAY_TIME_READ` · `FINE_VERIFY`)는 T2에서 부르지 않는다 — 정산만 하고 내용은 CaseView
+    조립 때 adapter가 읽는다(`observation-storage.md` §4-2 · §4-5).
     """
 
     def __call__(self, conn: Any, kind: str, produced: tuple[dict[str, str], ...]) -> dict[str, Any]: ...
@@ -111,7 +114,20 @@ def _apply_coarse_search(case: CaseAggregate, outcome: ExecutionOutcome, *, stor
     case.receive_candidates(candidates_from_events(content["candidate_events"]), job_id=outcome.job_id)
 
 
+def _apply_observation(case: CaseAggregate, outcome: ExecutionOutcome, *, store, reader, timelines, budget) -> None:
+    # 관찰 결과는 정산만 한다(`observation-storage.md` §4-5) — 내용은 case state에 복사하지 않고 CaseView 조립 때
+    # adapter가 읽는다(§4-2). 실패 terminal도 같고, 실패 notice는 view가 read port의 실행 상태로 계산한다. 이전 후보의
+    # 결과라도 기다리던 job이면 정산한다 — 투영은 선택 후보 필터가, READY는 gate의 현재 선택 확인(#191)이 막는다.
+    case.settle_job(outcome.job_id, "REFLECTED")
+    # command 뒤와 같은 gate다(`command.execute_command`). 관찰 결과로 Package가 준비되면 여기서 READY가 된다.
+    if case.stage == "EVIDENCE_REVIEW":
+        mark_ready_if_package_ready(case, store.get_adapter(case.case_id, case))
+
+
 _APPLIERS = {
     "HINT_EXTRACT": _apply_hint_extract,
     "COARSE_SEARCH": _apply_coarse_search,
+    "PLATE_READ": _apply_observation,
+    "OVERLAY_TIME_READ": _apply_observation,
+    "FINE_VERIFY": _apply_observation,
 }

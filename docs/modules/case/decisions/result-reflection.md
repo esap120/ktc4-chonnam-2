@@ -57,5 +57,5 @@ Worker가 terminal execution 하나를 넘기면 case가 한 번만, 기다리�
 ## 6. 남은 것
 
 - RT-09(#296) · RT-06(T2 재전달)이 composition root에서 이 함수를 `ResultReflector`로 꽂는다.
-- 8-6 2단계: 모듈 결과 저장 위치와 실제 `ProducedReader`, 판독 · Fine · export 반영기, adapter 제거.
+- 8-6 2단계: 모듈 결과 저장 위치와 실제 `ProducedReader`, export 반영기(`REPORT_VIDEO_EXPORT` · `PLATE_IMAGE_EXPORT`), adapter 제거. *(판독 · Fine 반영기는 2026-10-13 — 정산 + READY gate, `observation-storage.md` §4-5.)*
 - 후보 수신 뒤 자동 선택 · 판독 · Fine 발주와 선택 context 대조(6.6순위 조건 1 · 2).
