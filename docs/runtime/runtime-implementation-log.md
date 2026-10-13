@@ -1015,7 +1015,7 @@ Status: IN_PROGRESS · Issue: #294 · Audit: B
 | --- | --- | --- |
 | pending — 로컬 미커밋, PR 미생성 | `Refs #294 (RT-07(a))` — schema · DECIMAL · caller transaction Final append | pending |
 | [#349](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/349) | RT-07(a) 병합 확인 — 위 pending 행은 당시 이력 | `fa5a0fcbd5f88e70e7a4c9ba0a457b42a65a27a1` |
-| pending — 로컬 미커밋, PR 미생성 | `Refs #294 (RT-07(b))` — UsageSink · Worker injection · explicit finalize | pending |
+| #353 | `Refs #294 (RT-07(b))` — UsageSink · Worker injection · explicit finalize | pending |
 
 ### 구현 결과
 
@@ -1200,7 +1200,7 @@ Status: IN_PROGRESS · Issue: #294 · Audit: B
 | --- | --- |
 | RT-07 상태 | IN_PROGRESS |
 | 중간 PR 연결 | Refs #294 (RT-07(b)) |
-| PR 번호 | pending |
+| PR 번호 | #353 |
 | merge SHA | pending |
 
 ---
