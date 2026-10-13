@@ -39,6 +39,6 @@ case가 직접 계산하려면 「이 job을 아직 기다리는가」를 알아
 
 ## 남은 것
 
-- 결과 반영 경로마다 `REFLECTED` 기록(8-8 — 단서 구조화 · 탐색은 2026-10-11 `result-reflection.md`, 판독 · Fine은 2026-10-13 `observation-storage.md` §4-5, export는 8-6 2단계 뒤), timeout 기록(`STOPPED_WAITING`). ~~중단 기록과 늦은 결과 guard(8-9)~~ → 2026-10-11 `stop-analysis.md`.
+- 결과 반영 경로마다 `REFLECTED` 기록(8-8 — 단서 구조화 · 탐색은 2026-10-11 `result-reflection.md`, 판독 · Fine은 2026-10-13 `observation-storage.md` §4-5, export는 8-6 2단계 뒤), ~~timeout 기록(`STOPPED_WAITING`)~~ → 2026-10-13 `case-wait-timeout.md`(탐색만). ~~중단 기록과 늦은 결과 guard(8-9)~~ → 2026-10-11 `stop-analysis.md`.
 - ~~JobExecution 읽기 포트(D-6)가 생기면 `job_executions` 인자를 포트 조회로 바꾼다.~~ → 2026-10-11 `jobexecution-read-port.md`(8-10).
 - #276 후속: case가 Fine 결과를 기다리지 않게 됐는데 실행이 아직 남은 경우의 화면 표시.

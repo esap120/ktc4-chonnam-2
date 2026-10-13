@@ -23,7 +23,7 @@ from typing import Any
 from daesingo.case import analysis_start, correction, jobs
 from daesingo.case.analysis_start import AnalysisStartNotAllowed, InitialSearchBudget
 from daesingo.case.domain import CaseAggregate, InvalidTransition
-from daesingo.case.service import build_view_from_adapter, get_view, mark_ready_if_package_ready
+from daesingo.case.service import build_view_from_adapter, get_view, mark_ready_if_package_ready, utc_now
 from daesingo.case.store import CaseStore
 from daesingo.case.timeline_source import CaseTimelineSource
 
@@ -206,6 +206,7 @@ def execute_command(
     notices: list[dict[str, Any]] | None = None,
     timelines: CaseTimelineSource | None = None,
     budget: InitialSearchBudget | None = None,
+    now: datetime | None = None,
 ) -> CommandResult:
     """command 하나를 받아 `{ok, error, case_view}`(§4)와 이번 command로 append된 JobRecord를 돌려준다.
 
@@ -215,8 +216,12 @@ def execute_command(
     싣는다 — case_id가 없을 때만 `case_view=None`이다. `notices`는 `get_view()`에 그대로 넘긴다(사용자가 본
     화면과 같은 notices로 `RUN_NOTICE_ACTION`을 검사하기 위해). 실행 상태는 `store`의 read port로 읽는다(8-10).
     `START_ANALYSIS`는 `timelines`(필수) · `budget`(기본 `InitialSearchBudget()`)을 쓴다.
+
+    case를 잠근 뒤 마감(`now`, 기본 현재 시각)이 지난 job을 먼저 `STOPPED_WAITING`으로 정산한다 — 사용자가 본 timeout 화면의
+    「이어서 찾기」가 같은 기준으로 검사되고, command가 성공하면 그 정산도 함께 저장된다(`decisions/case-wait-timeout.md`).
     """
-    view_kwargs = {"store": store, "notices": notices}
+    now = now or utc_now()
+    view_kwargs = {"store": store, "notices": notices, "now": now}
     case_id = request.get("case_id") if isinstance(request, dict) else None
 
     def current_view() -> dict[str, Any] | None:
@@ -240,6 +245,7 @@ def execute_command(
     except KeyError:
         return CommandResult(_response("unknown_target", None))
 
+    case.stop_waiting_expired(now)
     view = view_of(case)
     if request["expected_case_rev"] != case.case_rev:
         return CommandResult(_response("stale_revision", view))

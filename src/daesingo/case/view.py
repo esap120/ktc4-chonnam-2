@@ -245,8 +245,9 @@ def _build_progress(
     if case.candidate_search_failed:
         progress["coarse_search"] = "FAILED"
     # 사용자가 분석을 중단했으면 실행 상태와 상관없이 PARTIAL이다(B§7 `progress[].state` 행 · #245 C-3). 실패 뒤
-    # 다시 찾다가 중단했으면 마지막 사용자 행동(중단)을 보인다(`decisions/stop-analysis.md`).
-    if case.analysis_stopped:
+    # 다시 찾다가 중단했으면 마지막 사용자 행동(중단)을 보인다(`decisions/stop-analysis.md`). case 대기 timeout도 case가
+    # 기다리기를 멈춘 것이라 같다(B§10 불변조건 5, `decisions/case-wait-timeout.md`).
+    if case.analysis_stopped or case.analysis_timed_out:
         progress["coarse_search"] = "PARTIAL"
     if stage_rank < 3:
         for step in ("plate_read", "overlay_time_read", "evidence_assembly", "requirement_check", "package_assembly"):

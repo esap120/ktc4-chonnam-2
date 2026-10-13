@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, Protocol
 
 from daesingo.case.analysis_start import InitialSearchBudget, reflect_hint_extraction
 from daesingo.case.domain import CaseAggregate
-from daesingo.case.service import candidates_from_events, mark_ready_if_package_ready
+from daesingo.case.service import candidates_from_events, mark_ready_if_package_ready, utc_now
 from daesingo.case.store import CaseStore
 from daesingo.case.timeline_source import CaseTimelineSource
 
@@ -69,12 +70,17 @@ def reflect_execution(
     reader: ProducedReader,
     timelines: CaseTimelineSource,
     budget: InitialSearchBudget | None = None,
+    now: datetime | None = None,
 ) -> ReflectionOutcome:
     """execution 하나를 반영한다. 반영했을 때만 저장하고, 예외는 그대로 올린다 — rollback · retry는 호출자 몫이다
-    (#245 D-2). 이 case의 job이 아니거나 kind가 다르거나 반영기가 없는 kind면 배선 오류(`ValueError`)다."""
+    (#245 D-2). 이 case의 job이 아니거나 kind가 다르거나 반영기가 없는 kind면 배선 오류(`ValueError`)다.
+
+    guard 전에 마감(`now`, 기본 현재 시각)이 지난 job을 `STOPPED_WAITING`으로 정산한다 — 마감 뒤 도착한 결과는
+    `NOT_APPLIED(STOPPED_WAITING)`이고, 그 정산은 반영하지 않아도 저장한다(`decisions/case-wait-timeout.md`)."""
     case = store.load_for_update(outcome.case_id)
     if outcome.execution_id in case.processed_executions:
         return ReflectionOutcome("ALREADY_APPLIED")
+    expired = case.stop_waiting_expired(now or utc_now())
     record = next((r for r in case.job_records if r["job_id"] == outcome.job_id), None)
     if record is None:
         raise ValueError(f"이 case가 발주하지 않은 job_id: {outcome.job_id!r}")
@@ -87,6 +93,8 @@ def reflect_execution(
         reason = case.settled_jobs[outcome.job_id]
         if reason not in _NOT_APPLIED_REASONS:
             raise ValueError(f"다른 경로로 이미 반영된 job: {outcome.job_id!r} ({reason})")
+        if expired:
+            store.save(case)
         return ReflectionOutcome("NOT_APPLIED", reason=reason)
 
     jobs_before = len(case.job_records)

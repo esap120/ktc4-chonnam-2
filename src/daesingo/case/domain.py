@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 STAGES = (
@@ -99,6 +99,9 @@ JOB_SETTLE_REASONS = ("REFLECTED", "STOPPED_WAITING", "CANCELLED", "SUPERSEDED")
 
 # 「분석 진행」(`SEARCHING`)에서 사용자가 중단할 수 있는 job — `decisions/stop-analysis.md`.
 ANALYSIS_JOB_KINDS = ("HINT_EXTRACT", "COARSE_SEARCH")
+
+# case 대기 = 실행 상한 + 큐 대기 여유 — 단서 구조화 대기(`decisions/start-analysis.md` §3-5)와 같은 여유다.
+SEARCH_WAIT_QUEUE_MARGIN_SEC = 30.0
 
 
 @dataclass
@@ -290,12 +293,44 @@ class CaseAggregate:
     def analysis_stopped(self) -> bool:
         """`SEARCHING`이고, 기다리는 탐색 job이 없고, 가장 나중 탐색 job이 사용자 중단으로 끝났다. 저장하지 않고
         JobRecord와 정산 기록에서 계산한다 — 「이어서 찾기」로 새 job이 생기면 저절로 풀린다."""
+        return self._analysis_halt_reason() == "CANCELLED"
+
+    @property
+    def analysis_timed_out(self) -> bool:
+        """`analysis_stopped`와 같고, 가장 나중 탐색 job이 case 대기 timeout으로 끝났다(`decisions/case-wait-timeout.md`)."""
+        return self._analysis_halt_reason() == "STOPPED_WAITING"
+
+    def _analysis_halt_reason(self) -> str | None:
         if self.stage != "SEARCHING":
-            return False
+            return None
         records = [r for r in self.job_records if r["kind"] in ANALYSIS_JOB_KINDS]
         if not records or any(r["job_id"] not in self.settled_jobs for r in records):
-            return False
-        return self.settled_jobs[records[-1]["job_id"]] == "CANCELLED"
+            return None
+        return self.settled_jobs[records[-1]["job_id"]]
+
+    def wait_deadline(self, record: dict[str, Any]) -> datetime | None:
+        """case가 이 job의 결과를 기다리는 마감 — 발주 시각 + 실행 상한 + 큐 대기 여유(`decisions/case-wait-timeout.md`).
+        지금은 `COARSE_SEARCH`만 마감이 있다. 실행 상한은 그 job의 AnalysisScope `budget.max_latency_sec`이고(#149 A안 —
+        단일 권위), scope를 모르면 마감을 지어내지 않는다(`None`)."""
+        if record["kind"] != "COARSE_SEARCH":
+            return None
+        scope = self.analysis_scopes.get(record.get("scope_ref") or "")
+        if scope is None:
+            return None
+        limit = scope["budget"]["max_latency_sec"] + SEARCH_WAIT_QUEUE_MARGIN_SEC
+        return datetime.fromisoformat(record["requested_at"]) + timedelta(seconds=limit)
+
+    def stop_waiting_expired(self, now: datetime) -> list[str]:
+        """마감이 지난 기다리던 job을 `STOPPED_WAITING`으로 정산하고 그 `job_id`를 돌려준다. 타이머는 없다 — case 행을
+        읽는 쪽(CaseView 조립 · command · T2 반영)이 부른다. 실행은 취소하지 않고(`timeout-fallback.md` 「진행 중인 Job은
+        강제 취소하지 않는다」) 사용자 요청이 아니라 `case_rev`도 올리지 않는다."""
+        expired = []
+        for record in self.waiting_job_records():
+            deadline = self.wait_deadline(record)
+            if deadline is not None and now >= deadline:
+                self.settle_job(record["job_id"], "STOPPED_WAITING")
+                expired.append(record["job_id"])
+        return expired
 
     def select_candidate(self, candidate_id: str) -> None:
         """후보 선택은 case 소유(ownership.md §6) — evidence는 참조만 하고 복사해 갖지 않는다.

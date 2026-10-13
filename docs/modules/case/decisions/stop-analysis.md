@@ -63,4 +63,4 @@
 
 - RT-08(d)가 `cancelled_job_ids`로 `request_cancel`을 부른다(#295) · RT-05(b)가 port를 구현한다(#292).
 - 탐색 결과 Worker 반영 진입점은 `job_id`를 넘긴다(8-8).
-- case 대기 timeout(`STOPPED_WAITING`)은 같은 guard 위에 올린다 — 언제 · 누가 timeout을 판정하는지는 따로 정한다.
+- ~~case 대기 timeout(`STOPPED_WAITING`)은 같은 guard 위에 올린다 — 언제 · 누가 timeout을 판정하는지는 따로 정한다.~~ → 2026-10-13 `case-wait-timeout.md`(타이머 없이 읽는 쪽이 계산, 탐색만).

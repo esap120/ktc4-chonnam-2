@@ -63,7 +63,7 @@
 | Fine `UNCERTAIN` → 사용자 응답 대기 | `case.situation_response_pending`(INFO). 응답 전 Package 없음 | `VERIFIED` | `test_await_situation_response.py` · #165 · #171 |
 | 응답 대기 중 독립 관찰값(번호판 등)을 먼저 보여 줌 | `evidence.record_id: null` 부분 투영 | `DECIDED` | #239 case 결정 · web 확인(2026-10-07) · evidence 함수 대기 |
 | case가 Fine을 기다리다 멈췄는데 attempt 2가 아직 실행 중 | 화면 표시 미정 | `PENDING` | #276 후속 |
-| 각 Job timeout(Coarse 클립당 150초 · Fine 후보당 70초 등) | 값은 잠정 결정, case 대기 timeout 구현은 없음 | `DECIDED` | `decisions/timeout-fallback.md` · 구현 8-9 |
+| 각 Job timeout(Coarse 클립당 150초 · Fine 후보당 70초 등) | 탐색(`COARSE_SEARCH`)은 마감(발주 + 150초 + 30초) 뒤 기다리기를 멈추고 `case.analysis_timed_out` · 늦은 결과 미반영. 단서 구조화 · 판독 · Fine은 대기 timeout 없음 | `VERIFIED`(탐색) · 나머지 `DECIDED` | `test_case_wait_timeout.py` · `decisions/case-wait-timeout.md` · `decisions/timeout-fallback.md` |
 | 신고용 영상 · 번호판 이미지 export 실패 | notice 매핑은 계약에 있음, export 자체가 미구현 | `DECIDED` | 계약 v1.6 · recording C-07 · #47 · #280 |
 
 ## 5. 빈 상태 · 경계 입력
@@ -110,4 +110,4 @@ case에서 LLM을 부르는 곳은 분석 시작 때 단서 구조화(`HINT_EXTR
 | 응답 대기 중 Fine attempt 2 실행 중 표시 | #276 후속 |
 | `confidence: low` 재입력 유도 | #266 |
 | ~~분석 시작 command(분석 범위 출처 · 첫 발주 fingerprint · 단서 구조화 대기 시간)~~ → 종결(#315) | `decisions/start-analysis.md` · 대기 시간 동작은 8-9 |
-| ~~중단 command~~ → 구현(2026-10-11, `decisions/stop-analysis.md`) · case timeout 구현 · 「초안 준비 중」 중단 | 8-9 · #292 · product |
+| ~~중단 command~~ → 구현(2026-10-11, `decisions/stop-analysis.md`) · ~~case timeout 구현~~ → 탐색만 구현(2026-10-13, `decisions/case-wait-timeout.md`) · 「초안 준비 중」 중단 | 8-9 · #292 · product |

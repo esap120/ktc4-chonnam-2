@@ -24,6 +24,7 @@ from __future__ import annotations
 import copy
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from daesingo.case import jobs
@@ -227,6 +228,7 @@ def build_view_from_adapter(
         visual_evidence_decision=snapshot.visual_evidence_decision,
         plate_read_retry_basis=jobs.latest_job_record(case, "PLATE_READ") is not None,
         search_retry_basis=jobs.latest_job_record(case, "COARSE_SEARCH") is not None,
+        analysis_timed_out=case.analysis_timed_out,
         visual_verify_status=visual_verify_status,
         overlay_time_readouts=snapshot.overlay_time_readouts,
     )
@@ -324,6 +326,16 @@ ANALYSIS_STOPPED_NOTICE: dict[str, Any] = {
     "actions": ["RETRY_SEARCH"],
 }
 
+ANALYSIS_TIMED_OUT_NOTICE: dict[str, Any] = {
+    # case가 탐색 결과를 기다리다 마감이 지나 기다리기를 멈췄다(`decisions/case-wait-timeout.md`). 화면은 중단과 같은
+    # 결과(core-user-flow 「분석 중단·timeout·인프라 실패」)이고 출구도 같은 「이어서 찾기」다. 원인이 사용자가 아니라 code를 나눈다.
+    "code": "case.analysis_timed_out",
+    "severity": "INFO",
+    "blocking": False,
+    "message_key": "notice.analysis_timed_out",
+    "actions": ["RETRY_SEARCH"],
+}
+
 PLATE_ABSTAINED_NOTICE: dict[str, Any] = {
     "code": "evidence.plate_abstained",
     "severity": "WARN",
@@ -383,6 +395,7 @@ def derive_notices(
     visual_verify_status: str | None = None,
     overlay_time_readouts: list[dict[str, Any]] | None = None,
     search_retry_basis: bool = False,
+    analysis_timed_out: bool = False,
 ) -> dict[str, Any]:
     """조립된 `CaseView` 값만으로 발동 조건이 정해지는 notice를 덧붙인다.
 
@@ -390,6 +403,8 @@ def derive_notices(
       evidence 유무와 무관하다.
     - `case.analysis_stopped` — `stage=SEARCHING`이고 진행 상태 `coarse_search`가 `PARTIAL`일 때(사용자 중단, 8-9).
       「이어서 찾기」(`RETRY_SEARCH`)는 다시 낼 `COARSE_SEARCH` 발주 근거(`search_retry_basis`)가 있을 때만 싣는다.
+    - `case.analysis_timed_out` — 같은 조건에서 가장 나중 탐색 job이 case 대기 timeout으로 끝났을 때(`analysis_timed_out`,
+      `decisions/case-wait-timeout.md`). `case.analysis_stopped` 대신 붙는다. action 규칙은 같다.
     - `search.no_candidates` — `stage=CANDIDATE_REVIEW`이고 `candidates`가 비었을 때. 탐색 실패는
       `SEARCHING`에 머물므로(PR #197) 이 조건에 들지 않는다.
     - `readout.plate_read_failed` — 진행 상태 `plate_read`가 `FAILED`일 때(#172 [D]). evidence
@@ -430,7 +445,8 @@ def derive_notices(
     if view.get("stage") == "SEARCHING" and any(
         s["step"] == "coarse_search" and s["state"] == "PARTIAL" for s in view.get("progress", [])
     ):
-        derived.append(ANALYSIS_STOPPED_NOTICE if search_retry_basis else dict(ANALYSIS_STOPPED_NOTICE, actions=[]))
+        halted = ANALYSIS_TIMED_OUT_NOTICE if analysis_timed_out else ANALYSIS_STOPPED_NOTICE
+        derived.append(halted if search_retry_basis else dict(halted, actions=[]))
     if view.get("stage") == "CANDIDATE_REVIEW" and not view.get("candidates"):
         derived.append(NO_CANDIDATES_NOTICE)
     # 번호판 판독 실행 실패는 evidence 유무와 무관하게 알린다(#172 [D]) — 「읽지 못함」은 값
@@ -506,11 +522,16 @@ def record_source_registered(
     store.save(case)
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def get_view(
     case_id: str,
     *,
     store: CaseStore,
     notices: list[dict[str, Any]] | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """`web → case.get_view() → CaseView`(`module-architecture.md` §5-1 ⑪, §6 모듈6
     ③)의 실제 진입점. 지금까지 스모크 테스트 안에만 있던 "case_id로 저장된 case를
@@ -522,8 +543,12 @@ def get_view(
     "완성된 FastAPI/Worker 배선"에 해당한다.
 
     실행 상태는 `store`에 꽂힌 JobExecution read port로 이 case의 job만 조회한다(8-10) — 호출자가 넘기지 않는다.
+
+    마감(`now`, 기본 현재 시각)이 지난 job은 기다리지 않는 것으로 보인다 — 읽기라 저장하지 않고, 정산 기록은 다음 command ·
+    T2 반영이 남긴다(`decisions/case-wait-timeout.md`).
     """
     case = store.get_case(case_id)
+    case.stop_waiting_expired(now or utc_now())
     adapter = store.get_adapter(case_id, case)
     return build_view_from_adapter(case, adapter, executions=store.read_executions(case), notices=notices)
 
