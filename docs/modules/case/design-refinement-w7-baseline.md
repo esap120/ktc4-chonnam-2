@@ -136,7 +136,7 @@ Real E2E에서 발견한 항목을 "case 작업 중에 나왔다"와 "case가 �
 
 **해소 내용:** 표면 모양은 `contract-case-command.md`(Draft v0, PR #206)로 정했다 — 요청 `{case_id, expected_case_rev, kind, payload}` → 응답 `{ok, error, case_view}`, command 4종(`SELECT_OTHER_CANDIDATE` · `RECORD_SITUATION_RESPONSE` · `MARK_REVIEWED` · `RUN_NOTICE_ACTION`). 진입 함수는 `case.handle_command()`(PR #216)다.
 
-**여전히 남은 것:** 계약은 아직 `Draft`다 — web 합의 뒤 `docs/architecture/contracts/`로 옮긴다. 입력형 action(`EDIT_EVENT_TIME` 등)은 다음 판본이고, 계약 §9 미결(`case_rev`로 잡히지 않는 변경 · `RUN_NOTICE_ACTION` 중복 제출 · `message_key` 목록)은 그대로다.
+**여전히 남은 것:** 계약은 아직 `Draft`다 — web 합의 뒤 `docs/architecture/contracts/`로 옮긴다. 입력형 action(`EDIT_EVENT_TIME` 등)은 다음 판본이고 *(2026-10-13: 번호판 · 발생시각 · `[다른 상황]` 초안을 `contract-case-command.md` §12에 올렸다 — web 확인 대기, 열림 조건은 #235 후속(`correction-record/v1.2` · evidence 기록 전 검사). `REVIEW_TIME` · `EDIT_HINT` · 위치 단서 · 번호판 `[맞아요]`는 §12-5에 이유와 함께 남겼다)*, 계약 §9 미결(`case_rev`로 잡히지 않는 변경 · `RUN_NOTICE_ACTION` 중복 제출 · `message_key` 목록)은 그대로다.
 
 **참고:** 이슈 #106, PR #206, PR #216, `docs/modules/case/contracts/contract-case-command.md`
 
