@@ -5,6 +5,7 @@
 > **2026-09-28 잠정값 기재** — 이슈 #72, `search` 실측 `docs/modules/search/experiments/latency-baseline-2026-09-28.md`(#182, 서어진)
 > **2026-09-29 클립 분할 범위 반영** — 이슈 #168 (c)
 > **2026-10-03 표기 정합** — `core-user-flow.md` #168 결정 3 · #170 F에 맞춰 「이어서 찾기 = 남은 클립만 새 Job」 문구 폐기 · 현재 범위의 부분 후보 미보존 명시. 새 결정 아님(Runtime §5 검토 중 발견, case Owner 확인 요청 — #245)
+> **2026-10-13 Fine 상한 전달 정정** — Fine이 Coarse scope 상한을 이어받는다는 문구를 잠정값 표(후보당 70초)에 맞춰 고쳤다. search가 Fine 상한을 호출마다 받게 됐다(PR #328 · #226)
 
 ## 결정된 것
 
@@ -15,7 +16,7 @@
 
 - **timeout·중단 시 무엇을 보여줄지**는 `product/core-user-flow.md` §7(분석 중단 — 현재까지 후보 유지 + `이어서 찾기` + `조건 수정`)과 §22(결과 없음 — 출구 4개)가 정했다. 「직접 타임라인」 화면은 두지 않는다(§22).
 - runtime의 lease·heartbeat·retry timing은 `common/runtime`이 소유한다(`module-architecture.md` §2 원칙 6). `case`가 정하는 것은 「얼마나 기다린 뒤 부분 결과로 전환하는가」와 「그때 어떤 Job을 취소/유지하는가」다.
-- search 실행 상한의 단일 권위는 `AnalysisScope.budget.max_latency_sec`다(#149 A안, #180). 아래 값은 case가 Job마다 이 필드로 넘기는 값이다. Fine은 후보를 만든 Coarse scope의 상한을 이어받아 호출마다 새로 센다(#180).
+- search 실행 상한의 단일 권위는 `AnalysisScope.budget.max_latency_sec`다(#149 A안, #180). 아래 값은 case가 Job마다 이 필드로 넘기는 값이다. Fine은 scope를 받지 않으므로 **case가 후보당 상한(아래 표 70초)을 Fine 호출마다 `max_latency_sec`로 넘기고**, search는 호출마다 새 시계로 센다(PR #328). Worker 경로에서 handler가 이 값을 어디서 읽는지는 RT-10(#297) 「handler가 읽는 case 입력」에서 정한다. *(이전 문구 「Coarse scope의 상한을 이어받는다」(#180)는 search가 Fine 상한을 따로 받기 전의 동작이다.)*
 - **영상을 클립으로 나누는 범위와 나눈 뒤 후보 순서·경계 중복**은 #168이 정했다([Case 결정](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/168#issuecomment-5889291979)) — 인라인 상한 안의 영상은 클립 1개(Run 1개), 넘는 영상만 나눈다.
 
 ## 잠정값 (2026-09-28)
@@ -40,6 +41,7 @@
 
 | 항목 | 상태 | 무엇으로 정하는가 |
 | --- | --- | --- |
-| 위 잠정값 확정 | 잠정 | runtime 머신 재측정(`common/runtime` 배치 후) |
+| 위 잠정값 확정 | 잠정 | runtime 머신 재측정(`common/runtime` 배치 후). Fine 70초는 근거 표본이 29회(#182)뿐이고 시계가 전처리 · provider 호출 · 재시도 대기를 모두 포함하므로, 재측정 때 **Fine timeout 발생 횟수**도 함께 본다(#328) |
+| Fine 70초 실제 적용 | 미반영 | 지금 `real_e2e.py`는 Fine 상한을 넘기지 않아 Coarse 값(150초)을 이어받는다. PR #328 머지 뒤 호출부에서 70초를 넘긴다 |
 | 클립 분할 발주 구현 | 미구현 | 지금 case는 영상을 클립으로 나누지 않고 Coarse를 한 번에 부른다(`real_e2e.py`, 상한 150초 — #200). 분할은 인라인 상한을 넘는 영상에만 필요하고(#168 (c)), 그 전에 #168에 남은 overlap 길이·중복 제거 호출 지점을 정한다 |
 | 부분 재실행 정책 표와의 정합 | 미결 | `module-architecture.md` §7-4 |
