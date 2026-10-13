@@ -16,6 +16,9 @@ REQUIRED_SCENARIOS = frozenset({
 
 # Stable acceptance identifiers, independent of Python test function names.
 REQUIRED_CHECKS = frozenset({
+    *(("usage_sink", scenario) for scenario in (
+        "invocations", "replay", "conflict", "atomicity", "concurrent", "commit_unknown",
+        "state", "no_run", "retry", "worker", "validation")),
     *(("redelivery", scenario) for scenario in (
         "eligibility", "atomicity", "concurrent", "commit_unknown", "isolation",
         "unsupported", "metric", "startup_periodic", "process_kill")),
@@ -103,6 +106,18 @@ REQUIRED_CHECKS = frozenset({
 # Each parameter is an independent acceptance obligation. Names come from
 # explicit pytest marks, never from function names or parsed node ID suffixes.
 REQUIRED_PARAMETERS = frozenset({
+    *(("usage_sink", "replay", stage) for stage in ("begin", "finish", "finalize")),
+    *(("usage_sink", "conflict", mode) for mode in
+      ("token", "cost", "pricing", "outcome", "duration", "latency", "failure", "run", "null_run")),
+    *(("usage_sink", "atomicity", mode) for mode in ("append", "marker", "commit", "rollback")),
+    *(("usage_sink", "concurrent", mode) for mode in
+      ("finish_same", "finish_conflict", "finalize_same", "finalize_conflict", "finish_finalize")),
+    *(("usage_sink", "commit_unknown", stage + suffix) for stage in ("begin", "finish", "finalize")
+      for suffix in ("", "_exhausted")),
+    *(("usage_sink", "retry", f"{stage}_{code}") for stage in ("begin", "finish", "finalize") for code in (1205, 1213)),
+    *(("usage_sink", "worker", mode) for mode in ("isolation", "begin_failure", "finish_failure", "cancel", "ownership")),
+    *(("usage_sink", "validation", mode) for mode in
+      ("token", "total", "duration", "latency", "pricing", "float", "currency", "outcome", "failure", "extra", "run", "direct_no_run")),
     *(("redelivery", "eligibility", mode) for mode in
       ("SUCCEEDED", "FAILED", "CANCELLED", "STALE", "QUEUED", "RUNNING", "receipt")),
     *(("redelivery", "atomicity", mode) for mode in ("success", "failed_hint", "enqueue", "marker")),

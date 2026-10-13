@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from daesingo.common.job_execution import RuntimeContractRef
 from daesingo.common.jobs.heartbeat import OwnershipFence
 from daesingo.common.jobs.cancel import CancelSignal
+from daesingo.common.usage.port import UsageSink
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +20,7 @@ class ExecutionContext:
     attempt: int
     trace_id: str
     cancel_signal: CancelSignal = field(default_factory=CancelSignal, compare=False, repr=False)
-    usage_sink: object | None = None
+    usage_sink: UsageSink | None = field(default=None, compare=False, repr=False)
     ownership: OwnershipFence = field(default_factory=OwnershipFence, compare=False, repr=False)
 
     def checkpoint(self) -> None:
