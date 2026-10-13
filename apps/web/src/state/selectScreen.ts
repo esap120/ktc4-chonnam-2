@@ -8,6 +8,8 @@ import type { CaseView, Notice, RunningJob } from '../contracts/caseView'
 
 export type ScreenKind =
   | 'PROGRESS'
+  | 'STOPPED'
+  | 'SEARCH_FAILED'
   | 'NO_RESULT'
   | 'NOT_OBSERVED'
   | 'AWAIT_RESPONSE'
@@ -73,6 +75,14 @@ export function selectScreen(view: CaseView): Screen {
     case 'INTAKE':
       return { ...base, kind: 'PROGRESS', reason: 'stage=INTAKE' }
     case 'SEARCHING':
+      // 중단 · 탐색 실패는 작업이 끝난 상태다. 진행 화면에 두면 끝나지 않는 것처럼 보인다.
+      // 다시 하기 버튼은 notice가 가진다(`RETRY_SEARCH`). 중단은 stage가 SEARCHING에 머문다(#342).
+      if (view.notices.some((n) => n.code === 'case.analysis_stopped')) {
+        return { ...base, kind: 'STOPPED', reason: 'stage=SEARCHING · case.analysis_stopped' }
+      }
+      if (view.notices.some((n) => n.code === 'search.candidate_search_failed')) {
+        return { ...base, kind: 'SEARCH_FAILED', reason: 'stage=SEARCHING · search.candidate_search_failed' }
+      }
       return { ...base, kind: 'PROGRESS', reason: 'stage=SEARCHING' }
     case 'CANDIDATE_REVIEW':
       // 후보 0건은 실패가 아니다 — 빈 결과 화면으로 구분해 그린다.
