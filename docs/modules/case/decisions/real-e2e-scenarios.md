@@ -53,7 +53,7 @@ real 경로(`real_e2e.py` · `RealAdapter`)가 `scenario_happy_001` 하나에 �
 
 구현하며 찾은 것. case가 고칠 것이 아니라 고치지 않았고, `tests/case/test_real_e2e_scenarios.py`의 `UNDERIVED_NOTICES` · `KNOWN_GAPS`에 이름만 두었다 — 원인이 풀리면 테스트가 「차이가 사라졌다」로 실패한다.
 
-1. **Mock fixture에만 있는 notice 4종** — `evidence.time_post_stamp_required` · `evidence.time_conflict_needs_notice` · `evidence.visual_event_unconfirmed` · `case.report_video_not_generated`. `data/mock/case/`의 CaseView에는 있지만 이 code를 만드는 코드가 어디에도 없다. 어느 모듈이 어떤 근거로 붙일지는 notice 규칙을 새로 정하는 일이라 이번 범위 밖이다.
+1. **Mock fixture에만 있는 notice 3종** — `evidence.time_post_stamp_required` · `evidence.time_conflict_needs_notice` · `evidence.visual_event_unconfirmed`. `data/mock/case/`의 CaseView에는 있지만 이 code를 만드는 코드가 어디에도 없다. 어느 모듈이 어떤 근거로 붙일지는 notice 규칙을 새로 정하는 일이라 이번 범위 밖이다. *(처음 4종이던 `case.report_video_not_generated`는 #351로 발동 조건을 정해 case가 붙인다 — `report-video-export.md`.)*
 2. **unknown_abstain_partial_001은 real에서 `READY`가 되지 않는다.** 「잘 모르겠어요」 응답 뒤에도 FINAL `package.time.post_stamp_applied`가 `UNKNOWN`(`time.post_stamp.not_observed`)이다 — `observation_facts`가 없다(I4, #280, `real_e2e.py` 알려진 단순화 2). 번호판 · 시각 · 상황 응답 · notice는 fixture와 같다.
 3. **판정 시각이 실제 현재 시각이다.** real 조립의 `evaluated_at`이 `datetime.now()`라 deadline check가 시나리오 날짜(2026-08) 기준 `EXCEEDED`(WARN)다. 5개 시나리오의 readiness는 바뀌지 않지만, 날짜에 따라 결과가 달라질 수 있는 입력이다.
 4. **domain `reselect_candidate()`만 부르면 `RealAdapter`가 다시 조립하지 않는다.** adapter 캐시는 `case_rev`로 판단하는데 재선택은 `correction.reselect_candidate()`(CorrectionRecord · `case_rev` +1)를 거쳐야 오른다. command 경로는 늘 그쪽이라 문제는 아니고, 테스트는 correction 경로를 쓴다.
