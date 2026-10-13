@@ -20,7 +20,6 @@ UNDERIVED_NOTICES = {
     "evidence.time_post_stamp_required",
     "evidence.time_conflict_needs_notice",
     "evidence.visual_event_unconfirmed",
-    "case.report_video_not_generated",
 }
 
 # real이 fixture와 다른 사실(§6 발견 사항 2).

@@ -227,6 +227,7 @@ def build_view_from_adapter(
         visual_evidence_decision=snapshot.visual_evidence_decision,
         plate_read_retry_basis=jobs.latest_job_record(case, "PLATE_READ") is not None,
         search_retry_basis=jobs.latest_job_record(case, "COARSE_SEARCH") is not None,
+        report_video_export_basis=jobs.latest_job_record(case, "REPORT_VIDEO_EXPORT") is not None,
         visual_verify_status=visual_verify_status,
         overlay_time_readouts=snapshot.overlay_time_readouts,
     )
@@ -324,6 +325,37 @@ ANALYSIS_STOPPED_NOTICE: dict[str, Any] = {
     "actions": ["RETRY_SEARCH"],
 }
 
+# 신고용 영상이 없다(#351 [R-2]). 모양은 `scenario_plate_reread_001` fixture가 먼저 쓰던 값 그대로다. 「신고용 영상 만들기」는
+# 이전 발주를 다시 내는 재시도라(#351 [R-3]) 발주 근거가 있고 실행 중이 아닐 때만 싣는다.
+REPORT_VIDEO_NOT_GENERATED_NOTICE: dict[str, Any] = {
+    "code": "case.report_video_not_generated",
+    "severity": "INFO",
+    "blocking": False,
+    "message_key": "notice.report_video_not_generated",
+    "actions": ["GENERATE_REPORT_VIDEO"],
+}
+
+_SITUATION_RESPONDED = frozenset({"CONFIRMED", "CORRECTED", "USER_UNSURE"})
+
+
+def report_video_missing(view: dict[str, Any]) -> bool:
+    """신고 상황 응답이 끝났는데 신고용 영상이 없는가(#351). notice와 자동 발주(R-1)가 같은 조건을 쓴다.
+
+    evidence가 조립됐고(`record_id` non-null — 응답 전 부분 투영이 아니다), 선택 후보의 응답이 끝났고, FINAL 요건의
+    `package.asset.report_video.exists`가 `PASS`가 아닐 때다. 요건 전체 판정(`readiness`)은 보지 않는다 — 영상이
+    없으면 첨부 규칙 · 사후 각인 check도 함께 `UNKNOWN`이 되어 「영상만 남았는가」를 가를 수 없다(#351 정정).
+    FINAL 요건을 아직 계산하지 않았으면 영상이 없는지 모르므로 `False`다."""
+    evidence = view.get("evidence")
+    selected = [c for c in view.get("candidates", []) if c["selected"]]
+    if evidence is None or evidence.get("record_id") is None or len(selected) != 1:
+        return False
+    if selected[0]["situation_confirmation"] not in _SITUATION_RESPONDED:
+        return False
+    checks = (view.get("requirements_package") or {}).get("checks", [])
+    video = next((c for c in checks if c["code"] == "package.asset.report_video.exists"), None)
+    return video is not None and video["outcome"] != "PASS"
+
+
 PLATE_ABSTAINED_NOTICE: dict[str, Any] = {
     "code": "evidence.plate_abstained",
     "severity": "WARN",
@@ -383,6 +415,7 @@ def derive_notices(
     visual_verify_status: str | None = None,
     overlay_time_readouts: list[dict[str, Any]] | None = None,
     search_retry_basis: bool = False,
+    report_video_export_basis: bool = False,
 ) -> dict[str, Any]:
     """조립된 `CaseView` 값만으로 발동 조건이 정해지는 notice를 덧붙인다.
 
@@ -418,6 +451,9 @@ def derive_notices(
     - `readout.overlay_not_present` · `readout.overlay_presence_undetermined` · `readout.overlay_ocr_failed` —
       현재 선택 후보의 가장 나중 overlay 판독 `observation.reason.code`에 1:1로 대응할 때(readout
       `failure-taxonomy.md`). evidence 유무와 무관하다. `overlay_time_readouts`를 넘기지 않으면 붙이지 않는다.
+    - `case.report_video_not_generated` — `report_video_missing(view)`일 때(#351 [R-2]). 실행 중에도 붙인다 — 없으면
+      web이 응답 대기가 아닐 때 영상 칸을 있는 것처럼 그린다. 「신고용 영상 만들기」(`GENERATE_REPORT_VIDEO`)는 이전
+      `REPORT_VIDEO_EXPORT` JobRecord(`report_video_export_basis`)가 있고 그 kind가 `running_jobs`에 없을 때만 싣는다.
 
     evidence에 걸린 notice는 `evidence`가 아직 없으면(EvidenceRecord 조립 전) 판단할 값이 없으므로 붙이지 않는다.
     호출자가 같은 code를 이미 넣었으면 중복하지 않는다. 호출자가 넘긴 `notices` 리스트는
@@ -464,6 +500,12 @@ def derive_notices(
             derived.append(LOCATION_SEARCH_KEYWORD_MISSING_NOTICE)
         if awaiting_response:
             derived.append(SITUATION_RESPONSE_PENDING_NOTICE)
+    if report_video_missing(view):
+        exporting = any(j["kind"] == "REPORT_VIDEO_EXPORT" for j in view.get("running_jobs", []))
+        retry = report_video_export_basis and not exporting
+        derived.append(
+            REPORT_VIDEO_NOT_GENERATED_NOTICE if retry else dict(REPORT_VIDEO_NOT_GENERATED_NOTICE, actions=[])
+        )
     present = {n["code"] for n in view["notices"]}
     additions = [dict(n, actions=list(n["actions"])) for n in derived if n["code"] not in present]
     if additions:
