@@ -49,10 +49,12 @@ RT-06(a)는 `jobs/retry_policy.py`의 만료·상한·backoff pure logic과 `job
 
 RT-07(a)는 `usage/`에 typed `usage_inflight`·append-only `usage_record`와 exact `DECIMAL(65,30)` 경계를 추가했다(`runtime_0003`, 기존 `runtime_0002` 뒤). `append_final(conn, record)`는 caller transaction에 INSERT하며 같은 `usage_id`·snapshot의 replay는 no-op, 다른 snapshot은 `UsageIdentityConflict`다. 내부 commit/rollback·ID 발급·in-flight 변경·provider 호출은 없다. `read_final`의 금액은 문자열 또는 null이고, null과 0을 구분한다. live Core binder도 Decimal/문자열만 받으며 float·초과 precision/scale을 DB 변환 전에 거부한다. raw SQL로 binder를 우회하면 MySQL 자체의 소수 반올림이 가능하다. `execution_ref` index가 있으며 tracker와 Final은 같은 PK로 논리 연결하고 FK를 두지 않는다. frozen migration과 live metadata는 실제 MySQL DDL로 대조한다.
 
+RT-07(b)는 stdlib-only `usage.port.UsageSink`와 execution별 `DurableUsageSink`를 추가한다. Worker composition이 DB-only transaction runner를 주입한다. `begin`은 Runtime identity를 발급해 STARTED를 commit한 뒤 반환하며 실패하면 호출자는 HTTP를 보내지 않는다. 실패한 begin의 `UsagePersistenceError.usage_id` 또는 성공 반환 ID로 같은 sink에 persistence replay할 수 있다. `finish`는 관측값을 OBSERVED로 먼저 보존하고, caller가 실제 Run 관계를 확정한 뒤 `finalize`가 기존 `append_final`과 FINALIZED 표시를 같은 transaction에서 처리한다. 실제 FAILED Run도 연결하며, execution sink의 null 사유는 `RUN_NOT_PRODUCED`만 허용한다. 동일 snapshot은 no-op, 다른 snapshot은 conflict다. usage 오류는 provider retry와 분리하며 완료된 HTTP를 재호출하지 않는다. 관측 저장은 ownership fence로 버리지 않는다. recovery·late observation 정책과 Search adapter 배선은 후속 범위다.
+
 아직 실제 구현되지 않은 범위:
 
 - 기본 Worker entrypoint의 실제 Case reader/timeline 조립(RT-10). RT-06(b)의 `jobs/redelivery.py` startup/periodic scan과 Worker-owned Case adapter·실제 process-kill MySQL 테스트는 구현했다. 대상은 SUCCEEDED/FAILED이고 CANCELLED·STALE은 제외한다. 후보 scan/replay receipt read는 비잠금이며 Case→Runtime 순서의 기존 T2를 재사용한다. 후보 오류는 격리하고 COMMIT 불명은 durable receipt로 복구한다.
-- UsageSink begin/finish·Worker 주입·Run finalize 배선(RT-07(b)), reconciliation·늦은 관측·sweep hook·usage_refs projection(RT-07 후속)
+- reconciliation·늦은 관측·sweep hook·usage_refs projection(RT-07 후속), 실제 Search adapter 연결(SRCH-1)
 - API / Worker 실제 app·handler 조립(config bootstrap만 있음)
 - Runtime health endpoint
 

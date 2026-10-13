@@ -44,6 +44,7 @@ Plan §0.1이 Task PR로 넘긴 선택은 미리 행을 둔다. 그 밖의 선�
 | heartbeat lifecycle · commit fencing | 실행별 전용 thread/NullPool connection · monotonic fixed-rate/skip · 내부 ownership fence · B-D8 매 시도/COMMIT 직전 guard · BaseException 소유 thread 전파 | RT-05(a) · 로컬 미커밋 · `Refs #292` | 아래 RT-05 · `common/jobs/heartbeat.py` · `common/db/transactions.py` |
 | `DECIMAL` precision/scale (Plan P-10) | `DECIMAL(65,30)` · 정수 35/소수 30자리 · Decimal/문자열 bind · 초과 precision/scale 거부 | RT-07(a) · 로컬 미커밋 · `Refs #294` | 아래 RT-07 · `common/usage/amount.py` |
 | usage identity · Final replay · 참조 | 양 table `usage_id` 단독 PK · FK 없이 snapshot 보존 · 고정 ID INSERT/1062 locked read · 동일 snapshot no-op/상이하면 conflict · caller tx | RT-07(a) · 로컬 미커밋 · `Refs #294` | 아래 RT-07 · `common/usage/{schema,repository}.py` |
+| UsageSink · explicit finalize | execution별 sink · DB-only runner 주입 · 고정 begin identity/snapshot · locked read/조건부 전이 · append+FINALIZED 원자성 · sanitized UsageError | RT-07(b) · 로컬 미커밋 · `Refs #294` | 아래 RT-07(b) · `common/usage/{port,sink}.py` |
 | cancel 잠금 · signal · 지연 측정 | 전체 입력 검증 후 sorted job별 unique index 순회 잠금 · 최초 marker 유지 · heartbeat commit 후 signal 한 번 전달 · DB 요청→terminal/추가 monotonic checkpoint→commit 지연 | RT-05(b) · 로컬 미커밋 · `Refs #292` | 아래 RT-05(b) · `common/jobs/cancel.py` |
 | STALE sweep · retry · hook lifecycle | 후보 scan 후 execution별 짧은 tx · PK SKIP LOCKED 재확인 · retry ID 고정/unknown COMMIT 복구 · startup gate + 독립 주기 thread · connection 반환 뒤 immutable hooks | RT-06(a) · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `common/jobs/{sweep,retry_policy}.py` |
 | attempt별 queue 대기 관측 | claim receipt 내부 queued_at · DB queued_at→started_at · INITIAL/RETRY 묶음 · heartbeat 시작 뒤 sink 호출 | RT-06(a) · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `repository.py` · `worker_loop.py` |
@@ -1013,6 +1014,8 @@ Status: IN_PROGRESS · Issue: #294 · Audit: B
 | PR | 내용 | Merge SHA |
 | --- | --- | --- |
 | pending — 로컬 미커밋, PR 미생성 | `Refs #294 (RT-07(a))` — schema · DECIMAL · caller transaction Final append | pending |
+| [#349](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/349) | RT-07(a) 병합 확인 — 위 pending 행은 당시 이력 | `fa5a0fcbd5f88e70e7a4c9ba0a457b42a65a27a1` |
+| pending — 로컬 미커밋, PR 미생성 | `Refs #294 (RT-07(b))` — UsageSink · Worker injection · explicit finalize | pending |
 
 ### 구현 결과
 
@@ -1068,6 +1071,137 @@ Status: IN_PROGRESS · Issue: #294 · Audit: B
 - raw textual SQL/외부 DB writer는 application amount binder를 우회할 수 있다. MySQL은 column 변환에서 소수를 반올림할 수 있어 CHECK로 원래 입력 scale을 복구할 수 없다([MySQL rounding](https://dev.mysql.com/doc/refman/8.4/en/precision-math-rounding.html)). 공식 append/live Core write 경계의 검증을 보장하며 raw SQL writer까지의 보호나 DB UPDATE/DELETE 권한 차단을 구현하지 않았다. repository는 Final을 수정/삭제하지 않는다.
 - tracker와 Final의 context 정합은 후속 finalize가 확인해야 한다. 재시도에 영향을 주는 실제 lock timeout/deadlock은 caller의 기존 transaction 정책 대상이다. 새로운 identity로 재시도하거나 provider를 재호출하면 안 된다.
 - 사용자 요청에 따라 기존 미추적 파일을 수정/staging하지 않으며 커밋·push·PR 없이 독립 재리뷰 가능한 로컬 상태로 남긴다. PR/merge SHA는 pending, 연결은 `Refs #294 (RT-07(a))`다.
+
+---
+
+### RT-07(b) — execution UsageSink · explicit finalize (2026-10-13)
+
+**Status: IN_PROGRESS · Refs #294 (RT-07(b)) · PR 번호 / merge SHA pending.** RT-07 전체 완료나 Issue close가 아니다. 커밋·staging·push·PR 생성 없이 독립 재리뷰 가능한 상태로 남긴다.
+
+**착수 확인**
+
+- branch `feature/runtime-usage-sink-finalize`, HEAD `51683e0b0f3ebd71664ff8771610cab7df8ef476`. 사용자 제공 AGENTS, Plan §6 RT-07/§12, Tech Spec §3.3/4.5/11.1–11.4, Contract §4–8, Baseline B-G1/§2.12, Plan P-7/P-10, Log RT-03–07, 기존 usage/schema/repository/amount와 ExecutionContext/WorkerLoop/composition/transaction helper를 읽었다. 저장소 AGENTS.md 파일은 검색에서 확인되지 않았다.
+- GitHub connector로 Issue #293 CLOSED, Issue #294 OPEN, Accepted #244 U-1–U-4와 최종 결정 댓글 `5979576799`, RT-07(a) PR #349 merged와 위 merge SHA를 직접 확인했다. 처음 gh CLI는 네트워크 오류였으며 connector에서 확인된 정보만 사용했다.
+
+**구현 결과**
+
+- `common/usage/port.py`의 stdlib-only `UsageSink` Protocol은 begin/finish/finalize와 provider 오류와 분리된 `UsageError` taxonomy를 소유한다. `ExecutionContext.usage_sink`는 `UsageSink | None`이며 repr/비교에서 제외한다.
+- `DurableUsageSink`는 execution/case context와 DB-only transaction runner를 받는다. Worker composition은 claim별 factory를 WorkerLoop에 전달한다. dispatch 전 checkpoint 뒤 실행마다 새 sink를 주입하며 cache/state를 execution 간 공유하지 않는다. heartbeat의 기존 cancel signal/ownership fence는 같은 객체로 유지한다.
+- begin은 callback 밖에서 UUID 기반 Runtime ID와 occurred_at/typed STARTED snapshot을 만든다. INSERT/1062 locked read로 replay하며 원래 begin context가 바뀌면 conflict다. 동일 sink가 이미 발급한 ID만 explicit begin replay에 쓸 수 있다. COMMIT 불명/소진의 `UsagePersistenceError.usage_id`에도 그 ID를 유지한다. 이 ID는 예외 문자열/로그에 넣지 않는다. begin 예외 뒤 호출자는 HTTP를 실행하지 않는다.
+- finish는 token 전체/합계, finite duration, integer latency, pricing context, exact KRW cost, outcome/failure 관계를 DB 진입 전에 검증·복사한다. row를 잠그고 STARTED 조건부 UPDATE로 OBSERVED를 보존한다. 동일 typed 관측은 timestamps를 바꾸지 않는 no-op, 다른 값은 conflict다. 실제 FAILED invocation·parsing failure의 token/cost null도 보존한다. ownership 상실을 이유로 관측 저장을 차단하지 않는다.
+- explicit finalize는 OBSERVED 이후 caller가 확인한 logical Run 관계만 받는다. FAILED Run도 실제 Run ref로 연결하며 이 execution sink의 null 사유는 RUN_NOT_PRODUCED만 허용한다. tracker lock → 기존 append_final → OBSERVED 조건부 FINALIZED 표시 순서가 하나의 transaction이다. 두 단계 사이 실패와 rollback은 모두 되돌리고, 같은 identity/관계 replay는 no-op, 다른 관계는 conflict다. finish는 정상 finalize 이후 같은 관측 replay만 허용한다. recovery finalize/late observation 처리는 구현하지 않는다.
+- 모든 method의 DB resource는 runner가 반환 전에 닫는다. provider/fake caller는 transaction 밖에 있고 callback에는 외부 I/O가 없다. callback retry 동안 ID·snapshot·시각을 유지한다. Worker registry는 UsageError를 loop까지 전달하며 loop는 RUNTIME_USAGE_PERSISTENCE/VALIDATION/CONFLICT/STATE FAILED로 처리한다. T1 retry는 결과만 보존하며 handler/HTTP를 다시 부르지 않는다.
+- UsageError 문자열은 정적 메시지다. raw input/response, DB exception/SQL, path, tracker identity/state를 structured log나 ValidationError에 전달하지 않는다. Pydantic 입력 모델을 추가하지 않고 기존 Final validator의 typed normalization을 정적 오류 경계로 감싼다.
+
+**Plan 대비 변경 · 새 implementation detail**
+
+- engine 직접 소유 대신 transaction callback injection, 재시도마다 ID 생성 대신 callback 밖 고정 ID/snapshot, unconditional upsert 대신 locked read+조건부 UPDATE, last writer wins 대신 typed snapshot conflict, 별도 commit 대신 append→marker 원자 transaction, process 공용 sink 대신 claim별 factory를 선택했다. 하지 않으면 각각 DB 정책 결합·중복 invocation·관측 덮어쓰기·Final/tracker 불일치·execution 상태 혼선이 생길 수 있다. 상세 비교와 실행 순서는 [RT-07(b) 계획](../superpowers/plans/2026-10-13-runtime-usage-sink-finalize.md)에 기록한다.
+- begin explicit replay를 위한 준비 snapshot은 execution-local cache에만 유지한다. 이 surface는 새 invocation 발급과 이미 발급된 begin의 persistence replay를 구분하기 위한 detail이며 restart/recovery read port가 아니다. caller가 이미 수행한 HTTP를 반복할 권한을 뜻하지 않는다.
+- 기존 KindRegistry가 모든 handler Exception을 일반 오류로 바꾸는 것을 실제 MySQL RED로 확인해 UsageError 재전파를 추가했다. 공유 registry가 상태를 갖는 변경은 없다.
+- 읽기 전용 fresh source 리뷰의 P2: 공유 Final validator가 허용하는 DIRECT_NO_RUN을 execution sink에서도 허용했다. 실제 OBSERVED tracker에서 DID NOT RAISE RED로 재현하고 sink에만 사전 검증을 추가했다. 기존 append_final·Contract 직접 호출 의미는 그대로다. reviewer는 unit 22개를 직접 실행했으며 MySQL/full은 실행하지 않았다. 구현자 수정의 actual MySQL GREEN 2개와 구분한다.
+- 새 acceptance `usage_sink` family/parameter는 기존 독립 test inventory와 production gate에 추가한다. nested actual-report suite에 새 Worker MySQL 경로를 명시했다. workflow/require/JSON-JUnit 판정 정책·Case-owned 파일·migration·DECIMAL·DB CHECK·기존 append_final은 변경하지 않는다.
+- 첫 전체 MySQL 실행은 529 passed / 6 failed였다. 새 COMMIT fault proxy 테스트가 base URL의 TLS를 상속한 것이 원인이다. helper는 TLS-disabled client를 요구하며 기존 Final proxy 테스트도 명시적으로 끈다. 새 테스트의 proxy URL에 같은 설정을 추가한 뒤 base URL의 TLS가 활성인 조건에서 6 passed를 확인했다. 제품 DB/TLS 설정은 변경하지 않았다. 실패 JSON/JUnit도 gate가 거부하는 증거로 보존한다.
+
+**Contract / Decision / Baseline 영향:** 모두 없음. Runtime port signature/DI/cache/error taxonomy는 Plan §12.3 implementation detail이다. Search interface에 새 값/새 의무를 추가하거나 실제 adapter를 수정하지 않았다.
+
+**Owner 확인 포인트**
+
+- Deferred Audit B: HTTP 직전 begin 및 이미 완료된 HTTP의 재호출 금지, caller-owned Run identity/usage_refs와 explicit finalize 연결, FAILED Run/실제 미산출의 구분, COMMIT 불명 소진 후 고정 ID replay, atomic Final/tracker 상태를 확인한다.
+- 실제 Run 존재 확인은 run owner caller 책임이다. Runtime은 run schema를 읽거나 결과를 추정하지 않는다. 사용 예시/fake caller를 SRCH-1이 소비하되 이번에 실제 Search 배선·provider retry를 구현하지 않는다.
+- finish 저장 실패 후 실제 관측값의 durable 복구·terminal reconciliation·recovery finalize·P-7 늦은 관측·read projection은 RT-07(c) 후속이다. 이번 범위에서 해당 정책을 미리 정하지 않는다.
+
+**Verification — 이번 구현자 직접 실행**
+
+- 최초 RED: unit 15 failed, Worker unit 6 failed, actual MySQL 27 failed(미구현). 새 gate family/parameter를 기존 gate가 허용하는 RED 45 failed / 2715 passed, validation family 포함 추가 RED 11 failed / 158 passed를 보존한다.
+- 초기 GREEN: unit/Worker 21 passed; 기존 Final append·새 sink·Worker 회귀 targeted 181 passed; actual lock timeout/deadlock stage 6 passed. registry 경계 RED 2 failed / 3 passed 후 actual Worker+unit GREEN 27 passed. mutable caller snapshot 복사도 검증했다.
+- 새 sink actual MySQL 47 passed는 DIRECT_NO_RUN 수정 전 증거다. ACK 유실 1회 및 3회 retry 소진 뒤 같은 ID/snapshot replay, begin/finish/finalize 1205/1213, 동시 finish/finalize, append/marker 실패 rollback, 관측 검증을 포함한다. P2 RED DID NOT RAISE 후 no-run GREEN 2 passed를 별도 보존한다.
+- gate/unit GREEN 2881 passed는 마지막 DIRECT_NO_RUN parameter 추가 전 증거다. 마지막 소스의 전체 pytest 안에서 별도로 실행한 require-MySQL suite는 **535 tests / 1605 phases, skip 0 / xfail 0**, 실제 서버 **8.4.7**, JSON/JUnit gate PASS다.
+- 그 actual require JSON/JUnit을 대상으로 필수 parameter **381개 × 7층 = 2667개** 누락을 모두 거부했다. 새 usage_sink **50개 × 7층 = 350개**가 포함된다. 새 parameter metadata(role/scenario/parameter) 개별 삭제 **150개**, 새 family 전체 삭제 **11개**도 모두 거부했다. nested pytest의 자체 parameter-removal 검사도 PASS이며 별도 구현자 검증 결과는 `mysql-require-final-mutations.json`에 보존한다.
+- **최종 전체 pytest: 5800 passed / 26 skipped / 실패 0, 2314.29초, exit 0.** nested gate를 제외하지 않은 전체 실행이다. 26 skip은 비-MySQL typer 미설치 4개 및 실제 영상·로컬 미디어/명시적 opt-in 미제공 22개다. 전체 JSON/JUnit의 실제 MySQL은 **540 tests / 1620 phases, skip 0 / xfail 0**, 별도 CLI gate PASS다. 새 unit **23 passed**(sink 17 / Worker 6), 새 MySQL **53 passed**(sink 48 / Worker 5)는 이 최종 실행에 포함된다.
+- 실행 조건: `PYTHONIOENCODING=utf-8`, `DAESINGO_REQUIRE_MYSQL=1`, disposable localhost MySQL URL(connect_timeout=2/read_timeout=10/write_timeout=10), `.venv/Scripts/python.exe -u -B -X utf8 -m pytest -vv --tb=short -p no:cacheprovider --basetemp=.codex-scratch/rt07b-20261013/full --mysql-report=.codex-scratch/rt07b-20261013/full.json --junitxml=.codex-scratch/rt07b-20261013/full.xml`. 마지막 product/test 수정은 proxy 테스트 TLS 명시이며 이후 변경은 검증 산출물과 문서뿐이다.
+- boundary checker PASS(위반 0), Contract fixtures PASS(구조 62 / JSON 26 / 의미 104), workflow Actionlint 5 files/오류 0·YAML policy·bash -n/ShellCheck 5 run steps PASS. pyflakes는 기존 검사 방식대로 비활성이다. 원격 CI는 실행하지 않았다.
+- 증거: `.codex-scratch/rt07b-20261013/`의 RED/GREEN 출력·actual MySQL JSON/JUnit·정적 검사. 테스트 임시 서버는 localhost 전용 MySQL 8.4.7/port 13332/datadir `/tmp/rt07b-20261013/data/`이며 기존 사용자 DB/서비스를 수정하지 않는다.
+- 정리: datadir/port/bind/version을 대조하고 활성 테스트 연결 0을 확인했다. fixture schema/계정 잔여 0, base test schema/계정 삭제 후 남은 테스트 schema/계정 0이다. 전용 서버를 종료한 뒤 workspace 테스트 process 0, MySQL process 0, port closed, pid/socket 없음까지 확인했다. RED/실패 보고서와 서버 로그·datadir는 증거로 남기며 기존 미추적 4개 항목은 보존한다.
+- 최종 `git diff --check` 및 새 파일 syntax/공백 검사 PASS, staging 0, branch/HEAD 유지. `review.diff`는 새 파일까지 포함하며 `review-manifest.json`에 변경 19개 파일과 SHA256을 기록한다. 이 산출물과 나머지 `.codex-scratch/`는 커밋 제외다. 사용자 독립 재리뷰·Owner Audit·원격 CI는 아직 실행되지 않았다.
+
+**남은 위험**
+
+- process kill·finish 이후 recovery finalize·late observation·terminal reconciliation·usage_refs projection은 이번에 검증하지 않는다. 아직 전체 RT-07의 완결성을 주장하지 않는다.
+- DB callback runner와 caller port 순서는 composition의 신뢰 경계다. Python callable에 외부 I/O를 못 넣도록 sandbox하지 않는다. 실제 Search provider retry가 UsageError를 재시도하지 않는 배선은 SRCH-1에서 검증해야 한다.
+- begin ACK 불명 후 STARTED가 이미 durable할 수 있다. 예외 뒤 HTTP는 보내지 않고 같은 발급 ID로 persistence를 재확인해야 한다. finish/finalize 소진도 provider를 재호출할 근거가 아니다.
+- existing raw SQL binder 우회·MySQL rounding, 제3자 logger의 전역 masking 미보장, 이전 TLS/2013 timing 실패의 원인 미확정 위험은 유지한다. 이번 검증이 그 원인을 해결했다는 의미는 아니다.
+- wall-clock 시각은 invocation/관측 기록용이며 lease 판단은 기존 DB 시간이다. 운영 지연·실제 비용/가격/FX·원격 CI 실행 시간을 측정하지 않았다.
+
+---
+
+### RT-07(b) — 독립 확장 MySQL heartbeat/T1 실패 조사 (2026-10-13)
+
+**Status: IN_PROGRESS · Refs #294 (RT-07(b)) · PR 번호 / merge SHA pending.** 독립 재리뷰의 최초 실패를 해결됐다고 기록하지 않는다. 사용자 요청의 systematic-debugging 절차로 traceback → 값 생성 경로 → 후보별 실험 → 새 환경 검증을 수행한다. 이 조사에서 제품·test source는 수정하지 않으며 기존 RT-07(b) 변경을 역적용하지 않는다.
+
+**최초 실패의 확인된 증상**
+
+- 원본 `C:/Users/cheol/AppData/Local/Temp/rt07b-independent-require.xml`은 535 tests / failures 1 / skipped 0, 즉 534 passed / 1 failed다. 대상은 `test_heartbeat_db_error_reconnects_without_retry_or_handler_failure[healthy]`다. 원본 XML/JSON을 새 증거 경로에 복사하고 SHA256을 기록했으며, 현재 gate가 실패 보고서를 거부하는 것도 직접 확인했다.
+- 호출 경로는 test line 324 → WorkerLoop `_run_claims` → composition `record`/`operation` → `run_worker_transaction`/`_attempt` → jobs.repository `finish` line 213 → `_execution_model` line 105 → JobExecution `state_fields_are_consistent`다. 에러는 assertion이 아닌 Pydantic model validator의 `ended_at < (started_at or queued_at)`다. SUCCEEDED에서 started_at이 필수이므로 이 실패는 started_at 비교이며 heartbeat_at은 validator 입력/하한이 아니다.
+- **확인 가능한 실제 ended_at: `2026-10-13T05:56:29.691520Z`. 최초 started_at / heartbeat_at은 확인할 수 없다.** 원본 XML의 row/payload repr가 `...`로 축약됐고 JSON은 node/phase/outcome만 가진다. cleanup 기록의 원래 datadir `/tmp/rt07b-independent-20261013/data/`도 현재 WSL에서 존재하지 않아 원본 binlog/row를 복원하지 못했다. 축약된 무명 숫자를 heartbeat_at이나 started_at으로 추정하지 않는다. 최초 session 설정과 OS/DB 시각 역행 여부도 확인할 수 없다.
+
+| 값 | 생성 주체·clock | 저장/사용 시점 |
+| --- | --- | --- |
+| queued_at | enqueue의 DB UTC_TIMESTAMP(6) | 초기 QUEUED insert |
+| started_at | claim UPDATE의 DB NOW(6) | RUNNING claim transaction, COMMIT 후 dispatch |
+| heartbeat_at | 전용 heartbeat connection UPDATE의 DB NOW(6) | 갱신 transaction COMMIT, 실패 시 connection 반환 후 다음 tick 재접속 |
+| ended_at | T1 finish의 SELECT DB NOW(6) | RUNNING snapshot 조회 후·model 검증 전 생성, 검증 후 UPDATE·COMMIT; 최초 실패에서는 UPDATE 전에 validator가 거부 |
+
+- 네 column은 DATETIME(6), PyMySQL datetime은 naive, contract projection은 queued/started/ended에 UTC tzinfo를 부착한다. Python wall clock은 위 JobExecution 비교값에 사용되지 않는다. Worker의 monotonic clock은 metrics/scheduling용이며 UsageSink의 Python UTC clock은 usage method용이다. [MySQL 시간 함수](https://dev.mysql.com/doc/refman/8.4/en/date-and-time-functions.html) 및 [소수초 정밀도](https://dev.mysql.com/doc/refman/8.4/en/fractional-seconds.html)의 공식 의미도 실제 SQL 실험과 대조했다.
+
+**RT-07(b) 변경과의 연결**
+
+- diff와 호출 흐름에서 heartbeat start → 기존 started log → 추가 checkpoint/factory → dispatch → 기존 T1 callback/commit_guard → heartbeat join 순서를 확인했다. T1 transaction 경계와 SQL timestamp 생성은 바뀌지 않았다. factory는 engine/connection을 소유하거나 checkout하지 않고 runner closure·execution/case 문자열·빈 cache·Lock을 준비한다. healthy handler는 UsageSink begin/finish/finalize를 호출하지 않는다.
+- `dataclasses.replace`는 execution/job/case/kind/attempt/trace와 같은 cancel signal/ownership fence를 유지하고 usage_sink만 바꾼다. constructor 229회에서 SQL 0, 재현 matrix의 healthy 비교 27건에서 claim/factory/T1 identity 일치·attempt 1·각 실행 identity 고유·candidate ended_at이 해당 DB NOW(6) 결과와 일치함을 확인했다.
+- **직접적인 timestamp/DB 경계 변경의 인과관계는 확인되지 않았다.** [추론] factory가 dispatch 이전 Python 작업을 추가해 thread scheduling에 영향을 줄 가능성까지 배제한 것은 아니다. repository/model이 미변경이라는 사실만으로 RT-07(b)와 무관하다고 단정하지 않는다.
+
+**후보별 조사 — 제품 수정 전**
+
+| 후보 | 직접 확인/실험 | 현재 판단과 한계 |
+| --- | --- | --- |
+| Python/DB clock 혼용 | claim/heartbeat/T1의 생성 SQL 역추적, candidate ended_at과 기존 DB NOW 결과 일치 | 이 JobExecution 비교 경로에 Python wall clock은 들어오지 않음; DB wall clock 역행은 별도 후보 |
+| DATETIME 정밀도·반올림 | actual column precision 모두 6, 123456/999999/다음 초 000000/000001 roundtrip 동일 | 검사한 경로에서 정밀도 손실 없음; 최초 실측 하한값은 미복원 |
+| transaction 시작 전 생성/COMMIT 시각 | 같은 transaction에서 successive statement NOW 갱신, 한 statement의 두 NOW 동일 | transaction 전체에 고정된 NOW가 아니며 ended_at은 COMMIT 시각이 아닌 검증 전 statement 시각 |
+| 이전 row/attempt·context 재사용 | 새 fixture schema/engine, UUID execution, healthy 27건 identity/attempt/DB 값 비교 | 조사 실행에서 혼용 없음; 최초 snapshot의 모든 필드는 미복원 |
+| session timezone/연결 복원 | application session 관측 1424건 모두 +00:00; pooled 동일 connection +09:00→checkout +00:00, heartbeat 새 connection +00:00 | 현재 factory/fixture 조건의 복원 확인; 최초 session 설정은 미확인 |
+| 실행 순서/격리 | 단독 20회, heartbeat file 28개×3회, 최초 직전 8개+healthy 9개×3회, joint 81개 | 27 runs / 212 passed / skip 0 / xfail 0; 자연 발생 오류 재현 없음. 진단 query/I/O가 timing에 미칠 수 있어 최종 전체 inventory는 제품 monkeypatch·추가 SQL 진단 없이 실행 |
+| DB wall clock/session timestamp 역행 | 400.94초·3916 sample에서 DB/Python 역행 0; 별도 connection SET timestamp를 1초 역행시키면 동일 validator 거부 | 통제 실험은 실패 기전만 확인한다. 최초 session override 또는 WSL/OS clock step의 발생 증거는 없으며, 과거/샘플 사이 역행을 배제할 수 없음 |
+
+**근본 원인·수정 판단**
+
+- 근본 원인은 **미확정**이다. 자연 발생 오류나 그 원인에 대한 결정적인 최소 RED를 확보하지 못했으므로 제품·test source 수정, sleep 추가, 허용 오차 확대, assertion 제거를 하지 않는다. 인위적인 session clock 역행을 실제 제품 결함 재현이나 수정 RED로 분류하지 않는다.
+- 재실행 통과만으로 해결됐다고 판단하지 않는다. 최초 실패와 비교값 미복원, 원래 session/clock 조건 미확인을 별도 위험으로 유지한다. RT-07(b)의 상태 전이·provider 호출 횟수·UsageSink 의미는 그대로다.
+
+**이번 조사 직접 최종 검증**
+
+- 새 검증은 base table 0 / fixture schema 0을 확인한 별도 MySQL 8.4.7 datadir `/tmp/rt07b-debug-final-20261013/data/`, port 13335에서 시작하며 기존 성공 보고서를 사용하지 않았다. 최초 report의 selected 목록에서 파일 순서를 복원하고 실행 후 **535개 selected node의 순서 완전 일치**를 확인했다. 최초 환경 전체는 복원할 수 없으므로 root account/version/확인된 inventory만 대응하며 port/datadir는 새로 분리했다.
+- **최종 require: 535 passed / 15 deselected / 실패 0, 722.08초, exit 0.** 실제 MySQL 535 tests / 1605 phases, skip 0 / xfail 0, 새 JSON/JUnit 및 별도 CLI gate PASS다. 최초 실패 healthy도 이 순서에서 PASS다. 실행은 `run-final-require.py`가 최초 selected에서 고유 파일 순서를 복원하여 `-m mysql -vvv --tb=long --showlocals -p clock_failure_only -p no:cacheprovider --basetemp=.../final-require --mysql-report=.../final-require.json --junitxml=.../final-require.xml`로 수행했다. 실패 후 hook 외에 제품 monkeypatch·추가 SQL 진단은 사용하지 않았다.
+- **최종 targeted: 104 passed / 실패 0, 91.22초, exit 0.** heartbeat 28 + Worker unit 6/MySQL 5 + UsageSink unit 17/MySQL 48이다. 실제 MySQL 81개 / 243 phases, skip 0 / xfail 0을 별도 보고서로 확인했다. 안전한 timestamp/session 진단도 새 파일에 보존했다.
+- 새 actual require 보고서에서 **필수 381 parameters × 7층 = 2667개** 누락을 모두 거부했다. 새 usage_sink parameter 증거 누락 350개가 포함되며 metadata 삭제 150개·family 전체 삭제 11개도 거부했다. 이전 성공 mutation 보고서를 통과 근거로 쓰지 않았다.
+- boundary PASS(위반 0), Contract fixture PASS(구조 62 / JSON 26 / 의미 104), Actionlint 5 files/오류 0·YAML policy·bash -n/ShellCheck 5 run steps PASS. pyflakes는 기존 검사 방식대로 비활성이다. 최종 git diff --check PASS다. 제품/test source 무수정이므로 이번에는 전체 pytest를 반복하지 않았으며, 앞 절의 과거 5800 passed 결과를 이번 조사에서 새로 실행한 검증으로 재인용하지 않는다. 원격 CI도 실행하지 않았다.
+- 최종 clock monitor는 1225.16초 / 11954 samples에서 DB/Python 역행 0이었다. 100ms 샘플 간 차이 관측이며 더 작은 clock step 또는 과거 발생의 배제 근거로 확대하지 않는다. 원래 OS/DB clock 조정 여부는 미확정이다.
+- 조사/최종 서버 모두 활성 테스트 연결 0, fixture schema/계정 잔여 0, base schema 제거 후 남은 테스트 schema/계정 0을 확인하고 종료했다. 알려진 event_scheduler Daemon 1개는 테스트 연결과 구분했다. 두 port(13334/13335) closed, MySQL process·pid·socket 없음, workspace test process 0을 확인했다. 종료 후 Linux tmp의 server.log 경로가 사라져 error log는 보존하지 못했으며 그 소실 이유는 확정하지 않는다. timestamp diagnostics·clock samples·환경/preflight·JSON/JUnit·cleanup 증거는 Windows workspace에 보존됐다.
+- 증거는 `.codex-scratch/rt07b-debug-20261013/`의 initial 원본 복사/SHA·traceback·matrix JSON/JUnit/diagnostics·hypotheses·clock samples·final 새 보고서이며 커밋 제외다. 성공 경로의 값 수집은 test-only plugin에 한정하고 제품 structured logging을 추가하지 않았다. 최종 require의 hook는 실패 후에만 안전한 timestamp/identity hash를 추출하며 제품 monkeypatch·추가 SQL·sleep을 수행하지 않는다.
+- 이번 조사에서 변경한 저장소 파일은 **이 Log 하나**다. 착수 baseline manifest와 비교해 RT-07(b) 기존 제품·test·gate/다른 문서의 byte hash 유지, HEAD `51683e0b`/branch 유지, staging 0과 기존 제외 파일 보존을 확인했다. 커밋·push·PR는 실행하지 않았다.
+- **재리뷰 준비 판단:** 원인 미확정·비교값 미복원·새 검증 범위/한계를 명시하고 독립 재리뷰를 다시 요청할 수 있다. 로컬 검증상 중간 커밋/PR 준비는 가능하나 원인이 해결됐다거나 최종 병합 차단 문제가 없다는 판정은 아니다. 기존 제외 파일을 일괄 staging하지 않으며, 미확정 위험의 수용·병합 판단은 기존 재리뷰/Deferred Owner Audit 절차를 따른다. 새 Owner 사전 승인 gate를 추가하지 않는다. RT-07 전체 상태/Issue 연결은 위 IN_PROGRESS/Refs를 유지한다.
+
+### RT-07(b) — 독립 재리뷰 최종 통과 후속 기록 (2026-10-13)
+
+- **사용자가 전달한 독립 재리뷰 최종 판정: PASS.** 이전 병합 보류가 해제됐으며 남은 병합 차단 문제는 없다. 앞 절의 재리뷰 미실행/준비 판단은 당시의 기록으로 보존하고, 현재 판정은 이 후속 기록으로 갱신한다.
+- 최초 heartbeat 시각 실패는 **근본 원인 미확정 비차단 위험**으로 유지한다. 해결된 것으로 판단하지 않으며 RT-07(b)의 직접 원인이나 외부 환경 문제로도 확정하지 않았다. 최초 실패 이력·복원하지 못한 비교값·조사 범위와 한계는 위 기록 그대로 보존한다.
+- 재리뷰 근거인 새 MySQL require inventory는 **535 passed / skip 0 / xfail 0**, targeted는 **104 passed**다. 새 JSON/JUnit gate PASS와 함께 누락 parameter **2,667건**, metadata **150건**, family **11건**이 모두 거부됐음을 위 조사에서 직접 실행한 검증 증거로 유지한다. 이번 Log 갱신에서 테스트를 새로 실행한 것은 아니다.
+- 전체 pytest **5,800 passed / 26 skipped**는 구현 단계에서 보존한 검증 증거이며, 실패 조사 또는 이번 독립 재리뷰 후속 갱신에서 전체 pytest를 다시 실행한 결과로 취급하지 않는다.
+
+| 항목 | 현재 기록 |
+| --- | --- |
+| RT-07 상태 | IN_PROGRESS |
+| 중간 PR 연결 | Refs #294 (RT-07(b)) |
+| PR 번호 | pending |
+| merge SHA | pending |
 
 ---
 

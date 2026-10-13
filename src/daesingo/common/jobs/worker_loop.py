@@ -1,7 +1,7 @@
 """Single-execution scheduling; only short claim/T1 callbacks touch the DB."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 import sys
 from threading import Event
@@ -16,6 +16,7 @@ from daesingo.common.jobs.repository import ClaimedExecution, ClaimLostError
 from daesingo.common.jobs.heartbeat import OwnershipLost
 from daesingo.common.jobs.cancel import CancellationRequested, CancelledExecution
 from daesingo.common.logging import bind_context, log_event_best_effort, safe_correlation
+from daesingo.common.usage.port import UsageError, UsageSink
 
 _DB_ERRORS = (DBAPIError, TimeoutError, TransactionRetryExhausted)
 
@@ -38,12 +39,14 @@ class WorkerLoop:
         clock: Callable[[], float] = time.monotonic,
         heartbeat: Callable | None = None,
         sweeper=None,
+        usage_sink_factory: Callable[[ExecutionContext], UsageSink] | None = None,
     ):
         self.claim, self.dispatch, self.record = claim, dispatch, record
         self.settings, self.stop, self.logger = settings, stop, logger
         self.reflect = reflect
         self.heartbeat = heartbeat
         self.sweeper = sweeper
+        self.usage_sink_factory = usage_sink_factory
         self.sleep, self.idle_wait, self.clock = sleep, idle_wait or sleep, clock
 
     def _db_error(self, error: Exception):
@@ -99,6 +102,9 @@ class WorkerLoop:
                             duration_ms=max(0, (claimed.started_at - claimed.queued_at).total_seconds() * 1000))
                     log_event_best_effort(self.logger, "runtime.execution.started", status="RUNNING")
                     try:
+                        context.checkpoint()
+                        if self.usage_sink_factory is not None:
+                            context = replace(context, usage_sink=self.usage_sink_factory(context))
                         result = self.dispatch(context)
                         if not isinstance(result, HandlerResult):
                             result = runtime_failure("RUNTIME_INVALID_RESULT")
@@ -106,6 +112,8 @@ class WorkerLoop:
                             result = validated_terminal(result)
                     except CancellationRequested:
                         result = CancelledExecution()
+                    except UsageError as error:
+                        result = runtime_failure("RUNTIME_USAGE_" + error.code)
                     except Exception:
                         result = runtime_failure("RUNTIME_HANDLER_ERROR")
                     # Preserve terminal facts across DB retries; every attempt,
