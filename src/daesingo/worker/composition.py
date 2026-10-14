@@ -25,6 +25,7 @@ from daesingo.common.jobs.redelivery import observe_reflection, redeliver_once
 from daesingo.common.logging import bind_context, log_event_best_effort, safe_correlation
 from daesingo.worker.registry import KindRegistry
 from daesingo.common.usage.sink import DurableUsageSink
+from daesingo.common.usage.reconciliation import reconcile_once
 
 _CANCEL_TERMINAL_LATENCY = text("""SELECT
 TIMESTAMPDIFF(MICROSECOND, cancel_requested_at, NOW(6)) / 1000.0
@@ -40,6 +41,7 @@ def compose_worker(
     idle_wait: Callable[[float], object] | None = None,
     clock: Callable[[], float] = time.monotonic,
     sweep_hooks: Sequence[Callable[[], object]] = (),
+    usage_observe: Callable | None = None, usage_late_observe: Callable | None = None,
 ) -> WorkerLoop:
     """One main-thread execution at a time; no domain service is instantiated.
 
@@ -105,6 +107,14 @@ def compose_worker(
         committed = run_worker_transaction(engine, operation, sleep=sleep, logger=startup.logger,
                                       before_attempt=context.ownership.check,
                                       commit_guard=commit_guard)
+        if committed:
+            # Separate from T1 and after its connection has returned. Failure
+            # leaves terminal usage for the next sweep; never replay the handler/T1.
+            try:
+                reconcile_once(engine, execution_ref=context.execution_id, recovery=False,
+                    sleep=sleep, logger=startup.logger, observe=usage_observe)
+            except Exception:
+                log_event_best_effort(startup.logger, "runtime.usage.reconciliation_failed", status="FAILED")
         if committed and result.status == "CANCELLED":
             receipt = TerminalCommit(acknowledged_at)
             # Durable T1 is already final. Calculation/sink faults must never
@@ -153,11 +163,14 @@ def compose_worker(
         heartbeat=heartbeat,
         usage_sink_factory=lambda context: DurableUsageSink(
             execution_ref=context.execution_id, case_id=context.case_id,
+            logger=startup.logger, late_observe=usage_late_observe,
             transaction=lambda callback: run_worker_transaction(
                 engine, callback, sleep=sleep, logger=startup.logger)),
         sweeper=SweepService(
             sweep=partial(sweep_once, engine, settings, sleep=sleep, logger=startup.logger),
-            settings=settings, stop=stop, logger=startup.logger, hooks=sweep_hooks,
+            settings=settings, stop=stop, logger=startup.logger,
+            hooks=(partial(reconcile_once, engine, sleep=sleep, logger=startup.logger, observe=usage_observe),
+                   *sweep_hooks),
             redeliver=partial(redeliver_once, engine, reflector, sleep=sleep, logger=startup.logger)
                 if reflector is not None else None,
         ),

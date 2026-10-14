@@ -199,6 +199,7 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
          "tests/worker/test_sweep_worker_mysql.py",
          "tests/worker/test_redelivery_mysql.py",
          "tests/worker/test_usage_worker_mysql.py",
+         "tests/worker/test_usage_reconciliation_worker_mysql.py",
          "tests/case/test_store_mysql.py", "tests/case/test_case_repository_contract.py",
          "--ignore=tests/common/db/integration/test_migration_gate.py", "-m", "mysql", "-q",
          "-p", "no:cacheprovider", f"--basetemp={tmp_path / 'child'}",

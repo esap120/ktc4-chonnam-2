@@ -106,7 +106,7 @@ def test_forward_upgrade_preserves_previous_head_rows_and_is_repeatable(mysql_sc
             before = conn.exec_driver_sql("SELECT * FROM job_execution").all()
         upgrade_all(mysql_schema_url)
         with engine.connect() as conn:
-            assert conn.exec_driver_sql("SELECT version_num FROM runtime_alembic_version").scalar_one() == "runtime_0003"
+            assert conn.exec_driver_sql("SELECT version_num FROM runtime_alembic_version").scalar_one() == "runtime_0004"
             assert conn.exec_driver_sql("SELECT * FROM job_execution").all() == before
             ddl = conn.exec_driver_sql("SHOW CREATE TABLE usage_record").one()[1]
         upgrade_all(mysql_schema_url)

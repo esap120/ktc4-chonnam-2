@@ -41,6 +41,8 @@ def _validate(fields):
                 valid = type(value) in (int, float) and math.isfinite(value) and value >= 0
             except OverflowError:
                 valid = False
+        elif name == "count":
+            valid = type(value) is int and value >= 0
         elif name == "keys":
             valid = isinstance(value, (list, tuple)) and all(
                 isinstance(key, str) and _KEY.fullmatch(key) for key in value

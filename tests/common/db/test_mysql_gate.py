@@ -247,6 +247,19 @@ def test_report_accepts_complete_real_mysql_evidence():
     checker().validate_report(good_report())
 
 
+@pytest.mark.parametrize("identity", [p for p in USAGE_PARAMETERS if p[0] == "usage_reconciliation"])
+@pytest.mark.parametrize("field", ["role", "scenario", "parameter"])
+def test_reconciliation_parameter_metadata_cannot_be_omitted(identity, field):
+    report = good_report()
+    role, scenario, parameter = identity
+    expected = {"role": role, "scenario": scenario, "parameter": parameter}
+    entry, = (n for n in report["collected"] if expected in n.get("checks", []))
+    check, = (c for c in entry["checks"] if c == expected)
+    del check[field]
+    with pytest.raises(ValueError):
+        checker().validate_report(report)
+
+
 @pytest.mark.parametrize("scenario", ["renewal", "zero_rows", "commit_race", "retry_fence",
                                     "cleanup", "slow_attempt", "error_isolation", "connection_fault",
                                     "zero_commit_failure", "owned_cleanup"])

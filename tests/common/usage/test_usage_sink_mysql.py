@@ -311,7 +311,7 @@ def test_invalid_observation_or_relationship_never_changes_tracker(ledger, mode,
     if mode == "failure": value["failure_kind"] = sentinel
     if mode == "extra": value["token_usage"]["raw"] = sentinel
     with pytest.raises(mod().UsageValidationError) as caught:
-        if mode == "direct_no_run": s.finalize(identity, run_ref=None, run_ref_reason="DIRECT_NO_RUN")
+        if mode == "direct_no_run": s.finalize(identity, run_ref={"kind": "analysis_run", "ref": "run"}, run_ref_reason="DIRECT_NO_RUN")
         elif mode == "run": s.finalize(identity, run_ref={"kind": sentinel, "ref": sentinel}, run_ref_reason=None)
         else: s.finish(identity, **value)
     assert rows(ledger) == before and ledger.pool.checkedout() == 0
