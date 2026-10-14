@@ -8,6 +8,7 @@ import type { CaseView } from '../contracts/caseView'
 import { SNAPSHOTS } from '../contracts/fixtures'
 import { DemoFlow } from '../screens/DemoFlow'
 import { ResultScreen } from '../screens/ResultScreen'
+import { StoppedScreen } from '../screens/StoppedScreen'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => {
@@ -223,6 +224,28 @@ it('장면 찾기 실패: 실패 화면에서 「다시 찾기」로 이어서 �
   expect(text()).toContain('장면을 다시 찾고 있어요')
   wait()
   expect(text()).toContain('신고 상황을 확인해 주세요')
+})
+
+it('분석 중단: 실패 화면이 아니라 중단 화면이고, 「다시 찾기」는 영상 전체를 새로 찾는다', () => {
+  const { wait, getByText, text } = start('analysisStopped')
+  wait()
+  fireEvent.click(getByText('영상에서 찾아보기'))
+  wait()
+  expect(text()).toContain('분석을 중단했어요')
+  expect(text()).not.toContain('문제가 생겼어요')
+  fireEvent.click(getByText('다시 찾기'))
+  expect(text()).toContain('장면을 다시 찾고 있어요')
+  wait()
+  expect(text()).toContain('신고 상황을 확인해 주세요')
+})
+
+it('분석 중단: 다시 찾을 근거가 없어 버튼이 없으면 처음부터 시작하라고 안내한다', () => {
+  const searching = SNAPSHOTS.map((x) => x.view).find((v) => v.stage === 'SEARCHING')!
+  const notice = { code: 'case.analysis_stopped', severity: 'INFO' as const, blocking: false, message_key: 'notice.analysis_stopped', actions: [] }
+  const { container } = render(<StoppedScreen view={{ ...searching, notices: [notice] }} onAction={() => {}} />)
+  expect(container.textContent).toContain('분석을 중단했어요')
+  expect(container.textContent).toContain('새 신고')
+  expect(container.querySelector('button')).toBeNull()
 })
 
 it('업로드 일부 실패: 건너뛴 파일을 알리고 나머지로 계속한다', () => {

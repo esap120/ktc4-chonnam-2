@@ -7,6 +7,7 @@ import { FlowScreen } from './FlowScreen'
 import { NoResultScreen, RetrySearch } from './NoResultScreen'
 import { NotObservedScreen } from './NotObservedScreen'
 import { ResultScreen } from './ResultScreen'
+import { StoppedScreen } from './StoppedScreen'
 import { CandidateCompare, DetailsCheck, PlateCheck } from './SubScreens'
 import { UploadScreen, type UploadState } from './UploadScreen'
 
@@ -132,8 +133,18 @@ const SEARCH_FAILED: CaseView = {
   ],
 }
 
+// 사용자 중단(#342) — SEARCHING에 머물고 coarse_search는 PARTIAL, case.analysis_stopped가 붙는다.
+const STOPPED = at(COARSE, -1, true)
+const ANALYSIS_STOPPED: CaseView = {
+  ...STOPPED,
+  progress: STOPPED.progress.map((p, i) => (i === COARSE ? { ...p, state: 'PARTIAL' as StepState } : p)),
+  notices: [
+    { code: 'case.analysis_stopped', severity: 'INFO', blocking: false, message_key: 'notice.analysis_stopped', actions: ['RETRY_SEARCH'] },
+  ],
+}
+
 // 한 번의 진행: 재생할 CaseView들, 끝나면 보여 줄 마지막 화면, 진행 화면 제목(다시 할 때만).
-type End = 'result' | 'notFound' | 'notObserved' | 'failed'
+type End = 'result' | 'notFound' | 'notObserved' | 'failed' | 'stopped'
 interface Run {
   frames: CaseView[]
   end: End
@@ -199,6 +210,11 @@ const CASES: Record<string, DemoCase> = {
     label: '장면 찾기 실패(시스템 오류)',
     upload: 'ok',
     run: { frames: walk(COARSE + 1, COARSE), end: 'failed', view: SEARCH_FAILED },
+  },
+  analysisStopped: {
+    label: '분석 중단(사용자가 멈춤)',
+    upload: 'ok',
+    run: { frames: walk(COARSE + 1), end: 'stopped', view: ANALYSIS_STOPPED },
   },
   uploadPartial: { label: '업로드 일부 실패(나머지로 계속)', upload: 'partial', run: AWAIT_RUN },
   uploadFail: { label: '업로드 실패', upload: 'fail', run: AWAIT_RUN },
@@ -354,6 +370,7 @@ export function DemoFlow(): JSX.Element {
           </>
         )}
         {done?.end === 'failed' && <FailedScreen view={done.view} onAction={onAction} />}
+        {done?.end === 'stopped' && <StoppedScreen view={done.view} onAction={onAction} />}
         {done?.end === 'notObserved' && !sub && <NotObservedScreen view={done.view} onSelect={reselect} />}
         {done?.end === 'result' && !sub && doneView && (
           <ResultScreen
