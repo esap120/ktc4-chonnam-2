@@ -111,6 +111,22 @@ describe('화면 선택', () => {
     expect(selectScreen({ ...base, notices: [notice] }).kind).toBe('AWAIT_RESPONSE')
   })
 
+  it('SEARCHING이어도 중단 · 탐색 실패 notice가 있으면 진행 화면이 아니다(#342)', () => {
+    const base = views.find((v) => v.stage === 'SEARCHING')!
+    const notice = (code: string, message_key: string) => ({
+      code,
+      severity: 'INFO' as const,
+      blocking: false,
+      message_key,
+      actions: [],
+    })
+    const stopped = notice('case.analysis_stopped', 'notice.analysis_stopped')
+    const failed = notice('search.candidate_search_failed', 'notice.candidate_search_failed')
+    expect(selectScreen({ ...base, notices: [stopped] }).kind).toBe('STOPPED')
+    expect(selectScreen({ ...base, notices: [failed] }).kind).toBe('SEARCH_FAILED')
+    expect(selectScreen({ ...base, notices: [] }).kind).toBe('PROGRESS')
+  })
+
   it('READY + package면 신고자료 화면이다', () => {
     const ready = views.filter((v) => v.stage === 'READY' && v.package)
     expect(ready.length).toBeGreaterThan(0)
