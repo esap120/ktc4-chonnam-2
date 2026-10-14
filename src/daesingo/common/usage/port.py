@@ -36,12 +36,16 @@ class UsagePersistenceError(UsageError):
 
 class UsageSink(Protocol):
     def begin(self, operation: str, provider_label: str, pricing_context: Mapping[str, Any], *,
-              usage_id: str | None = None) -> str:
+              usage_id: str | None = None, run_ref: Mapping[str, str] | None = None,
+              run_ref_reason: str | None = None) -> str:
         """Durably STARTED immediately before HTTP; failure means no HTTP.
 
         Omit usage_id for a new invocation. Replay accepts only an identity
         previously issued by this sink (returned or on begin persistence error).
         A replay is persistence-only, never permission to repeat completed HTTP.
+        run_ref is a planned ID, not evidence of a produced Run. Explicit
+        null + DIRECT_NO_RUN declares an invocation with no logical Run concept.
+        Omitted intent remains unresolved by automatic reconciliation.
         """
         ...
 
@@ -60,7 +64,8 @@ class UsageSink(Protocol):
                  run_ref_reason: str | None) -> None:
         """Caller confirms actual Run relationship; FAILED Runs still link.
 
-        Explicit null + RUN_NOT_PRODUCED means the Run was actually not created.
+        Explicit null + RUN_NOT_PRODUCED means the Run was actually not created;
+        DIRECT_NO_RUN means there was no logical Run concept, including in a job.
         Final append and tracker marking commit together; only OBSERVED is legal.
         """
         ...

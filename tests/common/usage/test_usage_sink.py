@@ -131,7 +131,7 @@ def test_mutable_caller_snapshot_is_copied_before_transaction(monkeypatch):
     assert str(observed[0]["amount"]) == "1.20"
 
 
-def test_execution_sink_rejects_direct_no_run_before_transaction():
+def test_execution_sink_rejects_run_with_direct_no_run_reason_before_transaction():
     sink = make(lambda callback: pytest.fail("invalid relationship must not acquire DB"))
     with pytest.raises(module().UsageValidationError):
-        sink.finalize("usage", run_ref=None, run_ref_reason="DIRECT_NO_RUN")
+        sink.finalize("usage", run_ref={"kind": "analysis_run", "ref": "run"}, run_ref_reason="DIRECT_NO_RUN")

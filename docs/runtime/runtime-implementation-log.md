@@ -42,9 +42,9 @@ Plan §0.1이 Task PR로 넘긴 선택은 미리 행을 둔다. 그 밖의 선�
 | attempt observer · claim latency | sanitized outcome/duration · transaction 시작 → COMMIT acknowledgement · checkout/checkin/retry 대기 제외 · 관측 실패와 retry 분리 | RT-03(b) · 로컬, PR 미생성 | 아래 RT-03(b) · `common/db/transactions.py` |
 | Worker invocation · T1 replay | 불변 kind registry · execution context/result · claim/handler/T1 분리 · 결과 보존 재시도 · durable terminal facts 재조회 | RT-04(a) · 로컬, PR 미생성 · `Refs #291` | 아래 RT-04 · `worker/composition.py` · `common/jobs/worker_loop.py` |
 | heartbeat lifecycle · commit fencing | 실행별 전용 thread/NullPool connection · monotonic fixed-rate/skip · 내부 ownership fence · B-D8 매 시도/COMMIT 직전 guard · BaseException 소유 thread 전파 | RT-05(a) · 로컬 미커밋 · `Refs #292` | 아래 RT-05 · `common/jobs/heartbeat.py` · `common/db/transactions.py` |
-| `DECIMAL` precision/scale (Plan P-10) | `DECIMAL(65,30)` · 정수 35/소수 30자리 · Decimal/문자열 bind · 초과 precision/scale 거부 | RT-07(a) · 로컬 미커밋 · `Refs #294` | 아래 RT-07 · `common/usage/amount.py` |
-| usage identity · Final replay · 참조 | 양 table `usage_id` 단독 PK · FK 없이 snapshot 보존 · 고정 ID INSERT/1062 locked read · 동일 snapshot no-op/상이하면 conflict · caller tx | RT-07(a) · 로컬 미커밋 · `Refs #294` | 아래 RT-07 · `common/usage/{schema,repository}.py` |
-| UsageSink · explicit finalize | execution별 sink · DB-only runner 주입 · 고정 begin identity/snapshot · locked read/조건부 전이 · append+FINALIZED 원자성 · sanitized UsageError | RT-07(b) · 로컬 미커밋 · `Refs #294` | 아래 RT-07(b) · `common/usage/{port,sink}.py` |
+| `DECIMAL` precision/scale (Plan P-10) | `DECIMAL(65,30)` · 정수 35/소수 30자리 · Decimal/문자열 bind · 초과 precision/scale 거부 | RT-07(a) · PR #349 · `fa5a0fcbd5f88e70e7a4c9ba0a457b42a65a27a1` | 아래 RT-07 · `common/usage/amount.py` |
+| usage identity · Final replay · 참조 | 양 table `usage_id` 단독 PK · FK 없이 snapshot 보존 · 고정 ID INSERT/1062 locked read · 동일 snapshot no-op/상이하면 conflict · caller tx | RT-07(a) · PR #349 · `fa5a0fcbd5f88e70e7a4c9ba0a457b42a65a27a1` | 아래 RT-07 · `common/usage/{schema,repository}.py` |
+| UsageSink · explicit finalize | execution별 sink · DB-only runner 주입 · 고정 begin identity/snapshot · locked read/조건부 전이 · append+FINALIZED 원자성 · sanitized UsageError | RT-07(b) · PR #353 · `95dfff8b3ba11f95b76a168dd18ccc1573c02b39` | 아래 RT-07(b) · `common/usage/{port,sink}.py` |
 | cancel 잠금 · signal · 지연 측정 | 전체 입력 검증 후 sorted job별 unique index 순회 잠금 · 최초 marker 유지 · heartbeat commit 후 signal 한 번 전달 · DB 요청→terminal/추가 monotonic checkpoint→commit 지연 | RT-05(b) · 로컬 미커밋 · `Refs #292` | 아래 RT-05(b) · `common/jobs/cancel.py` |
 | STALE sweep · retry · hook lifecycle | 후보 scan 후 execution별 짧은 tx · PK SKIP LOCKED 재확인 · retry ID 고정/unknown COMMIT 복구 · startup gate + 독립 주기 thread · connection 반환 뒤 immutable hooks | RT-06(a) · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `common/jobs/{sweep,retry_policy}.py` |
 | attempt별 queue 대기 관측 | claim receipt 내부 queued_at · DB queued_at→started_at · INITIAL/RETRY 묶음 · heartbeat 시작 뒤 sink 호출 | RT-06(a) · 로컬 미커밋 · `Refs #293` | 아래 RT-06 · `repository.py` · `worker_loop.py` |
@@ -67,6 +67,7 @@ Plan §12.3에서 「멈추고 확인」에 해당해 Owner에게 확인한 건�
 | 날짜 | Task · PR | 확인 내용 | 확인처 | 결과 · 기록 위치 |
 | --- | --- | --- | --- | --- |
 | 2026-10-08 확인 | RT-02(b), PR 미생성 | Case env 입력 우선순위 최소 수정·외부 transaction 참여. Case fixture/revision/metadata/version table 의미 변경 없음, 공통 helper 의무 없음 | 유소연 @yuusoyeon | [Issue #289 승인 댓글](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/289#issuecomment-6055765577). Consult 결과이며 Case env는 향후 PR에서 Owner 리뷰 예정 |
+| 2026-10-14 직접 조회 | RT-07(c), PR #360 | Search에는 durable Run 저장소가 없고 최초 영속화는 T1 produced. 예정 Run ref 대조로 복구하며 명시적 DIRECT_NO_RUN 허용 | 김준영 @flosure23 · 서어진 @kong2488-star · 정철원 최종 확인 | [Runtime 답변](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6145102027) · [Search 답변](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6148574716) · [최종 확인](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6150512406). 이 세션은 댓글을 작성하지 않고 직접 읽었다 |
 
 ## Milestone audit
 
@@ -1009,13 +1010,13 @@ Status: DONE · Issue: #293 · Audit: A
 
 ## RT-07 — Usage ledger: in-flight · Final UsageRecord · reconciliation
 
-Status: IN_PROGRESS · Issue: #294 · Audit: B
+Status: DONE · Issue: #294 · Audit: B
 
 | PR | 내용 | Merge SHA |
 | --- | --- | --- |
-| pending — 로컬 미커밋, PR 미생성 | `Refs #294 (RT-07(a))` — schema · DECIMAL · caller transaction Final append | pending |
-| [#349](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/349) | RT-07(a) 병합 확인 — 위 pending 행은 당시 이력 | `fa5a0fcbd5f88e70e7a4c9ba0a457b42a65a27a1` |
-| #353 | `Refs #294 (RT-07(b))` — UsageSink · Worker injection · explicit finalize | pending |
+| [#349](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/349) | `Refs #294 (RT-07(a))` — schema · DECIMAL · caller transaction Final append | `fa5a0fcbd5f88e70e7a4c9ba0a457b42a65a27a1` |
+| [#353](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/353) | `Refs #294 (RT-07(b))` — UsageSink · Worker injection · explicit finalize | `95dfff8b3ba11f95b76a168dd18ccc1573c02b39` |
+| [#360](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/360) | RT-07(c) — Owner 확인 후 produced 기반 복구·명시적 DIRECT_NO_RUN·P-7·usage_refs 구현. 최종 연결 예정: `Closes #294` | pending |
 
 ### 구현 결과
 
@@ -1067,16 +1068,16 @@ Status: IN_PROGRESS · Issue: #294 · Audit: B
 ### 남은 위험
 
 - 독립 재리뷰에서 cancel timing 테스트의 단발 경계 초과가 보고됐다. 원인은 미확정이며 timing 안정성 위험을 유지한다. 이를 해소됐다고 기록하지 않으며, 병합 차단 문제 없음이라는 최종 판정과 별도로 보존한다.
-- RT-07(b)/(c)·SRCH-1은 미구현이며 실제 provider 호출 수, invocation 시작 조건, Run 확정/복구/늦은 관측 보존을 이번 schema/append 결과로 검증했다고 주장하지 않는다. B-G1의 terminal 기반 recovery와 P-7 의미는 그대로다.
+- RT-07(b)는 PR #353으로 병합됐다. RT-07(c)는 아래 독립 재리뷰 PASS로 RT-07 전체 DONE이며, 최종 PR 번호는 #360, merge SHA는 pending이다. SRCH-1 실제 배선은 미구현이다. 실제 recovery·늦은 관측 보존을 RT-07(a)의 schema/append 결과로 검증했다고 주장하지 않는다. B-G1의 terminal 기반 recovery와 P-7 의미는 그대로다.
 - raw textual SQL/외부 DB writer는 application amount binder를 우회할 수 있다. MySQL은 column 변환에서 소수를 반올림할 수 있어 CHECK로 원래 입력 scale을 복구할 수 없다([MySQL rounding](https://dev.mysql.com/doc/refman/8.4/en/precision-math-rounding.html)). 공식 append/live Core write 경계의 검증을 보장하며 raw SQL writer까지의 보호나 DB UPDATE/DELETE 권한 차단을 구현하지 않았다. repository는 Final을 수정/삭제하지 않는다.
 - tracker와 Final의 context 정합은 후속 finalize가 확인해야 한다. 재시도에 영향을 주는 실제 lock timeout/deadlock은 caller의 기존 transaction 정책 대상이다. 새로운 identity로 재시도하거나 provider를 재호출하면 안 된다.
-- 사용자 요청에 따라 기존 미추적 파일을 수정/staging하지 않으며 커밋·push·PR 없이 독립 재리뷰 가능한 로컬 상태로 남긴다. PR/merge SHA는 pending, 연결은 `Refs #294 (RT-07(a))`다.
+- RT-07(a) 구현 당시에는 사용자 요청에 따라 기존 미추적 파일을 보존하고 커밋·push·PR 없이 로컬 상태로 남겼다. 이후 병합 상태는 위 PR #349 행이 현재 사실이며, 당시 검증 증거와 요청 이력은 보존한다.
 
 ---
 
 ### RT-07(b) — execution UsageSink · explicit finalize (2026-10-13)
 
-**Status: IN_PROGRESS · Refs #294 (RT-07(b)) · PR 번호 / merge SHA pending.** RT-07 전체 완료나 Issue close가 아니다. 커밋·staging·push·PR 생성 없이 독립 재리뷰 가능한 상태로 남긴다.
+**현재 병합 상태: PR #353 merged · merge SHA `95dfff8b3ba11f95b76a168dd18ccc1573c02b39`.** RT-07(b) 병합 당시 RT-07 전체는 IN_PROGRESS였다. 아래 구현·검증 기록은 RT-07(b) 당시의 이력이며, 현재 RT-07 전체 DONE 판정은 아래 RT-07(c) 독립 재리뷰 기록을 따른다. RT-07(b) 병합 자체를 RT-07 전체 완료나 Issue close로 해석하지 않는다.
 
 **착수 확인**
 
@@ -1098,7 +1099,7 @@ Status: IN_PROGRESS · Issue: #294 · Audit: B
 - engine 직접 소유 대신 transaction callback injection, 재시도마다 ID 생성 대신 callback 밖 고정 ID/snapshot, unconditional upsert 대신 locked read+조건부 UPDATE, last writer wins 대신 typed snapshot conflict, 별도 commit 대신 append→marker 원자 transaction, process 공용 sink 대신 claim별 factory를 선택했다. 하지 않으면 각각 DB 정책 결합·중복 invocation·관측 덮어쓰기·Final/tracker 불일치·execution 상태 혼선이 생길 수 있다. 상세 비교와 실행 순서는 [RT-07(b) 계획](../superpowers/plans/2026-10-13-runtime-usage-sink-finalize.md)에 기록한다.
 - begin explicit replay를 위한 준비 snapshot은 execution-local cache에만 유지한다. 이 surface는 새 invocation 발급과 이미 발급된 begin의 persistence replay를 구분하기 위한 detail이며 restart/recovery read port가 아니다. caller가 이미 수행한 HTTP를 반복할 권한을 뜻하지 않는다.
 - 기존 KindRegistry가 모든 handler Exception을 일반 오류로 바꾸는 것을 실제 MySQL RED로 확인해 UsageError 재전파를 추가했다. 공유 registry가 상태를 갖는 변경은 없다.
-- 읽기 전용 fresh source 리뷰의 P2: 공유 Final validator가 허용하는 DIRECT_NO_RUN을 execution sink에서도 허용했다. 실제 OBSERVED tracker에서 DID NOT RAISE RED로 재현하고 sink에만 사전 검증을 추가했다. 기존 append_final·Contract 직접 호출 의미는 그대로다. reviewer는 unit 22개를 직접 실행했으며 MySQL/full은 실행하지 않았다. 구현자 수정의 actual MySQL GREEN 2개와 구분한다.
+- RT-07(b) 당시 P2 리뷰 후 execution sink에 DIRECT_NO_RUN 차단 검증을 추가했다. 당시 OBSERVED tracker의 DID NOT RAISE RED와 차단 GREEN 2개, reviewer의 unit 22개는 그 시점의 증거다. 공유 Final validator·Contract·DB CHECK는 DIRECT_NO_RUN을 허용한 채 유지했다. 이후 Issue #294 Owner 확인에서 job 내부에도 no-Run 호출이 유효하고 이 차단의 계약상 근거가 없음을 확인해 RT-07(c)에서 해제한다. 당시 차단을 이미 허용한 구현으로 읽히게 한 기존 Log 문구를 정정한다.
 - 새 acceptance `usage_sink` family/parameter는 기존 독립 test inventory와 production gate에 추가한다. nested actual-report suite에 새 Worker MySQL 경로를 명시했다. workflow/require/JSON-JUnit 판정 정책·Case-owned 파일·migration·DECIMAL·DB CHECK·기존 append_final은 변경하지 않는다.
 - 첫 전체 MySQL 실행은 529 passed / 6 failed였다. 새 COMMIT fault proxy 테스트가 base URL의 TLS를 상속한 것이 원인이다. helper는 TLS-disabled client를 요구하며 기존 Final proxy 테스트도 명시적으로 끈다. 새 테스트의 proxy URL에 같은 설정을 추가한 뒤 base URL의 TLS가 활성인 조건에서 6 passed를 확인했다. 제품 DB/TLS 설정은 변경하지 않았다. 실패 JSON/JUnit도 gate가 거부하는 증거로 보존한다.
 
@@ -1136,7 +1137,7 @@ Status: IN_PROGRESS · Issue: #294 · Audit: B
 
 ### RT-07(b) — 독립 확장 MySQL heartbeat/T1 실패 조사 (2026-10-13)
 
-**Status: IN_PROGRESS · Refs #294 (RT-07(b)) · PR 번호 / merge SHA pending.** 독립 재리뷰의 최초 실패를 해결됐다고 기록하지 않는다. 사용자 요청의 systematic-debugging 절차로 traceback → 값 생성 경로 → 후보별 실험 → 새 환경 검증을 수행한다. 이 조사에서 제품·test source는 수정하지 않으며 기존 RT-07(b) 변경을 역적용하지 않는다.
+**조사 당시 기록 · 현재 RT-07(b)는 PR #353 merged · merge SHA `95dfff8b3ba11f95b76a168dd18ccc1573c02b39` · RT-07 전체 IN_PROGRESS.** 독립 재리뷰의 최초 실패를 해결됐다고 기록하지 않는다. 사용자 요청의 systematic-debugging 절차로 traceback → 값 생성 경로 → 후보별 실험 → 새 환경 검증을 수행한다. 이 조사에서 제품·test source는 수정하지 않으며 기존 RT-07(b) 변경을 역적용하지 않는다.
 
 **최초 실패의 확인된 증상**
 
@@ -1201,7 +1202,112 @@ Status: IN_PROGRESS · Issue: #294 · Audit: B
 | RT-07 상태 | IN_PROGRESS |
 | 중간 PR 연결 | Refs #294 (RT-07(b)) |
 | PR 번호 | #353 |
-| merge SHA | pending |
+| merge SHA | `95dfff8b3ba11f95b76a168dd18ccc1573c02b39` |
+
+---
+
+### RT-07(c) — durable Run 관계 경계 조사 및 구현 전 중단 (2026-10-13)
+
+**Status: IN_PROGRESS · 최종 연결 예정: Closes #294 · PR 번호 pending · merge SHA pending.** 구현 완료 또는 독립 재리뷰 통과 기록이 아니다. 사용자가 명시한 「새 Search 공개 surface/필수 callback이 필요하면 코드를 진행하지 말 것」에 따라 제품·테스트·gate 구현 전에 중단했다.
+
+**이 절은 2026-10-13의 조사·중단 이력이다.** 이후 Issue #294에서 Search의 durable Run 저장소가 없고 최초 영속화 경계가 T1 produced임이 확인되어 아래 2026-10-14 기록으로 중단 조건이 해소됐다. 이 절의 resolver 필요성·미검증 상태를 현재 구현 상태로 읽지 않는다.
+
+**직접 확인한 근거**
+
+- branch `feature/runtime-usage-reconciliation`, HEAD `95dfff8b3ba11f95b76a168dd18ccc1573c02b39`. 로컬 `origin/develop`도 같은 commit이다. GitHub connector로 Issue #294 OPEN, #244의 Accepted 최종 댓글 `5979576799` 및 Search Owner 댓글 `5969821122`, PR #349/#353 merged 및 각각의 merge SHA를 직접 확인했다. 최신 원격 develop tip을 별도로 조회한 결과로 확대 해석하지 않는다.
+- Plan §6 RT-07/§12 전체/P-7/P-10, Tech Spec §3.3/§4.5/§11.1–11.4, Final UsageRecord Contract §4–8, Baseline B-G1/§2.12, RT-06 startup/periodic hook 및 현 usage/Worker/read-port 구현·관련 테스트를 대조했다. 저장소 내 AGENTS.md 파일은 검색에서 확인되지 않았으며 사용자 제공 지침을 적용했다.
+- `begin()`은 run 관계가 모두 null인 STARTED를 기록한다. `finish()`의 저장 snapshot에는 Run 관계가 없고 관측값만 OBSERVED에 기록한다. `finalize()`는 caller가 확인한 관계로 Final append와 tracker FINALIZED 표시를 한 transaction에 묶는다. 관계만 먼저 durable하게 저장하는 현 port/callback은 없다. 따라서 finish 뒤 finalize 전 process kill의 pending tracker는 Run 미산출과 이미 산출된 Run의 미전달을 구분할 수 없다.
+- Runtime의 `JobExecution.produced`는 execution 단위 ContractRef 목록이며 usage별 관계가 아니다. 특히 STALE 전이는 `produced=[]`를 저장하므로 Run 부재의 증거가 아니다. `ExecutionContext`나 begin replay cache도 process restart에서 durable 관계를 복원하지 않는다.
+- 현 Search 공개 함수/서비스는 capability 결과를 반환한다. `AnalysisRun.usage_refs`는 파생값이며 현 구현은 Runtime usage identity 배선 전의 `usage:<source_id>`를 사용한다. 현 `SearchLedger`는 process-local list이고 Final 원장도 durable Run resolver도 아니다. 검토한 공개 API와 Accepted #244에서 execution/usage별 복구 조회 surface 및 확정 미산출 증거 callback은 확인되지 않았다. Runtime이 Search 내부 저장소를 직접 import하거나 terminal/조회 실패를 RUN_NOT_PRODUCED로 바꾸지 않는다.
+
+**대안 비교 · 권장 방향(미승인 제안)**
+
+| 안 | 효과 | 한계/Owner 영향 | 판단 |
+| --- | --- | --- | --- |
+| 현 Runtime durable 데이터만 사용 | 명시적 관계가 durable하게 있는 경우만 복구하고 불충분한 행은 pending 유지 | 현재 sink가 만든 finish→finalize 공백과 실제 Run 미생성 증거를 닫지 못함 | 안전한 보류 동작은 가능하나 RT-07(c) 전체 acceptance를 만족하지 못함 |
+| composition이 주입하는 durable Run resolution port | usage별 PRODUCED / NOT_PRODUCED / UNRESOLVED를 구분하고 FAILED Run도 실제 ref로 연결 | Search의 새 공개 조회/미산출 증거 의무 및 false STALE 이후 판정 안정성 합의 필요 | 전체 acceptance를 위한 조건부 권장. Owner 확인 전 구현하지 않음 |
+| 기존 sink에 관계 보존 callback 단계 추가 | Final 전에 Runtime tracker에 관계를 durable 보존 | Search가 Run 저장 후 callback 전에 죽는 공백이 남음. 원자성 또는 복구 가능한 전달·미산출 확정 규칙이 추가로 필요 | callback만 추가하는 안은 불충분. 새 의무 확인 필요 |
+
+- 필요한 interface 제안: `resolve_usage_run(*, execution_ref, case_id, usage_id) -> Produced(run_ref, durable_evidence) | NotProduced(durable_evidence) | Unresolved`. 기존 구현/승인된 signature가 아니다. Produced는 해당 execution/case/usage와 실제 durable Run의 연결, NotProduced는 단순 조회 부재가 아닌 최종 미산출 근거를 의미한다. Unresolved는 pending으로 남긴다. payload·provider 응답을 전달하지 않는다.
+- resolution은 Runtime transaction 밖에서 실행해야 한다. 전달된 근거는 transaction 전체 replay 및 이후 sweep에서 안정적이어야 하며, NOT_PRODUCED 판정 뒤 늦은 Worker가 다른 Run을 산출하는 공백을 어떻게 막는지 Owner가 확인해야 한다. Runtime transaction은 terminal execution과 tracker를 다시 검증하고 동일 identity/snapshot으로 짧게 finalize하는 방향이다. 이를 현재 보장이라고 기록하지 않는다.
+
+**P-7 및 read-port 판단 — 미구현 설계 방향**
+
+- RT-07(b)의 FINALIZED finish는 동일 관측 replay만 허용하고 상이한 값은 conflict다. 이 동작을 모든 recovery FINALIZED에 그대로 적용하면 아직 관측이 없던 recovery row에 늦은 실제 관측을 보존하지 못한다. P-7에 따라 Final은 그대로 두고 tracker에 첫 늦은 관측을 durable 보존하며 동일 replay는 no-op, 상이 관측/관계는 conflict로 처리하는 방향을 권장한다. Final UPDATE는 Contract §8-1 위반이므로 배제하고 관측 거부/휘발성 로그만 남기기는 P-7을 만족하지 못한다. 구체 상태/marker와 event 재전달 방식은 아직 구현 선택으로 확정하지 않았다.
+- 정상 Final 이후 최초 관측 덮어쓰기는 허용하지 않는다. recovery 이후 관측 저장과 event는 transaction/observer 실패로 Final identity·관계가 바뀌지 않도록 분리해야 한다. 원장과 tracker의 late 관측이 달라져도 Final이 authoritative다.
+- 현 read port는 여전히 `usage_refs=[]`다. 최종 구현은 `usage_record.execution_ref`별 Final ID만 중복 없이 결정적으로 projection하고 pending tracker는 제외해야 한다. validator/Case 소비 경계 변경은 불필요하다는 설계 방향이며 구현·검증 결과는 아니다.
+
+**Verification · RED→GREEN · 남은 범위**
+
+- 이번 직접 실행은 자료/코드/Git 조회 및 문서 변경 검증이다. RT-07(c)의 TDD RED→GREEN, 실제 MySQL 20개 요구 scenario, JSON/JUnit gate·누락 mutation, 전체 pytest, boundary/fixture/workflow 검사는 실행하지 않았다. 새 MySQL skip/xfail 결과는 미측정이며 0으로 보고하지 않는다. 위 RT-07(a)/(b)의 수치는 과거 보존 증거다.
+- 제품·test·migration·CI gate를 수정하지 않았고 외부 provider/테스트 DB/server/thread/process를 생성하지 않았다. 이번 schema/account/connection 정리 acceptance를 검증했다는 뜻은 아니다. 문서 diff 검증 및 보호 파일 hash 비교 결과는 `.codex-scratch/rt07c-20261013/document-verification.json`에 보존한다.
+- 상세 조사·필요 interface·대안·완료 보고 12항목은 `.codex-scratch/rt07c-20261013/design-boundary-review.md`에 보존한다. scratch는 Git ignore 대상이며 커밋 제외다.
+- Contract/Accepted Decision/Baseline 변경 없음. 제안한 Search surface는 새 의무일 수 있어 Plan §12.3 확인 대상이며 아직 Owner에 메시지를 보내거나 승인받지 않았다. 사용자가 기존 승인 surface를 지정하거나 새 의무에 대한 Owner 확인을 제공한 뒤 구현을 재개해야 한다.
+- RT-07(c) 구현의 독립 재리뷰 요청 가능 상태가 아니다. 설계 경계 검토는 가능하다. process-kill·동시성·COMMIT 불명·P-7·usage_refs 전체 acceptance, SRCH-1 실제 배선과 기존 미확정 timing 위험은 남아 있다. 커밋·push·PR 생성·staging은 하지 않는다.
+
+---
+
+### RT-07(c) — Owner 합의 반영 · produced 기반 reconciliation (2026-10-14)
+
+**Status: DONE · 최종 PR 연결: Closes #294 · PR 번호 #360 · merge SHA pending.** 독립 재리뷰 PASS 및 남은 병합 차단 문제 없음을 사용자 전달 결과로 기록한다. 로컬 구현·검증·테스트 DB 정리 후 재리뷰 요청 상태였던 기존 이력은 아래 보존한다. 이번 갱신은 RT-07 절의 문서 변경만이며 코드·테스트 수정/재실행, staging·커밋·push·PR 생성은 하지 않는다.
+
+**독립 재리뷰 최종 판정 — PASS(사용자 전달 결과)**
+
+- 남은 병합 차단 문제 없음. Owner 합의에 따른 `JobExecution.produced` 기반 복구, 명시적 `DIRECT_NO_RUN`, 별도 Search resolver를 추가하지 않는 경계를 확인했다. 예정 Run ID 자체를 존재 근거로 삼거나 빈 produced에서 DIRECT_NO_RUN을 추론하지 않는다.
+- **재리뷰 직접 실행 결과:** targeted **3,475 passed**; 실제 MySQL **590 passed / 1,770 phases**, 신규 reconciliation **51개 포함**. 아래 구현 단계 보존 증거와 별도로 기록하며, 이번 문서 갱신에서 테스트를 다시 실행한 결과가 아니다.
+- **누락 거부 검증:** 신규 parameter 증거 누락 **357건**, metadata 누락 **153건**, family 누락 **13건**을 거부했다. P-7 late observation의 durable 관측 보존·immutable Final·replay/conflict 및 `usage_refs`의 Final-only projection 검증도 통과했다.
+- **구현 단계 보존 증거:** 전체 pytest **6,374 passed / 26 skipped / 실패 0**, full MySQL **591개 / 1,773 phases**. 이를 독립 재리뷰에서 전체 pytest를 새로 실행한 수치로 재인용하지 않는다. 상세 RED→GREEN·실제 MySQL·gate·cleanup 기록은 아래 보존한다.
+- **비차단 개선 후보:** malformed 후보별 오류 격리. 재리뷰의 병합 차단 finding이 아니며 이번 문서 갱신에서 구현하지 않는다.
+- **후속 확인:** 원격 CI의 실제 실행 시간과 기존 **900초 nested timeout** 안의 완료 여부는 확인이 필요하다. 로컬 통과를 원격 CI 통과로 확대하지 않으며 timeout을 완화하지 않는다. 최종 PR은 `Closes #294`, PR 번호는 `#360`, merge SHA는 `pending`이다.
+
+**설계 경계 및 기존 사실 정정**
+
+- Issue #294의 Runtime 답변 `6145102027`, Search 답변 `6148574716`, 최종 확인 `6150512406`을 connector로 직접 읽었다. Search의 Run은 provider 호출 전 선발급 ID와 호출 후 메모리 객체이며 별도 Run 저장소가 없고, 최초 durable 관계는 T1의 `JobExecution.produced`다. 따라서 앞 절의 「Search 내부 durable Run + T1 전 kill」은 현재 구조의 실제 gap이 아니다. 새 Search resolver/필수 callback/저장소를 추가하지 않는다.
+- 대안은 기존 produced 사용 / 새 resolver / begin 전 durable Run 생성이다. Owner 확인에 따라 기존 produced를 선택했다. 나머지 둘은 현재 조회할 Search durable 상태가 없거나 새 저장소 의무를 만들므로 채택하지 않는다. SRCH-1은 예정 ref 전달과 FAILED AnalysisRun의 produced 반환을 배선한다는 Search의 명시적 확인을 따른다.
+- DIRECT_NO_RUN은 job 내부에서도 유효한 기존 Contract 의미다. RT-07(b)의 execution sink만 거부했던 사전 검증을 정합화한다. 기존 Log의 「허용했다」와 실제 차단 코드/테스트 불일치는 위 b 기록을 당시 사실로 고쳐 보존했다. 빈 produced를 DIRECT_NO_RUN으로 추론하지 않는다.
+
+**구현 결과**
+
+- frozen `runtime_0004`는 tracker에 `planned_run_kind/ref`, `direct_no_run`, `recovered_at`, `late_observed_at`를 추가한다. 기존 frozen revision과 Final UsageRecord schema는 변경하지 않는다. legacy 행은 예정 관계 없음/explicit no-run false로 유지해 임의 finalization하지 않는다. 실제 MySQL forward migration 보존 및 live metadata DDL 정합을 검사한다.
+- 신규 migration의 7개 ALTER를 한 ALTER로 묶어 추가 DDL round trip 6회를 줄였다. SHOW CREATE 정합과 legacy 보존 검사는 통과했다. require-MySQL 실행은 변경 전 968.98초, 변경 후 682.55초였으나 이 환경의 관측값이며 운영 성능이나 시간 상한을 보장하지 않는다. 기존 중첩 실제-report gate의 900초와 workflow timeout 20분은 완화하지 않았다.
+- begin은 optional 예정 Run ref 또는 명시적 null + DIRECT_NO_RUN 선언을 durable STARTED에 저장한다. 예정 ID 자체는 실제 Run 존재 근거가 아니다. 기존 b의 intent 생략/발급 ID replay는 유지하고, 같은 ID의 다른 intent는 conflict이며 begin에서 RUN_NOT_PRODUCED를 선결정하지 않는다.
+- 자동 normal T1 및 recovery는 terminal execution과 tracker를 짧은 usage별 transaction으로 잠그고 예정 ref를 produced와 대조한다. 일치하면 FAILED 포함 실제 ref, 불일치하면 RUN_NOT_PRODUCED, 명시적 no-Run이면 DIRECT_NO_RUN이다. RUNNING/QUEUED, missing/cross-case execution, intent 불명 행은 변경하지 않는다. malformed/duplicate produced는 검증 오류이며 단순 부재로 다루지 않는다.
+- 정상 T1 commit·connection 반환 뒤 별도 usage transaction을 실행한다. STALE/T2 transaction 뒤 기존 startup/periodic hooks에도 연결한다. transaction callback에는 DB I/O만 있고 기존 B-D8를 사용한다. candidate snapshot·finalized_at은 callback 재시도 밖의 고정 준비 상태로 유지하며 unknown COMMIT은 immutable Final과 대조한다. 일반 post-T1 오류는 handler/provider/T1 재실행을 일으키지 않고 sweep에서 다시 복구한다. 기존 fatal/cleanup/thread lifecycle 및 느린 hook/join의 상한 미보장 정책은 유지한다.
+- b의 standalone explicit finalize는 caller가 실제 관계를 확인하는 호환 API로 유지한다. 새로운 자동 Worker 경로는 terminal produced를 사용하고 Search의 세 번째 호출을 요구하지 않는다. 이미 FINALIZED인 identity replay는 늦게 보강된 tracker 관측을 Final과 비교해 덮어쓰지 않고 immutable Final의 context/관계를 확인한다.
+
+**P-7 선택**
+
+- b의 FINALIZED 관측 동일성 검사만 유지하면 미관측 recovery Final 뒤 첫 실제 finish를 거부한다. Final UPDATE는 append-only에 어긋나고 휘발성 로그만 남기면 관측 보존을 못 하므로 둘 다 배제했다.
+- recovery 표식이 있는 Final tracker에서 최초 늦은 finish는 관측이 없으면 실제 관측을 보존하고, 이미 관측됐다면 동일성 검사 후 late marker만 남긴다. FINALIZED 상태·Final identity·run 관계·Final snapshot은 바꾸지 않는다. 같은 관측 replay는 durable no-op, 다른 관측/관계는 sanitized conflict다.
+- 내부 fresh reviewer가 정상 FAILED T1의 미관측 STARTED 확정에서 recovery 표식이 없어 finish persistence replay가 거부되는 Important 1건을 지적했다. 실제 Worker/MySQL RED 1 failed(UsageConflictError) 후 미관측 자동 T1 fallback도 usage recovery로 표시하도록 수정했다. 정상 관측 완료 T1은 recovery로 세지 않는다. 수정 후 신규 actual MySQL 51 passed에서 해당 regression GREEN을 확인했다. reviewer의 재현은 _locked만 대체한 읽기 전용 Python 검사였고 MySQL 검사는 구현자가 실행했다. 사용자 독립 재리뷰와 구분한다.
+- `late_observed_at`는 관측과 같은 transaction의 durable event 표식이다. `runtime.usage.late_observation` logger/observer는 commit 및 connection 반환 후 best effort로 호출한다. 로그 전송의 exactly-once/장애 시 외부 전달 보장은 약속하지 않는다. ACK 불명·logger 장애에서도 durable marker와 실제 관측은 남는다.
+
+**read port 및 관측**
+
+- `read_executions`는 `usage_record.execution_ref`별 Final ID만 PK 중복 없이 정렬해 projection한다. pending tracker/private column은 노출하지 않고 없으면 []다. JobExecution validator와 Case의 대표 execution 선택 경계는 유지한다.
+- recovered_count는 recovery marker가 있는 committed 행 수, inflight_count는 non-FINALIZED 행 수다. oldest age는 하나의 DB 집계 snapshot에서 DB NOW(6)를 기준으로 계산한다. metric observer는 typed 숫자만 받으며 structured log의 count는 비음수 정수, age event는 기존 duration_ms 표현을 사용한다. 원시 SQL·URL·path·전체 snapshot을 logger/observer/UsageError 문자열에 전달하지 않는다.
+
+**RED→GREEN 및 최종 검증 — 구현 단계 직접 실행의 보존 증거**
+
+- 기존 unit baseline 23 passed. 새로운 relation/P-7/concurrency/metric/projection actual MySQL 29 failed RED 후 기존 usage 회귀 포함 195 passed GREEN. Worker/T1/startup/periodic/OS kill 5 failed RED → 5 passed GREEN.
+- COMMIT OK packet 실제 소비·1회 ACK 유실/3회 소진 후 재실행, actual 1205/1213 및 전체 transaction rollback/retry, begin intent/direct explicit finalize, forward legacy 보존: 15 passed. 첫 실행 4 failed/11 passed는 test SQL이 Final에 없는 finalized_at을 조회한 문제였다. traceback으로 1054 원인을 확인해 tracker JOIN으로 고친 뒤 통과했으며 제품 정책은 바꾸지 않았다.
+- malformed produced의 부재 오판을 추가 RED 1 failed(DID NOT RAISE)로 확인해 RuntimeContractRef 구조/중복 검증을 추가했다. 이 변경 이후 최종 targeted 재검증 결과는 아래 최종 evidence에 기록한다.
+- independent MySQL inventory 추가 후 기존 gate가 새 family 13개와 parameter 전체 삭제 49개를 허용하는 RED 62 failed/3160 passed를 확인했다. parameter metadata 삭제 추가 RED 49 failed/98 passed도 확인했다. production gate에 별도 필수 inventory를 추가하고 기존 Case/Runtime inventory·timeout·skip/xfail 정책은 유지했다.
+- 최종 증거는 ignored `.codex-scratch/rt07c-20261014/`에 보존한다. 이전 a/b 수치는 이전 보존 evidence다. 사용량 한도로 중단된 뒤에는 완료된 구현·RED→GREEN·targeted·require/full pytest를 재실행하지 않고 최종 보고서 gate·집계·정리·Git 상태·문서만 마무리했다.
+- 수정 후 신규 actual MySQL `targeted-fixed.json/xml`: 51 passed, skip 0/xfail 0. unit/gate/logging/sweep `unit.json/xml`: 3,475 passed, MySQL 194 deselected. 관련 Worker·RT-06·read-port 회귀는 537 passed/2 failed였고, 실패 원인은 두 기존 migration head 기대값이 runtime_0003에 머문 것이었다. runtime_0004로 기대값만 갱신한 후 실제 MySQL 재검증 2 passed이며 최종 full에도 포함됐다.
+- 최종 고정 코드 require-MySQL `require.json/xml`: 실제 MySQL 590 tests/1,770 phases, skip 0/xfail 0/failure 0, gate PASS, 682.55초. pytest 요약의 4 skipped는 MySQL이 아닌 typer 미설치 collection skip이다. 독립 inventory 432 parameters × 7 evidence 층의 누락 3,024건, 그중 신규 51 parameters의 누락 357건, 신규 metadata 누락 153건, family 누락 13건과 실패 보고서를 모두 거부했다(`require-mutations.json`, `require-mutations-final.txt`).
+- 최종 전체 pytest `full.json/xml/txt`, exit 0: **6,374 passed / 26 skipped / failure 0**, 1,667.89초. 26 skip은 typer 미설치 4건과 로컬 미디어·명시적 opt-in 조건 22건이며 MySQL skip은 0이다. 중첩 실제-report gate도 기존 900초 제한 안에서 통과했다. 최종 full JSON/JUnit에 현재 gate를 실행해 PASS를 확인했다: **MySQL 591 tests / 1,773 phases(setup/call/teardown 각각 591), skip 0 / xfail 0 / failure 0**. require와의 1건 차이는 full에 포함된 `test_actual_report_rejects_each_missing_migration_check`이며 inventory를 줄이지 않았다.
+- boundary PASS(위반 0); Contract fixtures 구조 62/JSON 26/의미 104 PASS; workflow 정적 검사 5 files/5 run steps PASS(Actionlint·YAML policy·bash -n·ShellCheck, 기존 pyflakes 비활성 조건 유지). `git diff --check` 및 신규 6개 파일 공백 검사 PASS. 원격 CI/실제 provider 실행 결과로 해석하지 않는다.
+- 중간 concurrent 검증 3개는 출력 진행이 멈춰 이 작업의 process임을 확인 후 종료했으며 완료 증거로 사용하지 않는다. 검증 중 소스 변경이 포함된 중간 실행도 최종 증거와 분리했다. 최종 순차 full의 faulthandler 진단에는 중첩 subprocess.communicate 대기가 기록됐으며 실패나 timeout 완화가 아니다. 중간 지연 원인을 확정하거나 해결됐다고 단정하지 않는다.
+- 최종 `cleanup-db.py`는 처음에 MySQL 내부 event_scheduler Daemon을 감지해 안전 중단했다. port/bind/datadir로 전용 서버임을 검증한 뒤 scheduler를 종료하고 기존 스크립트를 재실행해 exit 0으로 완료했다. 테스트 schema 3개 제거 후 schema/계정/기타 connection 잔여 0. 서버 종료 뒤 WSL PID 파일/socket/process/listening port와 Windows 테스트 process/13336 port 잔여 0을 확인했다(`cleanup-db.json`, `cleanup-residual.json`).
+- 보호 항목 4개의 1,069 파일은 시작 SHA-256과 경로 집합이 동일하며 추가/삭제/변경 0(`protected-final.json`). HEAD `95dfff8b3ba11f95b76a168dd18ccc1573c02b39`, branch `feature/runtime-usage-reconciliation`, staged diff/미병합 index 항목 없음(`git-final.json`). 변경 26파일(기존 20/신규 6)의 전체 diff·SHA-256 manifest·요약을 `review.diff`, `review-manifest.json`, `changed-files.md`, `review-summary.md`에 남긴다. 제품 코드는 최종 검증 이후 변경하지 않는다.
+
+**남은 위험·범위 밖**
+
+- 정상/복구 관계 판정의 근거는 현재 Search 구조에 관한 Owner 확인이다. 이후 별도 durable Run 저장소가 생기면 T1 전 gap을 다시 검토해야 한다. legacy intent 불명 행은 자동 복구로 관계를 꾸며내지 않으며 명시적 관계 확인/이관이 필요하다.
+- 실제 Search adapter 배선(SRCH-1), pricing/FX(RD-08), retention/purge(RD-10c/d), Case budget guard, SearchLedger 정리(#153)는 범위 밖이다. 기존 heartbeat/cancel timing 원인 미확정 위험, raw SQL binder 우회/rounding 한계는 유지한다.
+- malformed 후보별 오류 격리는 독립 재리뷰에서 제시된 비차단 개선 후보다. 원격 CI 실행 시간과 기존 900초 nested timeout 내 완료 여부는 후속 확인이 필요하다. 로컬 통과 기록과 timeout 미완화 사실은 보존한다.
+- Contract/Accepted Decision/Baseline 변경 없음. 독립 재리뷰 PASS 및 남은 병합 차단 문제 없음은 사용자 전달 결과다. 원격 CI 통과는 아직 확인되지 않았으며, 최종 PR은 `Closes #294`, PR 번호는 #360, merge SHA는 pending이다. 이번 문서 갱신에서는 RT-07을 DONE으로 기록하고 코드·테스트 재실행, staging·커밋·push·PR 생성 없이 멈춘다.
 
 ---
 

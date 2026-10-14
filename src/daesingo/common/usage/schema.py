@@ -1,4 +1,4 @@
-"""Live usage metadata, independently checked against frozen runtime_0003.
+"""Live usage metadata, checked against frozen runtime_0003 + runtime_0004.
 
 Shared usage_id is the logical link; no FK couples Final to tracker retention
 or other modules. Run linkage may be pending only in the internal tracker.
@@ -68,9 +68,20 @@ usage_inflight = sa.Table(
     sa.Column("failure_kind", sa.String(191)),
     sa.Column("observed_at", DATETIME(fsp=6)),
     sa.Column("finalized_at", DATETIME(fsp=6)),
+    sa.Column("planned_run_kind", _id(16)),
+    sa.Column("planned_run_ref", _id()),
+    sa.Column("direct_no_run", sa.Boolean, nullable=False, server_default=sa.text("0")),
+    sa.Column("recovered_at", DATETIME(fsp=6)),
+    sa.Column("late_observed_at", DATETIME(fsp=6)),
     *_checks("usage_inflight", pending=True),
     sa.CheckConstraint("CAST(state AS BINARY) IN ('STARTED','OBSERVED','FINALIZED')", name="ck_usage_inflight_state"),
     sa.CheckConstraint("outcome IS NULL OR CAST(outcome AS BINARY) IN ('SUCCEEDED','FAILED')", name="ck_usage_inflight_outcome"),
+    sa.CheckConstraint(
+        "(planned_run_kind IS NULL AND planned_run_ref IS NULL) OR "
+        "(planned_run_kind IS NOT NULL AND planned_run_ref IS NOT NULL AND "
+        "CAST(planned_run_kind AS BINARY) IN ('analysis_run','readout_run') AND direct_no_run = 0)",
+        name="ck_usage_inflight_intent"),
+    sa.CheckConstraint("direct_no_run IN (0,1)", name="ck_usage_inflight_direct"),
     sa.Index("ix_usage_inflight_execution_ref", "execution_ref"),
     mysql_engine="InnoDB", mysql_charset="utf8mb4",
 )

@@ -16,6 +16,9 @@ REQUIRED_SCENARIOS = frozenset({
 
 # Stable acceptance identifiers, independent of Python test function names.
 REQUIRED_CHECKS = frozenset({
+    *(("usage_reconciliation", scenario) for scenario in (
+        "relation", "late", "concurrent", "isolation", "db_clock", "projection", "worker",
+        "process_kill", "commit_unknown", "retry", "migration", "direct", "intent")),
     *(("usage_sink", scenario) for scenario in (
         "invocations", "replay", "conflict", "atomicity", "concurrent", "commit_unknown",
         "state", "no_run", "retry", "worker", "validation")),
@@ -106,6 +109,27 @@ REQUIRED_CHECKS = frozenset({
 # Each parameter is an independent acceptance obligation. Names come from
 # explicit pytest marks, never from function names or parsed node ID suffixes.
 REQUIRED_PARAMETERS = frozenset({
+    *(("usage_reconciliation", "relation", mode) for mode in (
+        "SUCCEEDED", "FAILED", "CANCELLED", "STALE", "absent", "different", "direct_no_run",
+        "unknown", "RUNNING", "QUEUED", "missing", "cross_case", "invalid_produced")),
+    *(("usage_reconciliation", "late", mode) for mode in (
+        "unobserved", "observed", "direct_no_run", "replay", "conflict", "relationship")),
+    *(("usage_reconciliation", "concurrent", mode) for mode in (
+        "reconcilers", "normal_recovery", "late_same", "late_conflict")),
+    *(("usage_reconciliation", "isolation", mode) for mode in (
+        "logger", "observer", "late_logger", "late_observer", "metrics")),
+    ("usage_reconciliation", "db_clock", "oldest"),
+    ("usage_reconciliation", "projection", "final_only"),
+    *(("usage_reconciliation", "worker", mode) for mode in ("normal_t1", "startup", "periodic", "finish_persistence_replay")),
+    *(("usage_reconciliation", "process_kill", mode) for mode in ("startup", "periodic")),
+    *(("usage_reconciliation", "commit_unknown", stage + suffix)
+      for stage in ("recovery", "late") for suffix in ("", "_exhausted")),
+    *(("usage_reconciliation", "retry", f"{stage}_{code}")
+      for stage in ("recovery", "late") for code in (1205, 1213)),
+    ("usage_reconciliation", "migration", "legacy"),
+    ("usage_reconciliation", "direct", "explicit_finalize"),
+    *(("usage_reconciliation", "intent", mode) for mode in (
+        "planned_replay", "direct_replay", "different_run", "different_reason", "premature_not_produced")),
     *(("usage_sink", "replay", stage) for stage in ("begin", "finish", "finalize")),
     *(("usage_sink", "conflict", mode) for mode in
       ("token", "cost", "pricing", "outcome", "duration", "latency", "failure", "run", "null_run")),

@@ -55,7 +55,7 @@ def test_forward_upgrade_preserves_runtime_0001_rows_and_hides_token(mysql_schem
             assert "claim_token" in col
             assert col["claim_token"]["nullable"]
             assert conn.exec_driver_sql("SELECT claim_token FROM job_execution").scalar_one() is None
-            assert conn.exec_driver_sql("SELECT version_num FROM runtime_alembic_version").scalar_one() == "runtime_0003"
+            assert conn.exec_driver_sql("SELECT version_num FROM runtime_alembic_version").scalar_one() == "runtime_0004"
             from daesingo.common.jobs.read_port import read_executions
             assert "claim_token" not in read_executions(conn, ["old_job"])[0]
     finally:
