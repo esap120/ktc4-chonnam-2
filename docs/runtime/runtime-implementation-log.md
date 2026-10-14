@@ -67,7 +67,7 @@ Plan §12.3에서 「멈추고 확인」에 해당해 Owner에게 확인한 건�
 | 날짜 | Task · PR | 확인 내용 | 확인처 | 결과 · 기록 위치 |
 | --- | --- | --- | --- | --- |
 | 2026-10-08 확인 | RT-02(b), PR 미생성 | Case env 입력 우선순위 최소 수정·외부 transaction 참여. Case fixture/revision/metadata/version table 의미 변경 없음, 공통 helper 의무 없음 | 유소연 @yuusoyeon | [Issue #289 승인 댓글](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/289#issuecomment-6055765577). Consult 결과이며 Case env는 향후 PR에서 Owner 리뷰 예정 |
-| 2026-10-14 직접 조회 | RT-07(c), PR pending | Search에는 durable Run 저장소가 없고 최초 영속화는 T1 produced. 예정 Run ref 대조로 복구하며 명시적 DIRECT_NO_RUN 허용 | 김준영 @flosure23 · 서어진 @kong2488-star · 정철원 최종 확인 | [Runtime 답변](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6145102027) · [Search 답변](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6148574716) · [최종 확인](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6150512406). 이 세션은 댓글을 작성하지 않고 직접 읽었다 |
+| 2026-10-14 직접 조회 | RT-07(c), PR #360 | Search에는 durable Run 저장소가 없고 최초 영속화는 T1 produced. 예정 Run ref 대조로 복구하며 명시적 DIRECT_NO_RUN 허용 | 김준영 @flosure23 · 서어진 @kong2488-star · 정철원 최종 확인 | [Runtime 답변](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6145102027) · [Search 답변](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6148574716) · [최종 확인](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/issues/294#issuecomment-6150512406). 이 세션은 댓글을 작성하지 않고 직접 읽었다 |
 
 ## Milestone audit
 
@@ -1016,7 +1016,7 @@ Status: DONE · Issue: #294 · Audit: B
 | --- | --- | --- |
 | [#349](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/349) | `Refs #294 (RT-07(a))` — schema · DECIMAL · caller transaction Final append | `fa5a0fcbd5f88e70e7a4c9ba0a457b42a65a27a1` |
 | [#353](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/353) | `Refs #294 (RT-07(b))` — UsageSink · Worker injection · explicit finalize | `95dfff8b3ba11f95b76a168dd18ccc1573c02b39` |
-| pending | RT-07(c) — Owner 확인 후 produced 기반 복구·명시적 DIRECT_NO_RUN·P-7·usage_refs 구현. 최종 연결 예정: `Closes #294` | pending |
+| [#360](https://github.com/kakaotechcampus-4/ktc4-chonnam-2/pull/360) | RT-07(c) — Owner 확인 후 produced 기반 복구·명시적 DIRECT_NO_RUN·P-7·usage_refs 구현. 최종 연결 예정: `Closes #294` | pending |
 
 ### 구현 결과
 
@@ -1068,7 +1068,7 @@ Status: DONE · Issue: #294 · Audit: B
 ### 남은 위험
 
 - 독립 재리뷰에서 cancel timing 테스트의 단발 경계 초과가 보고됐다. 원인은 미확정이며 timing 안정성 위험을 유지한다. 이를 해소됐다고 기록하지 않으며, 병합 차단 문제 없음이라는 최종 판정과 별도로 보존한다.
-- RT-07(b)는 PR #353으로 병합됐다. RT-07(c)는 아래 독립 재리뷰 PASS로 RT-07 전체 DONE이며, 최종 PR 번호·merge SHA는 pending이다. SRCH-1 실제 배선은 미구현이다. 실제 recovery·늦은 관측 보존을 RT-07(a)의 schema/append 결과로 검증했다고 주장하지 않는다. B-G1의 terminal 기반 recovery와 P-7 의미는 그대로다.
+- RT-07(b)는 PR #353으로 병합됐다. RT-07(c)는 아래 독립 재리뷰 PASS로 RT-07 전체 DONE이며, 최종 PR 번호는 #360, merge SHA는 pending이다. SRCH-1 실제 배선은 미구현이다. 실제 recovery·늦은 관측 보존을 RT-07(a)의 schema/append 결과로 검증했다고 주장하지 않는다. B-G1의 terminal 기반 recovery와 P-7 의미는 그대로다.
 - raw textual SQL/외부 DB writer는 application amount binder를 우회할 수 있다. MySQL은 column 변환에서 소수를 반올림할 수 있어 CHECK로 원래 입력 scale을 복구할 수 없다([MySQL rounding](https://dev.mysql.com/doc/refman/8.4/en/precision-math-rounding.html)). 공식 append/live Core write 경계의 검증을 보장하며 raw SQL writer까지의 보호나 DB UPDATE/DELETE 권한 차단을 구현하지 않았다. repository는 Final을 수정/삭제하지 않는다.
 - tracker와 Final의 context 정합은 후속 finalize가 확인해야 한다. 재시도에 영향을 주는 실제 lock timeout/deadlock은 caller의 기존 transaction 정책 대상이다. 새로운 identity로 재시도하거나 provider를 재호출하면 안 된다.
 - RT-07(a) 구현 당시에는 사용자 요청에 따라 기존 미추적 파일을 보존하고 커밋·push·PR 없이 로컬 상태로 남겼다. 이후 병합 상태는 위 PR #349 행이 현재 사실이며, 당시 검증 증거와 요청 이력은 보존한다.
@@ -1249,7 +1249,7 @@ Status: DONE · Issue: #294 · Audit: B
 
 ### RT-07(c) — Owner 합의 반영 · produced 기반 reconciliation (2026-10-14)
 
-**Status: DONE · 최종 PR 연결: Closes #294 · PR 번호 pending · merge SHA pending.** 독립 재리뷰 PASS 및 남은 병합 차단 문제 없음을 사용자 전달 결과로 기록한다. 로컬 구현·검증·테스트 DB 정리 후 재리뷰 요청 상태였던 기존 이력은 아래 보존한다. 이번 갱신은 RT-07 절의 문서 변경만이며 코드·테스트 수정/재실행, staging·커밋·push·PR 생성은 하지 않는다.
+**Status: DONE · 최종 PR 연결: Closes #294 · PR 번호 #360 · merge SHA pending.** 독립 재리뷰 PASS 및 남은 병합 차단 문제 없음을 사용자 전달 결과로 기록한다. 로컬 구현·검증·테스트 DB 정리 후 재리뷰 요청 상태였던 기존 이력은 아래 보존한다. 이번 갱신은 RT-07 절의 문서 변경만이며 코드·테스트 수정/재실행, staging·커밋·push·PR 생성은 하지 않는다.
 
 **독립 재리뷰 최종 판정 — PASS(사용자 전달 결과)**
 
@@ -1258,7 +1258,7 @@ Status: DONE · Issue: #294 · Audit: B
 - **누락 거부 검증:** 신규 parameter 증거 누락 **357건**, metadata 누락 **153건**, family 누락 **13건**을 거부했다. P-7 late observation의 durable 관측 보존·immutable Final·replay/conflict 및 `usage_refs`의 Final-only projection 검증도 통과했다.
 - **구현 단계 보존 증거:** 전체 pytest **6,374 passed / 26 skipped / 실패 0**, full MySQL **591개 / 1,773 phases**. 이를 독립 재리뷰에서 전체 pytest를 새로 실행한 수치로 재인용하지 않는다. 상세 RED→GREEN·실제 MySQL·gate·cleanup 기록은 아래 보존한다.
 - **비차단 개선 후보:** malformed 후보별 오류 격리. 재리뷰의 병합 차단 finding이 아니며 이번 문서 갱신에서 구현하지 않는다.
-- **후속 확인:** 원격 CI의 실제 실행 시간과 기존 **900초 nested timeout** 안의 완료 여부는 확인이 필요하다. 로컬 통과를 원격 CI 통과로 확대하지 않으며 timeout을 완화하지 않는다. 최종 PR은 `Closes #294`, PR 번호·merge SHA는 `pending`이다.
+- **후속 확인:** 원격 CI의 실제 실행 시간과 기존 **900초 nested timeout** 안의 완료 여부는 확인이 필요하다. 로컬 통과를 원격 CI 통과로 확대하지 않으며 timeout을 완화하지 않는다. 최종 PR은 `Closes #294`, PR 번호는 `#360`, merge SHA는 `pending`이다.
 
 **설계 경계 및 기존 사실 정정**
 
@@ -1307,7 +1307,7 @@ Status: DONE · Issue: #294 · Audit: B
 - 정상/복구 관계 판정의 근거는 현재 Search 구조에 관한 Owner 확인이다. 이후 별도 durable Run 저장소가 생기면 T1 전 gap을 다시 검토해야 한다. legacy intent 불명 행은 자동 복구로 관계를 꾸며내지 않으며 명시적 관계 확인/이관이 필요하다.
 - 실제 Search adapter 배선(SRCH-1), pricing/FX(RD-08), retention/purge(RD-10c/d), Case budget guard, SearchLedger 정리(#153)는 범위 밖이다. 기존 heartbeat/cancel timing 원인 미확정 위험, raw SQL binder 우회/rounding 한계는 유지한다.
 - malformed 후보별 오류 격리는 독립 재리뷰에서 제시된 비차단 개선 후보다. 원격 CI 실행 시간과 기존 900초 nested timeout 내 완료 여부는 후속 확인이 필요하다. 로컬 통과 기록과 timeout 미완화 사실은 보존한다.
-- Contract/Accepted Decision/Baseline 변경 없음. 독립 재리뷰 PASS 및 남은 병합 차단 문제 없음은 사용자 전달 결과다. 원격 CI 통과는 아직 확인되지 않았으며, 최종 PR은 `Closes #294`, PR 번호·merge SHA는 pending이다. 이번 문서 갱신에서는 RT-07을 DONE으로 기록하고 코드·테스트 재실행, staging·커밋·push·PR 생성 없이 멈춘다.
+- Contract/Accepted Decision/Baseline 변경 없음. 독립 재리뷰 PASS 및 남은 병합 차단 문제 없음은 사용자 전달 결과다. 원격 CI 통과는 아직 확인되지 않았으며, 최종 PR은 `Closes #294`, PR 번호는 #360, merge SHA는 pending이다. 이번 문서 갱신에서는 RT-07을 DONE으로 기록하고 코드·테스트 재실행, staging·커밋·push·PR 생성 없이 멈춘다.
 
 ---
 
