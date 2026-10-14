@@ -104,10 +104,19 @@ const PLATE_UNREAD_RESULT = withoutPlate(RESULT, [
 // 신고용 영상 미생성 — 아직 만들지 않아 GENERATE_REPORT_VIDEO 발주가 필요한 상태다. 묶음이
 // 완성되지 않아 READY가 아니다. export 실패(recording.report_video_export_failed)와 다르다 —
 // 그 notice는 message_key·actions 모양이 아직 없어 시연하지 않는다(#224 recording 리뷰).
+// fixture에서 꺼내지 않는다 — fixture는 case가 실제로 만드는 상태만 담아 이 notice가 빠질 수 있다(#355).
 const VIDEO_NOT_GENERATED_RESULT: CaseView = {
   ...RESULT,
   stage: 'EVIDENCE_REVIEW',
-  notices: [fixtureNotice('case.report_video_not_generated')],
+  notices: [
+    {
+      code: 'case.report_video_not_generated',
+      severity: 'INFO',
+      blocking: false,
+      message_key: 'notice.report_video_not_generated',
+      actions: ['GENERATE_REPORT_VIDEO'],
+    },
+  ],
 }
 // 음성 결과(#168 [A]) — EVIDENCE_REVIEW + evidence=null + evidence.visual_event_not_observed.
 const NOT_OBSERVED: CaseView = {
