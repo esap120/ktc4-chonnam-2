@@ -55,10 +55,16 @@ export interface ApiOptions {
   /** 배포가 정한다(계약 §3.1). 같은 origin이면 비워 둔다. */
   baseUrl?: string
   fetch?: typeof fetch
+  /**
+   * JSON 요청(view · command · 생성)의 시간 제한. 넘으면 「응답 없음」이라 반영 여부를 모른다 —
+   * 부르는 쪽이 GET /view로 확인한다(계약 §3.4). 숫자는 web 구현값이다(§4).
+   */
+  timeoutMs?: number
 }
 
 export function createApi(options: ApiOptions = {}) {
   const base = options.baseUrl ?? ''
+  const timeoutMs = options.timeoutMs ?? 15_000
   const doFetch = options.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args))
   // id는 서버가 발급한 opaque 문자열이다 — percent-encoding만 하고 해석하지 않는다(§3.1).
   const caseUrl = (caseId: string) => `${base}/cases/${encodeURIComponent(caseId)}`
@@ -70,10 +76,10 @@ export function createApi(options: ApiOptions = {}) {
     caseView: null,
   })
 
-  async function call<T>(url: string, init?: RequestInit): Promise<ApiResult<T>> {
+  async function call<T>(url: string, init?: RequestInit, withTimeout = true): Promise<ApiResult<T>> {
     let res: Response
     try {
-      res = await doFetch(url, init)
+      res = await doFetch(url, { ...init, signal: withTimeout ? AbortSignal.timeout(timeoutMs) : undefined })
     } catch {
       return fail(0, NETWORK_ERROR)
     }
@@ -94,11 +100,14 @@ export function createApi(options: ApiOptions = {}) {
     /** §5.1 — body 없음. `case_id`는 서버가 발급한다. */
     createCase: () => call<CaseCreated>(`${base}/cases`, { method: 'POST' }),
 
-    /** §5.2 — 1 request = 1 file. `file` part 하나만 보내고 Content-Type(boundary)은 브라우저에 맡긴다. */
+    /**
+     * §5.2 — 1 request = 1 file. `file` part 하나만 보내고 Content-Type(boundary)은 브라우저에 맡긴다.
+     * 영상은 오래 걸릴 수 있어 시간 제한을 두지 않는다(한도는 서버 · 프록시가 정한다).
+     */
     uploadSource(caseId: string, file: File) {
       const form = new FormData()
       form.append('file', file)
-      return call<SourceRegistered>(`${caseUrl(caseId)}/sources`, { method: 'POST', body: form })
+      return call<SourceRegistered>(`${caseUrl(caseId)}/sources`, { method: 'POST', body: form }, false)
     },
 
     /**
@@ -125,3 +134,5 @@ export function createApi(options: ApiOptions = {}) {
     assetUrl: (caseId: string, assetRef: string) => `${caseUrl(caseId)}/assets/${encodeURIComponent(assetRef)}`,
   }
 }
+
+export type Api = ReturnType<typeof createApi>

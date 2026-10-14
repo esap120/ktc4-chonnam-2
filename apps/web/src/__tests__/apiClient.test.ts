@@ -140,6 +140,24 @@ describe('실패 응답', () => {
     })
   })
 
+  it('시간 제한을 넘기면 응답 없음(status 0)이다 — 반영 여부를 모른다(§3.4)', async () => {
+    const hang = ((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) =>
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('timeout', 'TimeoutError'))),
+      )) as typeof fetch
+    const res = await createApi({ timeoutMs: 5, fetch: hang }).getView('case_a')
+    expect(res).toMatchObject({ ok: false, status: 0, error: { code: NETWORK_ERROR } })
+  })
+
+  it('업로드에는 시간 제한을 두지 않고 JSON 요청에만 둔다', async () => {
+    const seen: Seen[] = []
+    const api = createApi({ fetch: fake(200, VIEW, seen) })
+    await api.uploadSource('case_a', new File(['x'], 'a.mp4'))
+    await api.getView('case_a')
+    expect(seen[0].init?.signal).toBeUndefined()
+    expect(seen[1].init?.signal).toBeInstanceOf(AbortSignal)
+  })
+
   it('envelope이 아닌 JSON 오류(프레임워크 기본 `detail`)도 서버 code로 믿지 않는다(§3.3)', async () => {
     const api = createApi({ fetch: fake(422, { detail: [{ msg: 'field required' }] }) })
     expect(await api.getView('case_a')).toMatchObject({ ok: false, status: 422, error: { code: INVALID_RESPONSE } })
