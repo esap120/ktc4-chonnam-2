@@ -16,7 +16,7 @@ export function StoppedScreen(props: { view: CaseView; onAction: (noticeCode: st
         <h2 className="panel-t">{noticeMessage(stopped.message_key)}</h2>
         <p className="kv-src">
           {actions.length > 0
-            ? '지금까지의 결과는 남겨 두지 않아요. 다시 찾으면 영상 전체를 처음부터 살펴볼게요.'
+            ? '올린 영상은 그대로예요. 다시 찾으면 영상 전체를 처음부터 살펴볼게요.'
             : '「새 신고」로 처음부터 다시 시작할 수 있어요.'}
         </p>
         {actions.length > 0 && (
