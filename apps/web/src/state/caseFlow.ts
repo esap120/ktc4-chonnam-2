@@ -129,7 +129,8 @@ export function createCaseFlow(api: Api, { pollMs = 2000 }: FlowOptions = {}) {
       uploads: files.map((file) => ({ name: file.name, status: 'WAITING', error: null })),
     })
     const created = await api.createCase()
-    if (!created.ok) return set({ busy: false, error: created.error })
+    // 올린 파일이 없으니 「대기 중」으로 남기지 않는다 — 실패는 `error`가 알린다.
+    if (!created.ok) return set({ busy: false, uploads: [], error: created.error })
     const caseId = created.data.case_id
     set({ caseId, view: created.data.case_view })
     for (let i = 0; i < files.length; i++) await upload(caseId, i, files[i])

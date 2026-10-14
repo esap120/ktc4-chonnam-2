@@ -100,7 +100,7 @@ describe('분석 시작', () => {
     m.createCase.mockResolvedValue(bad(503, 'http.dependency_unavailable'))
     await flow.start([file('a.mp4')], '')
     expect(m.uploadSource).not.toHaveBeenCalled()
-    expect(flow.getState()).toMatchObject({ caseId: null, busy: false, error: { code: 'http.dependency_unavailable' } })
+    expect(flow.getState()).toMatchObject({ caseId: null, busy: false, uploads: [], error: { code: 'http.dependency_unavailable' } })
   })
 
   it.each([
