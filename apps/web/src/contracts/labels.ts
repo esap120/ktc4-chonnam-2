@@ -110,6 +110,8 @@ const NOTICE_MESSAGES: Record<string, string> = {
   'notice.search_no_candidates': '조건에 맞는 장면을 찾지 못했습니다.',
   // #197 — 탐색 Run 실패. 「후보 없음」과 다른 시스템 실패다.
   'notice.candidate_search_failed': '장면을 찾는 중에 문제가 생겼어요.',
+  // #342 — 사용자가 분석 진행을 중단했다. 실패가 아니라 사용자 행동의 결과다.
+  'notice.analysis_stopped': '분석을 중단했어요.',
   'notice.visual_event_unconfirmed': '어떤 상황인지 아직 확인되지 않았습니다.',
   // #168 [A] — 가장 유력한 후보에서 위반이 관찰되지 않은 음성 결과.
   'notice.visual_event_not_observed': '이 장면에서는 신고할 위반을 확인하지 못했어요.',

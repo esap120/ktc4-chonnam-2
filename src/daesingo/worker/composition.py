@@ -24,6 +24,7 @@ from daesingo.common.jobs.reflection import ReflectionInput, ResultReflector, re
 from daesingo.common.jobs.redelivery import observe_reflection, redeliver_once
 from daesingo.common.logging import bind_context, log_event_best_effort, safe_correlation
 from daesingo.worker.registry import KindRegistry
+from daesingo.common.usage.sink import DurableUsageSink
 
 _CANCEL_TERMINAL_LATENCY = text("""SELECT
 TIMESTAMPDIFF(MICROSECOND, cancel_requested_at, NOW(6)) / 1000.0
@@ -150,6 +151,10 @@ def compose_worker(
         logger=startup.logger, sleep=sleep, idle_wait=idle_wait or stop.wait, clock=clock,
         reflect=reflect if reflector is not None else None,
         heartbeat=heartbeat,
+        usage_sink_factory=lambda context: DurableUsageSink(
+            execution_ref=context.execution_id, case_id=context.case_id,
+            transaction=lambda callback: run_worker_transaction(
+                engine, callback, sleep=sleep, logger=startup.logger)),
         sweeper=SweepService(
             sweep=partial(sweep_once, engine, settings, sleep=sleep, logger=startup.logger),
             settings=settings, stop=stop, logger=startup.logger, hooks=sweep_hooks,
