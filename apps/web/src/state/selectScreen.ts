@@ -92,6 +92,11 @@ export function selectScreen(view: CaseView): Screen {
         ? { ...base, kind: 'NO_RESULT', reason: 'stage=CANDIDATE_REVIEW · candidates 0건' }
         : { ...base, kind: 'PROGRESS', reason: `stage=CANDIDATE_REVIEW · 후보 ${view.candidates.length}건 · 초안 준비 중` }
     case 'EVIDENCE_REVIEW':
+      // 응답 뒤 신고자료를 다시 준비하는 동안(running_jobs)은 결과가 아니라 진행이다 — 아직 끝나지 않은 것을
+      // 「완성하지 못했어요」로 보이지 않는다. 응답 대기 중이면 job이 남아 있어도(다시 판독 등) 응답을 받아야 하므로 결과 화면이다.
+      if (jobs.length > 0 && !view.notices.some((n) => n.code === 'case.situation_response_pending')) {
+        return { ...base, kind: 'PROGRESS', reason: `stage=EVIDENCE_REVIEW · running_jobs ${jobs.length}건 · 신고자료 준비 중` }
+      }
       return { ...base, kind: 'EVIDENCE', reason: 'stage=EVIDENCE_REVIEW · evidence 있음' }
     case 'READY':
       // READY는 PACKAGE_READY 파생 gate 성립 시점이다(계약 B절 §7). package가
