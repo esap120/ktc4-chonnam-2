@@ -1,11 +1,16 @@
 import { useState, type JSX } from 'react'
 import { LOAD_ISSUES, SNAPSHOTS } from './contracts/fixtures'
 import { CaseScreen } from './screens/CaseScreen'
+import { ApiFlow } from './screens/ApiFlow'
 import { DemoFlow } from './screens/DemoFlow'
 
 // 기본은 시연 흐름(홈 → 진행 → 결과). `?dev`는 스냅샷을 하나씩 넘겨 보는 증빙 화면이다.
+// `?api`는 실제 HTTP API로 도는 흐름이고, `?api&case=<id>`는 만들어 둔 case를 이어서 본다.
 export function App(): JSX.Element {
-  return new URLSearchParams(location.search).has('dev') ? <SnapshotViewer /> : <DemoFlow />
+  const params = new URLSearchParams(location.search)
+  if (params.has('dev')) return <SnapshotViewer />
+  if (params.has('api')) return <ApiFlow caseId={params.get('case')} />
+  return <DemoFlow />
 }
 
 // 1차 범위에 라우터·서버·로컬 상태 머신이 없다. 화면 전환은 「어느 스냅샷을

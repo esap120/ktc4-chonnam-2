@@ -47,7 +47,8 @@ export function DetailsCheck(props: { view: CaseView; onBack: () => void }): JSX
 // 두 이미지는 계약상 FrameRef(evidence.preview_ref · plate_preview_ref)로만 와서 아직 그릴 수 없다 —
 // ref로 이미지를 가져오는 경로가 생기면(#47) 자리에 넣는다.
 // 수정은 읽은 값을 채운 채 열어 틀린 글자만 고치게 한다.
-export function PlateCheck(props: { view: CaseView; onBack: () => void; onEdit: (plate: string) => void }): JSX.Element {
+// `onEdit`이 없으면 수정 버튼을 두지 않는다 — 직접 입력을 case로 보내는 command가 아직 없다(#212 · #217).
+export function PlateCheck(props: { view: CaseView; onBack: () => void; onEdit?: (plate: string) => void }): JSX.Element {
   const [editing, setEditing] = useState<string | null>(null)
   const evidence = props.view.evidence
   if (!evidence) return <SubPage title="번호판 확인" onBack={props.onBack}>번호판 정보가 없어요.</SubPage>
@@ -79,16 +80,18 @@ export function PlateCheck(props: { view: CaseView; onBack: () => void; onEdit: 
                 sourceLabelKey={plate.source_label_key}
               />
             </div>
-            <button type="button" className="btn sm" onClick={() => setEditing(plate.value ?? '')}>
-              번호 수정
-            </button>
+            {props.onEdit && (
+              <button type="button" className="btn sm" onClick={() => setEditing(plate.value ?? '')}>
+                번호 수정
+              </button>
+            )}
           </div>
         ) : (
           <form
             className="plate-form"
             onSubmit={(e) => {
               e.preventDefault()
-              if (editing.trim()) props.onEdit(editing.trim())
+              if (editing.trim()) props.onEdit?.(editing.trim())
               setEditing(null)
             }}
           >
