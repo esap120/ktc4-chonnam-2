@@ -59,6 +59,7 @@ export function createCaseFlow(api: Api, { pollMs = 2000 }: FlowOptions = {}) {
   }
 
   /** `running_jobs`가 비어 있으면 멈춘다 — 그것이 「case가 더 기다리지 않는다」다(§5.4). */
+  // ponytail: 고정 간격이다 — 오래 걸리는 분석에서 서버 부하가 보이면 간격을 점점 늘린다(backoff).
   function schedule() {
     clearTimeout(timer)
     timer = undefined
@@ -99,6 +100,7 @@ export function createCaseFlow(api: Api, { pollMs = 2000 }: FlowOptions = {}) {
   }
 
   /** 파일 하나. 성공 · 실패를 `uploads`에 남기고 다음 파일로 계속한다(core-user-flow §23). */
+  // ponytail: 실패한 파일을 다시 올리는 동작은 두지 않는다 — 사용자가 다시 고르면 같은 case에 이어 올린다(`addFiles`).
   async function upload(caseId: string, index: number, file: File) {
     const before = state.view?.manifest_summary.file_count ?? 0
     patchUpload(index, 'UPLOADING')
@@ -120,25 +122,28 @@ export function createCaseFlow(api: Api, { pollMs = 2000 }: FlowOptions = {}) {
     patchUpload(index, 'FAILED', res.error.code)
   }
 
-  /** 영상을 하나씩 순서대로 올리고(§5.2) 분석을 시작한다. */
-  async function start(files: File[], description: string) {
-    if (state.busy) return
+  /**
+   * 영상을 하나씩 순서대로 올린다(§5.2). 첫 영상이면 case를 만들고, 이미 있으면 같은 case에 이어 올린다.
+   * 분석은 시작하지 않는다 — `START_ANALYSIS`는 사용자가 누를 때 `send`로 보낸다(상황 설명이 그 payload다).
+   */
+  async function addFiles(files: File[]) {
+    if (state.busy || files.length === 0) return
+    const offset = state.uploads.length
     set({
-      ...INITIAL,
       busy: true,
-      uploads: files.map((file) => ({ name: file.name, status: 'WAITING', error: null })),
+      error: null,
+      uploads: [...state.uploads, ...files.map((file) => ({ name: file.name, status: 'WAITING' as const, error: null }))],
     })
-    const created = await api.createCase()
-    // 올린 파일이 없으니 「대기 중」으로 남기지 않는다 — 실패는 `error`가 알린다.
-    if (!created.ok) return set({ busy: false, uploads: [], error: created.error })
-    const caseId = created.data.case_id
-    set({ caseId, view: created.data.case_view })
-    for (let i = 0; i < files.length; i++) await upload(caseId, i, files[i])
-    if (state.caseId !== caseId) return
-    set({ busy: false })
-    // 올라간 영상이 없으면 보내도 거부될 요청이다 — 화면이 `uploads`로 실패를 보여 준다.
-    if (!state.view || state.view.manifest_summary.ok_file_count < 1) return
-    await send({ kind: 'START_ANALYSIS', payload: { description } })
+    let caseId = state.caseId
+    if (!caseId) {
+      const created = await api.createCase()
+      // 올린 파일이 없으니 「대기 중」으로 남기지 않는다 — 실패는 `error`가 알린다.
+      if (!created.ok) return set({ busy: false, uploads: state.uploads.slice(0, offset), error: created.error })
+      caseId = created.data.case_id
+      set({ caseId, view: created.data.case_view })
+    }
+    for (let i = 0; i < files.length; i++) await upload(caseId, offset + i, files[i])
+    if (state.caseId === caseId) set({ busy: false })
   }
 
   /** command 1건. `expected_case_rev`는 화면이 본 값이다 — 낡았으면 409와 현재 화면이 온다(§5.3). */
@@ -175,7 +180,7 @@ export function createCaseFlow(api: Api, { pollMs = 2000 }: FlowOptions = {}) {
         timer = undefined
       }
     },
-    start,
+    addFiles,
     send,
     resume,
   }
