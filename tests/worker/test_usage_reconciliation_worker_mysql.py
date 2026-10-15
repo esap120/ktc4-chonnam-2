@@ -38,14 +38,24 @@ def test_normal_t1_finalizes_from_committed_produced_without_third_search_call(r
     job(engine, "QUEUED")
     stop, calls = Event(), []
     def handler(context):
-        identity = begin(context.usage_sink)
-        assert engine.pool.checkedout() == 0
-        calls.append(identity)
-        context.usage_sink.finish(identity, **facts())
-        assert rows(engine)[1] == []
-        stop.set()
-        return HandlerResult(produced=(RUN,))
-    worker(engine, cfg, stop, handler).run()
+        try:
+            identity = begin(context.usage_sink)
+            assert engine.pool.checkedout() == 0
+            calls.append(identity)
+            context.usage_sink.finish(identity, **facts())
+            assert rows(engine)[1] == []
+            return HandlerResult(produced=(RUN,))
+        finally:
+            # Worker converts ordinary handler exceptions into terminal facts;
+            # a failed test assertion must still stop this one-job fixture.
+            stop.set()
+    loop = worker(engine, cfg, stop, handler)
+    # This test selects post-T1 finalization. A periodic pass already in flight
+    # may legitimately win recovery and owns its own pooled connection. Keep
+    # startup reconciliation and real DB transactions, but park periodic work
+    # until cleanup. The startup/periodic tests below exercise those paths.
+    loop.sweeper.wait = lambda _: loop.sweeper.stop.wait()
+    loop.run()
     tracker, final = rows(engine)
     assert len(calls) == len(final) == 1
     assert final[0]["run_ref"] == RUN["ref"]

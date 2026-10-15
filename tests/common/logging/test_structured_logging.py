@@ -179,9 +179,10 @@ def test_best_effort_validates_before_sink_and_does_not_hide_programming_errors(
 
 @pytest.mark.parametrize("sink", ["filter", "handler"])
 @pytest.mark.parametrize("error", [KeyboardInterrupt(), SystemExit(7)])
-def test_best_effort_does_not_swallow_base_exceptions(sink, error):
+@pytest.mark.parametrize("service", ["api", "worker"])
+def test_best_effort_does_not_swallow_base_exceptions(sink, error, service):
     from daesingo.common import logging as module
-    logger = configure_logging("worker", stream=io.StringIO())
+    logger = configure_logging(service, stream=io.StringIO())
     seen, remove = install_logging_fault(logger, sink, lambda name: True, error)
     try:
         with pytest.raises(type(error)) as caught:

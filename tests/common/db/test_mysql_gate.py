@@ -17,7 +17,12 @@ ROOT = Path(__file__).resolve().parents[3]
 
 # Independent role/scenario acceptance inventory, deliberately not imported
 # from the implementation being tested. Test function names are irrelevant.
+API_HEALTH_PARAMETERS = tuple(("api_health", scenario, parameter) for scenario, parameter in (
+    ("ready", "normal"), ("ready", "pool_exhausted"), ("ready", "connection_lost"),
+    ("ready", "server_stopped"), ("storage", "readonly"), ("process", "single_worker")))
+
 REQUIRED_CHECKS = (
+    *((role, scenario) for role, scenario, parameter in API_HEALTH_PARAMETERS),
     *REDELIVERY_CHECKS,
     *USAGE_CHECKS,
     *(("sweep", scenario) for scenario in ("detect_latency", "detect_boundary", "detect_fault")),
@@ -94,6 +99,7 @@ REQUIRED_CHECKS = (
 )
 
 REQUIRED_PARAMETERS = (
+    *API_HEALTH_PARAMETERS,
     *REDELIVERY_PARAMETERS,
     *USAGE_PARAMETERS,
     *(("sweep", "detect_latency", f"{lease}_{reason}") for lease in (60, 7)
@@ -420,3 +426,21 @@ def test_junit_cross_check_rejects_missing_or_unsuccessful_execution(tmp_path, t
     path.write_text("<testsuite>" + case + "</testsuite>", encoding="utf-8")
     with pytest.raises(ValueError):
         checker().validate_junit(path, report)
+
+
+@pytest.mark.parametrize("identity", API_HEALTH_PARAMETERS)
+@pytest.mark.parametrize("mutation", ["missing_node", "missing_parameter"])
+def test_api_health_partial_evidence_is_rejected(identity, mutation):
+    report = good_report()
+    role, scenario, parameter = identity
+    expected = {"role": role, "scenario": scenario, "parameter": parameter}
+    entry, = (n for n in report["collected"] if expected in n.get("checks", []))
+    if mutation == "missing_node":
+        node = entry["nodeid"]
+        report["collected"].remove(entry)
+        report["selected"].remove(node)
+        report["reports"] = [r for r in report["reports"] if r["nodeid"] != node]
+    else:
+        entry["checks"].remove(expected)
+    with pytest.raises(ValueError, match="role/scenario"):
+        checker().validate_report(report)

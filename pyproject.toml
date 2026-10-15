@@ -15,6 +15,8 @@ dependencies = [
   "sqlalchemy>=2.0,<3.0",
   "pymysql[rsa]>=1.1,<2.0",  # MySQL 8.4 기본 인증(caching_sha2_password)에 rsa(cryptography) 필요
   "alembic>=1.13,<2.0",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +25,7 @@ test = [
   # Target-crop tests use arrays/resize with a fake OCR engine, not PaddleOCR.
   "numpy>=1.26,<3.0",
   "opencv-contrib-python==4.10.0.84",
+  "httpx>=0.27,<1",
 ]
 eval-gemini = [
   "anyio>=4.0,<5.0",

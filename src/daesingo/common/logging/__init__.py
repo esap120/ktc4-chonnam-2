@@ -9,12 +9,14 @@ import hashlib
 import json
 import logging
 import math
+import os
 import re
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from functools import partial
+from threading import RLock
 from typing import TextIO
 from uuid import uuid4
 
@@ -116,6 +118,74 @@ class _SafeStreamHandler(logging.StreamHandler):
             pass
 
 
+class _UnbufferedOutput:
+    """API stdout writes never hold Python's buffered I/O finalization lock."""
+    def __init__(self, stream):
+        self.fd = stream.fileno()
+        self.encoding = stream.encoding or "utf-8"
+        self.errors = stream.errors or "backslashreplace"
+
+    def write(self, value):
+        pending = value.encode(self.encoding, self.errors)
+        while pending:
+            written = os.write(self.fd, pending)
+            if written <= 0:
+                raise OSError("output unavailable")
+            pending = pending[written:]
+
+    def flush(self):
+        pass
+
+
+class _ApiStreamHandler(_SafeStreamHandler):
+    """API-owned I/O serialization is independent of logging.shutdown locks.
+
+    A stalled writer must never own Handler.lock, nor may shutdown flush the
+    sink again. Each healthy emit flushes itself; the caller owns the stream.
+    ApiEvents owns bounded draining. No logging registry/foreign handler edits.
+    """
+    def __init__(self, stream):
+        super().__init__(stream)
+        self._write_lock = RLock()
+
+    def handle(self, record):
+        accepted = self.filter(record)
+        if isinstance(accepted, logging.LogRecord):
+            record = accepted
+        if accepted:
+            self.emit(record)
+        return accepted
+
+    def emit(self, record):
+        try:
+            message = self.format(record) + self.terminator
+            with self._write_lock:
+                self.stream.write(message)
+                self.stream.flush()
+        except RecursionError:
+            raise
+        except Exception:
+            self.handleError(record)
+
+    def flush(self):
+        # logging.shutdown calls this while owning Handler.lock. Sink I/O is
+        # performed only by emit, under the separate API-owned write lock.
+        pass
+
+    def handleError(self, record):
+        # The fixed fallback must not hold buffered stderr's finalization lock
+        # either. In-memory caller-owned capture streams retain their behavior.
+        output = sys.stderr
+        try:
+            output = _UnbufferedOutput(output)
+        except (AttributeError, OSError, ValueError):
+            pass
+        try:
+            output.write('{"level":"ERROR","event":"log.write.failed"}\n')
+        except (OSError, ValueError):
+            pass
+
+
 def configure_logging(service: str, *, level: str = "INFO", stream: TextIO | None = None) -> logging.Logger:
     """Dedicated logger; no root/third-party handlers are modified."""
     if service not in ("api", "worker") or level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
@@ -124,7 +194,15 @@ def configure_logging(service: str, *, level: str = "INFO", stream: TextIO | Non
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
         handler.close()
-    handler = _SafeStreamHandler(stream if stream is not None else sys.stdout)
+    output = stream if stream is not None else sys.stdout
+    if service == "api" and stream is None:
+        try:
+            output = _UnbufferedOutput(output)
+        except (AttributeError, OSError, ValueError):
+            # In-memory capture streams have no file descriptor.
+            pass
+    handler_type = _ApiStreamHandler if service == "api" else _SafeStreamHandler
+    handler = handler_type(output)
     handler.setFormatter(_JsonFormatter(service))
     logger.addHandler(handler)
     logger.setLevel(level)

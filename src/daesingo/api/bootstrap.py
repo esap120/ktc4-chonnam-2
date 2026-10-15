@@ -1,4 +1,4 @@
-"""API configuration composition bootstrap; HTTP app/routes are RT-08."""
+"""API configuration bootstrap; app.py owns HTTP resource composition."""
 
 import os
 from collections.abc import Sequence
@@ -12,8 +12,8 @@ def bootstrap(*, revision: str, stream: TextIO | None = None,
               module_factories: Sequence[ModuleFactory] = ()) -> Startup:
     """Validate all registered module configurations before accepting work.
 
-    No API module currently consumes file-based configuration. RT-08 registers
-    factories for dependencies as it assembles the HTTP app.
+    RT-08(a) consumes RuntimeConfig for engines and health. Later composition
+    registers configuration factories for any domain dependencies it uses.
     """
     path = os.environ.get("DAESINGO_ENV_FILE", str(Path.cwd() / ".env"))
     return bootstrap_service("api", env_file=path, revision=revision,

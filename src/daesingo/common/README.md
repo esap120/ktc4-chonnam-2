@@ -57,7 +57,9 @@ RT-07(c)는 `runtime_0004`에서 tracker에 예정 Run 관계·명시적 no-Run 
 
 - 기본 Worker entrypoint의 실제 Case reader/timeline 조립(RT-10). RT-06(b)의 `jobs/redelivery.py` startup/periodic scan과 Worker-owned Case adapter·실제 process-kill MySQL 테스트는 구현했다. 대상은 SUCCEEDED/FAILED이고 CANCELLED·STALE은 제외한다. 후보 scan/replay receipt read는 비잠금이며 Case→Runtime 순서의 기존 T2를 재사용한다. 후보 오류는 격리하고 COMMIT 불명은 durable receipt로 복구한다.
 - 실제 Search adapter 연결(SRCH-1)
-- API / Worker 실제 app·handler 조립(config bootstrap만 있음)
-- Runtime health endpoint
+- Case/command HTTP route(RT-08(b/c/d)) · 기본 Worker 실제 handler 조립(RT-10)
+- media HTTP(RT-11). API app/envelope와 Runtime health는 RT-08(a)의 API composition이 RT-01 config와 RT-02 engine을 소비하여 구현한다.
 
 따라서 README의 Runtime 항목을 구현 완료로 해석하지 않는다.
+
+API 소유 structured handler는 emission I/O lock을 stdlib handler cleanup lock과 분리하며, 정상 emission에서 flush하고 종료 cleanup에서 sink를 재호출하지 않는다. 실제 stdout 및 고정 stderr fallback은 unbuffered fd write를 사용한다. 이는 RT-08(a)의 bounded telemetry 종료 경계이며 Worker strict handler·allowlist/formatter·root/제3자 handler는 변경하지 않는다.

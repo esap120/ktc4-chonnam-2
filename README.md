@@ -6,7 +6,7 @@
 
 목표는 신고할 마음이 없던 사람을 유도하는 게 아니라, **이미 생긴 신고 의향이 준비 과정의 마찰 때문에 사라지지 않게 하는 것**이다.
 
-> **현재 상태 (2026-09-18 갱신):** 설계 단계를 지나 모듈별 구현이 진행 중이다. `apps/prototype`은 여전히 백엔드·영상 파이프라인·AI 호출이 없는 흐름 프로토타입(목데이터)이지만, `apps/web`은 실제 구현이 시작됐다(`CaseView` 소비 화면·컴포넌트). `src/daesingo/`는 `case`·`search`·`readout`·`recording`·`evidence`·`common` 6개가 실제 코드와 테스트를 갖고 있고(`tests/` 기준 445개 통과), `api`·`worker`는 아직 README만 있는 골격이다. `eval/`도 채점 도구(정규화·scorer·runner)가 실제로 동작한다. 모듈 간 실제 AI 호출·엔드투엔드 연결은 아직 없다.
+> **현재 Runtime 상태 (2026-10-14 갱신):** `api`는 RT-08(a)의 app factory·HTTP envelope·health·단일 process 실행을 구현했다. `worker`는 claim/dispatch·T1/T2·heartbeat/cancel·STALE/retry·T2 재전달을 구현했고, 실제 handler 조립은 후속 범위다. Case/command/media HTTP와 실제 Search adapter 연결도 후속 작업이다. 구현·검증·남은 위험의 현재 기록은 [Runtime Implementation Log](docs/runtime/runtime-implementation-log.md)를 확인한다.
 
 ## 무엇을 하고, 무엇을 하지 않는가
 
@@ -66,7 +66,7 @@ Python · FastAPI · **Modular Monolith**(API 1 + Worker 1) · MySQL 8.4 · DB Q
 | --- | --- |
 | `apps/prototype/` | 흐름 프로토타입 (React 19 + Vite 6, 목데이터). **제품 코드 아님** |
 | `apps/web/` | 실제 웹 앱. `CaseView` 소비 화면·컴포넌트 구현 진행 중 (Owner: 신유민) — 자세한 현황은 `apps/web/README.md` |
-| `src/daesingo/` | Python 모듈형 모놀리스 — `case`·`search`·`readout`·`recording`·`evidence`·`common`은 실제 구현+테스트가 있다. `api`는 RT-01 설정·로그 bootstrap, `worker`는 claim/dispatch·T1/T2·heartbeat/cancel·STALE/retry·T2 재전달과 주입형 Case adapter를 구현했다(HTTP route·기본 entrypoint 실제 handler/reader 조립은 미구현) |
+| `src/daesingo/` | Python 모듈형 모놀리스 — `case`·`search`·`readout`·`recording`·`evidence`·`common`은 실제 구현+테스트가 있다. `api`는 RT-01 설정·로그 bootstrap과 RT-08(a) app factory·envelope·health·단일 process 실행, `worker`는 claim/dispatch·T1/T2·heartbeat/cancel·STALE/retry·T2 재전달과 주입형 Case adapter를 구현했다(Case/command HTTP route·기본 Worker entrypoint 실제 handler/reader 조립은 후속 범위) |
 | `eval/` | 오프라인 채점 도구 — `datasets` / `manifests` / `runners` / `scorers` / `predictions` / `results` / `locked_test`, 실제로 동작한다 |
 | `data/` | 테스트 · 데모용 고정 데이터 — `mock/`(모듈별 계약 fixture · 시나리오), `real/`(실제 영상 E2E 산출 JSON) |
 | `examples/` | `recording` · `search` 공개 함수 사용 예제 스크립트 |
@@ -136,6 +136,8 @@ MySQL integration은 `DAESINGO_MYSQL_URL`로 지정한 폐기 가능한 MySQL 8.
 Migration은 `uv run python -m daesingo.common.db.migrate --database-url-stdin`으로 실행한다. 호출자가 URL 한 개를 비대화형 stdin에 명시적으로 전달하며 credential을 argv·로그에 넣지 않는다. runner는 URL 환경변수·`.env`·RuntimeConfig를 읽지 않는다. 소스 checkout의 env를 frozen registry `case → runtime` 순서로 `head`까지 적용하며, 새 env는 registry와 필수 테스트에 등록해야 한다. 기존 MySQL gate는 RT-02(a)·Case 실행 목록과 새 migration 필수 check를 함께 검사한다.
 
 Migration은 단일 실행 전제다. process 내부 중복 호출만 거부하며 cross-process 동시 실행 안전성을 보장하지 않는다. 첫 실패에서 중단하고 retry·stamp·downgrade·resume/startup migration은 제공하지 않는다. MySQL DDL의 부분 적용은 전체 rollback되지 않으므로 실패 후 상태 검사·복구가 필요하다. 현재 Runtime head는 `runtime_0004`이며 `job_execution`·`usage_inflight`·`usage_record`와 tracker의 관계 의도·복구/늦은 관측 표식을 갖는다. RT-07(a)의 Final append는 caller transaction에 참여하고, RT-07(b)는 execution별 UsageSink begin/finish와 원자적 explicit finalize를 연결한다. RT-07(c)는 terminal produced 기반 reconciliation·명시적 DIRECT_NO_RUN·P-7 늦은 관측·Final usage_refs projection을 연결한다. 실제 Search adapter와 배포 실행 시점·URL 출처·배포 artifact 배치는 후속 범위다. 실제 구현·검증 상태는 [Runtime Implementation Log](docs/runtime/runtime-implementation-log.md)를 확인한다.
+
+API skeleton은 `uv run --no-sync python -m daesingo.api --revision <revision> --host 127.0.0.1 --port 8000`으로 실행한다. RT-01 파일 설정을 소비하며 현재 HTTP surface는 `/health/live`·`/health/ready`다. 일반 오류 envelope와 기본 framework 오류 차단, 전용 ready DB 연결, metadata-only mount 검사를 제공한다. Case/command/media route는 후속 범위다. MySQL gate는 API health의 정상·pool 고갈·연결 단절·실제 서버 중지·RO mount·실제 API process 증거도 요구한다. 실제 서버 중지 검사는 suite DB와 분리된 Docker 테스트 서버(Linux CI) 또는 WSL 서버(Windows)를 사용하며, RO mount는 private namespace에서 만들고 정리한다.
 
 ### 프로토타입에 대해
 

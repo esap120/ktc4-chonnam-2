@@ -17,6 +17,10 @@ from redelivery_acceptance import REDELIVERY_CHECKS, REDELIVERY_PARAMETERS
 pytestmark = pytest.mark.mysql
 
 # Independent acceptance inventory, not imported from the gate under test.
+API_HEALTH_PARAMETERS = tuple(("api_health", scenario, parameter) for scenario, parameter in (
+    ("ready", "normal"), ("ready", "pool_exhausted"), ("ready", "connection_lost"),
+    ("ready", "server_stopped"), ("storage", "readonly"), ("process", "single_worker")))
+
 MIGRATION_CHECKS = (
     "case_external_transaction", "case_url_precedence", "case_offline_precedence",
     "empty_schema", "idempotency", "explicit_target", "first_runtime_revision",
@@ -192,7 +196,7 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
     # Exclude this test to avoid recursion. Use a separate disposable base schema
     # so legacy Case initialization cannot alter the parent suite's database.
     result = subprocess.run(
-        [sys.executable, "-B", "-X", "utf8", "-m", "pytest", "tests/common/db/integration", "tests/common/jobs", "tests/common/usage",
+        [sys.executable, "-B", "-X", "utf8", "-m", "pytest", "tests/api", "tests/common/db/integration", "tests/common/jobs", "tests/common/usage",
          "tests/worker/test_worker_mysql.py", "tests/worker/test_reflection_mysql.py",
          "tests/worker/test_heartbeat_mysql.py",
          "tests/worker/test_cancel_checkpoint_mysql.py",
@@ -218,7 +222,8 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
     for role, scenario in [*( ("migration", scenario) for scenario in MIGRATION_CHECKS),
                            ("jobs", "schema"), ("jobs", "enqueue_rollback"),
                            ("jobs", "enqueue_duplicate"), ("jobs", "read_contract"), ("jobs", "read_states"),
-                           *LIFECYCLE_CHECKS, *WORKER_CHECKS, *USAGE_CHECKS]:
+                           *LIFECYCLE_CHECKS, *WORKER_CHECKS, *USAGE_CHECKS,
+                           *((role, scenario) for role, scenario, parameter in API_HEALTH_PARAMETERS)]:
         broken = deepcopy(report)
         removed = {item["nodeid"] for item in broken["collected"]
                    if any(c["role"] == role and c["scenario"] == scenario for c in item.get("checks", []))}
@@ -232,7 +237,7 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
     # Keep every other parameter in place. A family-level set check would
     # incorrectly accept the "all" mutation, including deletion from JUnit.
     mutations = []
-    for role, scenario, parameter in (*JOB_PARAMETERS, *WORKER_PARAMETERS, *USAGE_PARAMETERS):
+    for role, scenario, parameter in (*JOB_PARAMETERS, *WORKER_PARAMETERS, *USAGE_PARAMETERS, *API_HEALTH_PARAMETERS):
         check = {"role": role, "scenario": scenario, "parameter": parameter}
         entry, = (n for n in report["collected"] if check in n.get("checks", []))
         node = entry["nodeid"]
@@ -261,5 +266,5 @@ def test_actual_report_rejects_each_missing_migration_check(mysql_schema_url, tm
                 gate.validate_junit(mutation_junit, broken)
             mutations.append({"role": role, "scenario": scenario, "parameter": parameter,
                               "layer": layer, "rejected": True})
-    assert len(mutations) == (len(JOB_PARAMETERS) + len(WORKER_PARAMETERS) + len(USAGE_PARAMETERS)) * 7
+    assert len(mutations) == (len(JOB_PARAMETERS) + len(WORKER_PARAMETERS) + len(USAGE_PARAMETERS) + len(API_HEALTH_PARAMETERS)) * 7
     (tmp_path / "parameter-mutations.json").write_text(json.dumps(mutations, indent=2), encoding="utf-8")
