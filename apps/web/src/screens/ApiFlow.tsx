@@ -33,7 +33,6 @@ export function ApiFlow(props: { api?: Api; caseId?: string | null }): JSX.Eleme
   const [api] = useState(() => props.api ?? createApi())
   const { state, addFiles, send, resume } = useCaseFlow(api)
   const { view } = state
-  const [files, setFiles] = useState<File[]>([])
   const [situation, setSituation] = useState('')
   const [subs, setSubs] = useState<Sub[]>([])
   const [startedAt, setStartedAt] = useState(() => Date.now())
@@ -95,13 +94,10 @@ export function ApiFlow(props: { api?: Api; caseId?: string | null }): JSX.Eleme
     return (
       <UploadScreen
         state={uploadState}
-        files={files}
+        files={uploads}
         skipped={uploads.filter((u) => u.status === 'FAILED').map((u) => u.name)}
         situation={situation}
-        onFiles={(picked) => {
-          setFiles((prev) => [...prev, ...picked])
-          void addFiles(picked)
-        }}
+        onFiles={(picked) => void addFiles(picked)} // 올리는 중에 고른 파일은 store가 받지 않는다
         onSituation={setSituation}
         onSearch={() => {
           setStartedAt(Date.now())
@@ -118,7 +114,11 @@ export function ApiFlow(props: { api?: Api; caseId?: string | null }): JSX.Eleme
         return (
           <FlowScreen
             view={view}
-            fileName={files.length ? files.map((f) => f.name).join(', ') : `영상 ${view.manifest_summary.ok_file_count}개`}
+            fileName={
+              state.uploads.length
+                ? state.uploads.filter((u) => u.status === 'DONE').map((u) => u.name).join(', ')
+                : `영상 ${view.manifest_summary.ok_file_count}개`
+            }
             situation={situation || view.description || ''}
             startedAt={startedAt}
             onStop={view.stage === 'SEARCHING' ? () => run({ kind: 'STOP_ANALYSIS', payload: {} }) : undefined}

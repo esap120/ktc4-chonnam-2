@@ -77,6 +77,23 @@ it('영상을 고르면 올라가고, [영상에서 찾아보기]에서 상황 �
   expect(location.search).toContain('case=c1') // 새로고침해도 이어진다
 })
 
+it('올리는 중에 고른 파일은 받지 않고 목록에도 올리지 않는다', async () => {
+  const { m, api } = setup()
+  let finish!: (r: unknown) => void
+  m.uploadSource.mockImplementationOnce(() => new Promise((r) => (finish = r)))
+  const { container, findByText, queryByText } = render(<ApiFlow api={api} />)
+  const input = container.querySelector('input[type=file]')!
+
+  fireEvent.change(input, { target: { files: [new File(['x'], 'a.mp4')] } })
+  await findByText('올리는 중')
+  fireEvent.change(input, { target: { files: [new File(['x'], 'b.mp4')] } })
+  finish(ok({ case_id: 'c1', source_asset_ref: 'sa', case_view: view({ manifest_summary: { ...BASE.manifest_summary, file_count: 1, ok_file_count: 1 } }) }, 201))
+  await findByText('올리기 완료')
+
+  expect(m.uploadSource).toHaveBeenCalledOnce()
+  expect(queryByText(/b\.mp4/)).toBeNull()
+})
+
 it('[분석 중단]은 STOP_ANALYSIS를 보내고, 중단 화면에서 [다시 찾기]는 RETRY_SEARCH 알림 동작이다', async () => {
   const { m, api } = setup({ get: SEARCHING })
   m.sendCommand.mockResolvedValue(ok(STOPPED))

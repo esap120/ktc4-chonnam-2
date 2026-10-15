@@ -15,7 +15,8 @@ const DROP_TEXT: Record<UploadState, string> = {
 // 네 프레임은 같은 틀이고 끌어다 놓는 영역만 상태에 따라 바뀐다.
 export function UploadScreen(props: {
   state: UploadState
-  files: File[]
+  /** 이름만 쓴다 — 시연은 고른 `File`을, `?api`는 업로드 결과 목록을 그대로 넘긴다 */
+  files: { name: string }[]
   /** 열 수 없어 건너뛴 파일. 일부 실패를 전체 실패로 만들지 않는다(core-user-flow §23) */
   skipped: string[]
   situation: string
