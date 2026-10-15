@@ -88,13 +88,16 @@ export function ApiFlow(props: { api?: Api; caseId?: string | null }): JSX.Eleme
   // 올리기 — 영상은 고르는 순간 올라가고(case는 첫 영상에서 만든다), 분석은 [영상에서 찾아보기]에서 시작한다.
   function upload(): JSX.Element {
     const uploads = state.uploads
+    // 이어받은 case에는 이번 화면에서 올린 기록이 없다 — 서버에 이미 있는 영상은 개수로 보인다(이름은 오지 않는다).
+    // `ok_file_count`만 본다. `failed_file_count`는 화면 판단에 쓰지 않는다(http-api §5.2).
+    const already = uploads.length === 0 ? (view?.manifest_summary.ok_file_count ?? 0) : 0
     const uploading = uploads.some((u) => u.status === 'WAITING' || u.status === 'UPLOADING')
-    const anyDone = uploads.some((u) => u.status === 'DONE')
+    const anyDone = already > 0 || uploads.some((u) => u.status === 'DONE')
     const uploadState: UploadState = uploading ? 'uploading' : anyDone ? 'done' : uploads.length > 0 ? 'fail' : 'idle'
     return (
       <UploadScreen
         state={uploadState}
-        files={uploads}
+        files={already > 0 ? [{ name: `이미 올린 영상 ${already}개` }] : uploads}
         skipped={uploads.filter((u) => u.status === 'FAILED').map((u) => u.name)}
         situation={situation}
         onFiles={(picked) => void addFiles(picked)} // 올리는 중에 고른 파일은 store가 받지 않는다

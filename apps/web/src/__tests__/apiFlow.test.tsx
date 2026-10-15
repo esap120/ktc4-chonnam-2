@@ -94,6 +94,19 @@ it('올리는 중에 고른 파일은 받지 않고 목록에도 올리지 않�
   expect(queryByText(/b\.mp4/)).toBeNull()
 })
 
+it('시작 전에 이어받은 case는 서버에 있는 영상을 개수로 보이고 바로 시작할 수 있다 — 다시 올리지 않는다', async () => {
+  const intake = view({ case_rev: 2, manifest_summary: { ...BASE.manifest_summary, file_count: 1, ok_file_count: 1 } })
+  const { m, api } = setup({ get: intake })
+  m.sendCommand.mockResolvedValue(ok(SEARCHING, 202))
+  const { findByText, getByText } = render(<ApiFlow api={api} caseId="c1" />)
+  await findByText('이미 올린 영상 1개')
+  expect(getByText('올리기 완료')).toBeTruthy()
+  fireEvent.click(getByText('영상에서 찾아보기'))
+  await findByText('분석 중단')
+  expect(m.uploadSource).not.toHaveBeenCalled()
+  expect(m.sendCommand).toHaveBeenCalledWith('c1', 2, { kind: 'START_ANALYSIS', payload: { description: '' } })
+})
+
 it('[분석 중단]은 STOP_ANALYSIS를 보내고, 중단 화면에서 [다시 찾기]는 RETRY_SEARCH 알림 동작이다', async () => {
   const { m, api } = setup({ get: SEARCHING })
   m.sendCommand.mockResolvedValue(ok(STOPPED))
