@@ -138,6 +138,22 @@ export function noticeMessage(key: string): string {
   return NOTICE_MESSAGES[key] ?? NOTICE_FALLBACK
 }
 
+// 요청이 실패했을 때의 알림. `error.code`가 키다 — `http.*`는 HTTP 층, `case.command.*`는 case,
+// `web.*`는 client가 만든 값이다(contract-http-api §3.3 · §7-5). 원인을 단정하지 않는다.
+const ERROR_MESSAGES: Record<string, string> = {
+  'web.network_error': '서버에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+  'web.invalid_response': '서버 응답을 읽지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+  'http.dependency_unavailable': '지금은 서버가 바빠요. 잠시 뒤 다시 시도해 주세요.',
+  'http.not_found': '찾을 수 없는 신고예요. 「새 신고」로 다시 시작해 주세요.',
+  'case.command.stale_revision': '화면이 그 사이 바뀌었어요. 바뀐 화면에서 다시 눌러 주세요.',
+  'case.command.not_allowed': '지금은 할 수 없는 동작이에요.',
+}
+export const ERROR_FALLBACK = '요청을 처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.'
+
+export function errorMessage(code: string): string {
+  return ERROR_MESSAGES[code] ?? ERROR_FALLBACK
+}
+
 /** 버튼 — 닫힌 7종. 미등록 값은 렌더하지 않으므로 fallback을 두지 않는다. */
 export const ACTION_LABELS: Record<Action, string> = {
   EDIT_EVENT_TIME: '시각 직접 입력',

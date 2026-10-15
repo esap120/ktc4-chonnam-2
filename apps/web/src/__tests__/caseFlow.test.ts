@@ -43,24 +43,22 @@ function created(m: ReturnType<typeof setup>['m'], caseView = view()) {
 const uploaded = (count: number, okCount = count) =>
   ok({ case_id: 'c1', source_asset_ref: 'sa', case_view: view({ manifest_summary: manifest(count, okCount) }) }, 201)
 
-describe('분석 시작', () => {
-  it('영상을 하나씩 순서대로 올리고 분석을 시작한다(§5.2 · §6)', async () => {
+describe('영상 올리기', () => {
+  it('영상을 하나씩 순서대로 올리고 분석은 시작하지 않는다(§5.2)', async () => {
     const { m, flow } = setup()
     created(m)
     let finishFirst!: (r: unknown) => void
     m.uploadSource.mockImplementationOnce(() => new Promise((r) => (finishFirst = r))).mockResolvedValueOnce(uploaded(2))
-    const started = view({ case_rev: 2, running_jobs: JOBS, manifest_summary: manifest(2) })
-    m.sendCommand.mockResolvedValue(ok(started, 202))
 
-    const done = flow.start([file('a.mp4'), file('b.mp4')], '흰 SUV')
+    const done = flow.addFiles([file('a.mp4'), file('b.mp4')])
     await vi.waitFor(() => expect(m.uploadSource).toHaveBeenCalledTimes(1))
     expect(m.uploadSource).toHaveBeenLastCalledWith('c1', expect.objectContaining({ name: 'a.mp4' })) // 둘째는 아직
     finishFirst(uploaded(1))
     await done
 
     expect(m.uploadSource.mock.calls.map((c) => c[1].name)).toEqual(['a.mp4', 'b.mp4'])
-    expect(m.sendCommand).toHaveBeenCalledWith('c1', 1, { kind: 'START_ANALYSIS', payload: { description: '흰 SUV' } })
-    expect(flow.getState()).toMatchObject({ caseId: 'c1', view: started, busy: false, error: null })
+    expect(m.sendCommand).not.toHaveBeenCalled()
+    expect(flow.getState()).toMatchObject({ caseId: 'c1', busy: false, error: null })
     expect(flow.getState().uploads.map((u) => u.status)).toEqual(['DONE', 'DONE'])
   })
 
@@ -68,37 +66,49 @@ describe('분석 시작', () => {
     const { m, flow } = setup()
     created(m)
     m.uploadSource.mockResolvedValueOnce(bad(422, 'http.source_rejected')).mockResolvedValueOnce(uploaded(1))
-    m.sendCommand.mockResolvedValue(ok(view({ case_rev: 2 })))
-    await flow.start([file('bad.txt'), file('b.mp4')], '')
+    await flow.addFiles([file('bad.txt'), file('b.mp4')])
     expect(flow.getState().uploads.map((u) => [u.status, u.error])).toEqual([
       ['FAILED', 'http.source_rejected'],
       ['DONE', null],
     ])
-    expect(m.sendCommand).toHaveBeenCalledOnce()
   })
 
-  it('올라간 영상이 하나도 없으면 시작을 보내지 않는다', async () => {
+  it('두 번째로 고른 영상은 같은 case에 이어 올린다', async () => {
     const { m, flow } = setup()
     created(m)
-    m.uploadSource.mockResolvedValue(bad(422, 'http.source_rejected'))
-    await flow.start([file('bad.txt')], '')
-    expect(m.sendCommand).not.toHaveBeenCalled()
-    expect(flow.getState()).toMatchObject({ busy: false, uploads: [{ status: 'FAILED' }] })
+    m.uploadSource.mockResolvedValueOnce(uploaded(1)).mockResolvedValueOnce(uploaded(2))
+    await flow.addFiles([file('a.mp4')])
+    await flow.addFiles([file('b.mp4')])
+    expect(m.createCase).toHaveBeenCalledOnce()
+    expect(m.uploadSource.mock.calls.map((c) => [c[0], c[1].name])).toEqual([['c1', 'a.mp4'], ['c1', 'b.mp4']])
+    expect(flow.getState().uploads.map((u) => [u.name, u.status])).toEqual([['a.mp4', 'DONE'], ['b.mp4', 'DONE']])
   })
 
-  it('시작하는 동안 다시 눌러도 case는 한 번만 만든다', async () => {
+  it('올리는 동안 다시 골라도 case는 한 번만 만든다', async () => {
     const { m, flow } = setup()
     created(m)
     m.uploadSource.mockResolvedValue(uploaded(1))
-    m.sendCommand.mockResolvedValue(ok(view({ case_rev: 2 })))
-    await Promise.all([flow.start([file('a.mp4')], ''), flow.start([file('a.mp4')], '')])
+    await Promise.all([flow.addFiles([file('a.mp4')]), flow.addFiles([file('a.mp4')])])
     expect(m.createCase).toHaveBeenCalledOnce()
+    expect(flow.getState().uploads).toHaveLength(1)
+  })
+
+  it('올린 뒤 분석 시작은 send로 보낸다 — expected_case_rev는 마지막 화면 값이다(§5.3)', async () => {
+    const { m, flow } = setup()
+    created(m)
+    m.uploadSource.mockResolvedValue(uploaded(1))
+    const started = view({ case_rev: 3, running_jobs: JOBS })
+    m.sendCommand.mockResolvedValue(ok(started, 202))
+    await flow.addFiles([file('a.mp4')])
+    await flow.send({ kind: 'START_ANALYSIS', payload: { description: '흰 SUV' } })
+    expect(m.sendCommand).toHaveBeenCalledWith('c1', 1, { kind: 'START_ANALYSIS', payload: { description: '흰 SUV' } })
+    expect(flow.getState().view).toBe(started)
   })
 
   it('case를 만들지 못하면 오류만 남기고 멈춘다', async () => {
     const { m, flow } = setup()
     m.createCase.mockResolvedValue(bad(503, 'http.dependency_unavailable'))
-    await flow.start([file('a.mp4')], '')
+    await flow.addFiles([file('a.mp4')])
     expect(m.uploadSource).not.toHaveBeenCalled()
     expect(flow.getState()).toMatchObject({ caseId: null, busy: false, uploads: [], error: { code: 'http.dependency_unavailable' } })
   })
@@ -111,8 +121,7 @@ describe('분석 시작', () => {
     created(m)
     m.uploadSource.mockResolvedValue(NO_RESPONSE)
     m.getView.mockResolvedValue(ok(view({ manifest_summary: manifest(count) })))
-    m.sendCommand.mockResolvedValue(ok(view({ case_rev: 2 })))
-    await flow.start([file('a.mp4')], '')
+    await flow.addFiles([file('a.mp4')])
     expect(m.uploadSource).toHaveBeenCalledOnce()
     expect(flow.getState().uploads).toMatchObject([{ status, error }])
   })
@@ -121,7 +130,7 @@ describe('분석 시작', () => {
     const { m, flow } = setup()
     created(m)
     m.uploadSource.mockResolvedValue(bad(503, 'http.dependency_unavailable'))
-    await flow.start([file('a.mp4')], '')
+    await flow.addFiles([file('a.mp4')])
     expect(m.getView).not.toHaveBeenCalled()
     expect(flow.getState().uploads).toMatchObject([{ status: 'FAILED', error: 'http.dependency_unavailable' }])
   })

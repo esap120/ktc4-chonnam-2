@@ -12,5 +12,5 @@ export function useCaseFlow(api: Api, options?: FlowOptions) {
   const state = useSyncExternalStore(flow.subscribe, flow.getState)
   // connect는 끊는 함수를 돌려준다 — StrictMode가 붙였다 떼었다 다시 붙여도 갱신이 이어진다.
   useEffect(() => flow.connect(), [flow])
-  return { state, start: flow.start, send: flow.send, resume: flow.resume }
+  return { state, addFiles: flow.addFiles, send: flow.send, resume: flow.resume }
 }

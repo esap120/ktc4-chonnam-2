@@ -5,14 +5,16 @@ import { ProgressPanel } from '../components/ProgressPanel'
 
 // Figma 02_Main_Flow · 02_Retry_Flow · 02_Fail_Flow. 세 프레임은 같은 틀이고
 // 단계 상태(progress)와 알림(notices)만 다르다 — 둘 다 CaseView에서 온다.
-// 진행 화면에는 버튼도 알림 문구도 없다. 실패는 그 단계를 빨갛게만 칠하고,
-// 무슨 일이 있었는지는 결과 화면에서 알린다.
+// 진행 화면에는 알림 문구가 없다. 실패는 그 단계를 빨갛게만 칠하고,
+// 무슨 일이 있었는지는 결과 화면에서 알린다. 버튼은 [분석 중단] 하나뿐이고, 중단할 수 있을 때만
+// 부모가 `onStop`을 준다(STOP_ANALYSIS, #342).
 export function FlowScreen(props: {
   view: CaseView
   fileName: string
   situation: string
   startedAt: number
   title?: string
+  onStop?: () => void
 }): JSX.Element {
   const screen = selectScreen(props.view)
   // 장면 찾기가 끝나기 전에는 「찾는 중」, 끝나면 「준비 중」(core-user-flow §7·§19).
@@ -34,6 +36,13 @@ export function FlowScreen(props: {
       </div>
       <ProgressPanel view={props.view} jobs={screen.jobs} />
       <p className="kv-src">경과 시간 <span className="mono">{elapsed}</span></p>
+      {props.onStop && (
+        <div className="btnrow">
+          <button type="button" className="btn" onClick={props.onStop}>
+            분석 중단
+          </button>
+        </div>
+      )}
     </div>
   )
 }

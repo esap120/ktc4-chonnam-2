@@ -127,6 +127,15 @@ describe('화면 선택', () => {
     expect(selectScreen({ ...base, notices: [] }).kind).toBe('PROGRESS')
   })
 
+  it('응답 뒤 신고자료를 준비하는 동안(running_jobs)은 진행이고, 응답 대기 중이면 job이 있어도 결과다', () => {
+    const evidence = views.find((v) => v.stage === 'EVIDENCE_REVIEW' && v.evidence !== null)!
+    const job = { job_id: 'j', kind: 'REPORT_VIDEO_EXPORT', label_key: 'job.generic_processing', status: 'RUNNING' } as const
+    const pending = { code: 'case.situation_response_pending', severity: 'INFO' as const, blocking: false, message_key: 'notice.situation_response_pending', actions: [] }
+    expect(selectScreen({ ...evidence, notices: [], running_jobs: [job] }).kind).toBe('PROGRESS')
+    expect(selectScreen({ ...evidence, notices: [pending], running_jobs: [job] }).kind).not.toBe('PROGRESS')
+    expect(selectScreen({ ...evidence, notices: [], running_jobs: [] }).kind).toBe('EVIDENCE')
+  })
+
   it('READY + package면 신고자료 화면이다', () => {
     const ready = views.filter((v) => v.stage === 'READY' && v.package)
     expect(ready.length).toBeGreaterThan(0)
