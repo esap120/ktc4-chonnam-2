@@ -1,4 +1,4 @@
-// CaseView — `contract-job-record-case-view.md` B절 §5·§6·§7 (case-view/v1.7)
+// CaseView — `contract-job-record-case-view.md` B절 §5·§6·§7 (case-view/v1.8)
 //
 // 이 파일이 web의 타입 정본이다. `apps/prototype/src/types.ts`의 CaseState는
 // 참고만 하고 가져오지 않는다(`docs/modules/web/decisions/web-stack.md`).
@@ -53,7 +53,12 @@ export interface CodeDisplay {
 }
 
 export interface EvidenceView {
-  record_id: string
+  /**
+   * `null`이면 상황 응답 대기 중의 부분 투영이다(v1.8, #239). EvidenceRecord가 아직 없고
+   * 상황 독립 값(번호판·시각·위치)만 채워져 있다. 상황 종속 셋(사건 분류·위반 내용·신고 유형)은
+   * `INFO_UNKNOWN`이지만 「모른다」가 아니라 「아직 정해지지 않았다」이다.
+   */
+  record_id: string | null
   case_type_display: CodeDisplay
   report_type_display: CodeDisplay
   violation_display: CodeDisplay

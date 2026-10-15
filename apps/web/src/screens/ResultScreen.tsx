@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { isAction, type Action, type CaseView, type InfoState } from '../contracts/caseView'
 import { ACTION_LABELS, INFO_STATE_LABELS, formatValue, noticeMessage, reportFieldLabel } from '../contracts/labels'
+import { PENDING_TEXT } from '../components/DisplayRow'
 import { StatusBadge } from '../components/StatusBadge'
 
 // Figma 03_Main_Result 틀: 요약 → 신고용 영상(+다른 후보) → 번호판 → 신고서 초안(+어떻게 정했는지) → 동작.
@@ -88,7 +89,7 @@ export function ResultScreen(props: {
               <div className="kv-row" key={label}>
                 <span className="kv-k">{label}</span>
                 <span className="kv-v">
-                  <span className="kv-val">상황 응답 뒤에 정해져요</span>
+                  <span className="kv-val">{PENDING_TEXT}</span>
                 </span>
               </div>
             ))}
